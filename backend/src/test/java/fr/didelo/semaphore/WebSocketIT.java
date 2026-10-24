@@ -224,7 +224,9 @@ class WebSocketIT {
     var code = createRoom(host, "Ana");
     var bob = playerIn(code, "Bob");
     bob.send("{\"type\":\"joinTeam\",\"team\":\"TRIBORD\"}");
-    host.await("roomUpdated", m -> m.path("room").path("players").path(1).has("team"));
+    host.await(
+        "roomUpdated",
+        m -> m.path("room").path("players").path(1).path("team").asString().equals("TRIBORD"));
 
     bob.socket.abort();
     var gone =

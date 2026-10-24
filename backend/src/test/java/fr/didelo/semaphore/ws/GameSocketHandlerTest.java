@@ -106,4 +106,13 @@ class GameSocketHandlerTest {
     handler.dropAbsent();
     assertThat(json.readTree(lastPayload(host)).path("room").path("players")).hasSize(1);
   }
+
+  @Test
+  void aLeaveFromAConnectionWithoutASeatIsRefused() throws Exception {
+    var session = connect("s1");
+
+    receive(session, "{\"type\":\"leave\"}");
+
+    assertThat(lastPayload(session)).contains("\"error\"").contains("join a room first");
+  }
 }

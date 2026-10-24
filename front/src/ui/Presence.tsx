@@ -9,15 +9,16 @@ export const Presence = ({
   spectators?: number;
 }) => {
   const online = players.filter((player) => player.connected).length;
+  const watching =
+    spectators === 1
+      ? "1 personne regarde"
+      : `${spectators} personnes regardent`;
   return (
     <p className="sem-presence">
       {online === players.length
         ? `${online} en ligne`
         : `${online} sur ${players.length} en ligne`}
-      {spectators === 0 ? "" : ` · ${watching(spectators)}`}
+      {spectators > 0 && ` · ${watching}`}
     </p>
   );
 };
-
-const watching = (count: number) =>
-  count === 1 ? "1 personne regarde" : `${count} personnes regardent`;

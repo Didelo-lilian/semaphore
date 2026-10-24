@@ -11,7 +11,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-/** Every room, in memory. A room nobody is connected to is dropped after a while. */
+/** Every room, in memory. A room none of whose players is connected is dropped after a while. */
 @Component
 public class RoomRegistry {
 

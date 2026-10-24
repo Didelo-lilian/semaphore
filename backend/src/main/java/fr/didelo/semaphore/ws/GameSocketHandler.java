@@ -25,10 +25,11 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * One connection per player. What changes a room happens under the room's lock; what goes back to
- * the players is built there and sent after the lock is released, so a slow connection never holds
- * a room. Each view carries the room's version, so a client drops one that arrives late. The answer
- * to a message carries the message's id, and what goes to the other players carries none.
+ * One connection per player or spectator. What changes a room happens under the room's lock; what
+ * goes back to the players is built there and sent after the lock is released, so a slow connection
+ * never holds a room. Each view carries the room's version, so a client drops one that arrives
+ * late. The answer to a message carries the message's id, and what goes to the other players
+ * carries none.
  */
 @Component
 @RequiredArgsConstructor

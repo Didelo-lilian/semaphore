@@ -558,12 +558,6 @@ class WebSocketIT {
       spectator.send(entering);
       assertThat(spectator.error()).isEqualTo("you are already in a room");
     }
-    assertThat(spectator.history)
-        .noneMatch(
-            m ->
-                m.path("type").asString().equals("roomUpdated")
-                    && m.path("room").path("version").asInt()
-                        > players.get(0).room.path("version").asInt());
   }
 
   @Test

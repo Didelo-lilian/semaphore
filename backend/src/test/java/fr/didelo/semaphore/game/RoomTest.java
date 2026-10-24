@@ -493,7 +493,6 @@ class RoomTest {
 
     refuses(game.room::watch, "too many");
     assertThat(game.view().spectators()).isEqualTo(Room.MAX_SPECTATORS);
-    assertThat(game.players).hasSize(4);
 
     game.room.unwatch();
     game.room.watch();

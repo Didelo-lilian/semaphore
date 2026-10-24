@@ -308,6 +308,21 @@ describe("GameClient", () => {
     expect(FakeSocket.all).toHaveLength(1);
   });
 
+  it("does not send on the next connection what a lost one never delivered, and drops its error", async () => {
+    const client = connect(memoryStore());
+    const lost = client.request({ type: "watch", code: "ABCDE" });
+    last().drop();
+    await expect(lost).rejects.toThrow("connection lost");
+    expect(client.getSnapshot().error).toBe("connection lost");
+
+    const again = client.request({ type: "watch", code: "ABCDE" });
+    expect(client.getSnapshot().error).toBeNull();
+    last().accept();
+    expect(last().sent).toEqual([{ type: "watch", id: "2", code: "ABCDE" }]);
+    last().answer(spectator);
+    await expect(again).resolves.toMatchObject({ you: null });
+  });
+
   it("rejects the commands in flight when the connection drops", async () => {
     const client = connect(memoryStore());
     const lost = client.request({ type: "createRoom", name: "Ana" });

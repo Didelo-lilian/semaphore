@@ -76,6 +76,8 @@ flowchart LR
   pr -->|"squash merge"| main["main"]
   main --> image["Image workflow"]
   image --> ghcr[("GHCR<br/>semaphore:main<br/>semaphore-front:main")]
+  image -->|"GitHub App token"| infra["infra · Deploy app<br/>stacks semaphore and play"]
+  infra -->|"pull :main, restart"| vps["VPS"]
   main --> release["Release workflow<br/>release-please"]
   release --> relpr["Release pull request<br/>version + CHANGELOG"]
   relpr -->|"merge"| tag["Tag vX.Y.Z<br/>GitHub release"]

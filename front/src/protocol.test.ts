@@ -4,6 +4,7 @@ import joined from "./fixtures/joined-lobby.json";
 import answer from "./fixtures/room-answer.json";
 import lookout from "./fixtures/room-lookout.json";
 import signaler from "./fixtures/room-signaler.json";
+import spectator from "./fixtures/room-spectator.json";
 import waiting from "./fixtures/room-waiting.json";
 import { serverMessageSchema } from "./protocol.ts";
 
@@ -42,6 +43,19 @@ describe("server messages", () => {
     );
     const idle = serverMessageSchema.parse(lookout);
     expect(idle.type === "roomUpdated" && idle.room.turnPassesIn).toBeNull();
+  });
+
+  it("reads a view with no player of its own, key hidden, for someone who watches", () => {
+    const message = serverMessageSchema.parse(spectator);
+    expect(message.id).toBe(spectator.id);
+    expect(message.type === "roomUpdated" && message.room.you).toBeNull();
+    expect(message.type === "roomUpdated" && message.room.spectators).toBe(1);
+    expect(
+      message.type === "roomUpdated" &&
+        message.room.board.every((c) => c.kind === null),
+    ).toBe(true);
+    const players = serverMessageSchema.parse(lookout);
+    expect(players.type === "roomUpdated" && players.room.spectators).toBe(0);
   });
 
   it("reads an error, with the id of the message it refuses", () => {

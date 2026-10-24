@@ -1,0 +1,176 @@
+{
+  "type": "roomUpdated",
+  "id": "4",
+  "room": {
+    "code": "ZXMHD",
+    "version": 10,
+    "phase": "SIGNAL",
+    "turn": "TRIBORD",
+    "turnPassesIn": null,
+    "signal": null,
+    "revealsLeft": 0,
+    "flags": {
+      "TRIBORD": 2,
+      "BABORD": 2
+    },
+    "winner": null,
+    "players": [
+      {
+        "id": "489d3a7e-5d3e-4f4a-930a-495e582b7eee",
+        "name": "Ana",
+        "team": "BABORD",
+        "connected": true,
+        "host": true,
+        "signaler": true
+      },
+      {
+        "id": "86d7a610-e8c4-4a96-92e6-35bb1b9b0c54",
+        "name": "Ben",
+        "team": "TRIBORD",
+        "connected": true,
+        "host": false,
+        "signaler": true
+      },
+      {
+        "id": "94494203-848d-45e9-864a-cb2dc7e6c8e9",
+        "name": "Cleo",
+        "team": "BABORD",
+        "connected": true,
+        "host": false,
+        "signaler": false
+      },
+      {
+        "id": "088627c4-1e6c-4a0e-bfc2-6a72c012e58c",
+        "name": "Dan",
+        "team": "TRIBORD",
+        "connected": true,
+        "host": false,
+        "signaler": false
+      }
+    ],
+    "spectators": 1,
+    "board": [
+      {
+        "word": "requin",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "ancre",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "branche",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "banane",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "brouillard",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "ferme",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "salade",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "avion",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "beurre",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "rocher",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "fleur",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "bonnet",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "sable",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "serpent",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "camion",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "pyramide",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "cinéma",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "livre",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "casque",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "nuage",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "jumelles",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "galaxie",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "clé",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "cerf",
+        "revealed": false,
+        "kind": null
+      }
+    ],
+    "you": null
+  }
+}

@@ -16,6 +16,7 @@ import fr.didelo.semaphore.game.Team;
   @JsonSubTypes.Type(value = ClientMessage.CreateRoom.class, name = "createRoom"),
   @JsonSubTypes.Type(value = ClientMessage.JoinRoom.class, name = "joinRoom"),
   @JsonSubTypes.Type(value = ClientMessage.Rejoin.class, name = "rejoin"),
+  @JsonSubTypes.Type(value = ClientMessage.Watch.class, name = "watch"),
   @JsonSubTypes.Type(value = ClientMessage.Leave.class, name = "leave"),
   @JsonSubTypes.Type(value = ClientMessage.JoinTeam.class, name = "joinTeam"),
   @JsonSubTypes.Type(value = ClientMessage.Start.class, name = "start"),
@@ -45,6 +46,13 @@ public sealed interface ClientMessage {
     public Rejoin {
       requireNonNull(code);
       requireNonNull(token);
+    }
+  }
+
+  /** Watching a game in progress without a seat: no token comes back, a reload starts again. */
+  record Watch(String id, String code) implements ClientMessage {
+    public Watch {
+      requireNonNull(code);
     }
   }
 

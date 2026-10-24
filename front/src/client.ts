@@ -124,7 +124,7 @@ export class GameClient {
 
   private connect(connection: Connection) {
     clearTimeout(this.retry);
-    this.update({ connection });
+    this.update({ connection, error: null });
     const socket = this.open(this.url);
     this.socket = socket;
     socket.onopen = () => {
@@ -148,6 +148,8 @@ export class GameClient {
       for (const { reject } of this.waiting.splice(0)) {
         reject(new Error("connection lost"));
       }
+      // Their promises are settled: sending them on the next connection would play them twice.
+      this.pending = [];
       if (event.reason === REPLACED) {
         this.update({ connection: "replaced" });
       } else if (this.store.load() !== null) {
@@ -157,7 +159,9 @@ export class GameClient {
         this.attempts++;
         this.retry = setTimeout(() => this.connect("reconnecting"), delay);
       } else {
-        this.update({ connection: "idle" });
+        // Nothing to come back to, like a spectator who has no seat: the link starts again.
+        this.queryClient.removeQueries({ queryKey: roomKey });
+        this.update({ connection: "idle", error: "connection lost" });
       }
     };
   }

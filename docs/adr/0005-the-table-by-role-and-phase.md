@@ -40,6 +40,10 @@ Presence changes one line of that table: when the Signaleur in play is offline d
 
 Both buttons and form exist only for the player who may use them, so the server's refusals ("not your turn", "not the Signaleur") are a safety net and not something a player normally meets. The front does not replay the rules: it does not count the `n + 1` reveals, it shows how many are left (`revealsLeft`), and a signal too close to a word of the grid is judged by the server, which answers with a reason shown next to the form (`reasons.ts`). The form refuses an empty field and nothing else: what makes a valid signal (one word, letters, hyphens allowed, not too close to the grid) is the server's rule, and a copy of it in the browser would drift (a first version refused hyphenated words that the server accepts). The number is one of four buttons.
 
+### Spectators
+
+A spectator is "everybody else" in the table above, with nothing left to click: their view has `you` null, so they are neither in play nor a Signaleur and the screen is the same function of the view ([ADR 0006](0006-presence-and-disconnections.md)). The table says so under the presence line ("Tu regardes la partie sans y jouer."), and "Quitter" leaves at once: there is no seat to lose, so no dialog. The line that counts who is online also counts the spectators ("3 en ligne · 2 personnes regardent"), for the players as for the spectators.
+
 ### The cards and the signal
 
 - A hidden word becomes a button that covers its card, for the lookouts in play only. A revealed word is never one. While a command waits for its answer the word buttons are `aria-disabled` and "Passer" is disabled: the commands run one after the other ([ADR 0004](0004-a-react-front-on-the-design-system.md)), a second click would only queue behind the first. A word button is not `disabled` so that the focus of a keyboard user stays on it. The buttons are freed by the answer to the command, matched by its id: a view caused by someone else does not free them.

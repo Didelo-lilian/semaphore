@@ -47,6 +47,7 @@
         "signaler": false
       }
     ],
+    "spectators": 0,
     "board": [
       {
         "word": "cloche",

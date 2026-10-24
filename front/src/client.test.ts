@@ -4,6 +4,7 @@ import { GameClient, roomKey } from "./client.ts";
 import { FakeSocket } from "./fake-socket.ts";
 import joined from "./fixtures/joined-lobby.json";
 import lookout from "./fixtures/room-lookout.json";
+import spectator from "./fixtures/room-spectator.json";
 import type { Session, SessionStore } from "./session.ts";
 
 const memoryStore = (initial: Session | null = null) => {
@@ -284,6 +285,42 @@ describe("GameClient", () => {
     last().accept();
     last().receive({ type: "error", reason: "unknown player" });
     expect(client.getSnapshot().error).toBe("unknown player");
+  });
+
+  it("watches without remembering a seat, and forgets the room when the connection drops", async () => {
+    const store = memoryStore();
+    const client = connect(store);
+    const watching = client.request({ type: "watch", code: "ABCDE" });
+    last().accept();
+    expect(last().sent).toEqual([{ type: "watch", id: "1", code: "ABCDE" }]);
+    last().answer(spectator);
+    await expect(watching).resolves.toMatchObject({ you: null });
+    expect(store.load()).toBeNull();
+    expect(room()?.code).toBe(spectator.room.code);
+
+    last().drop();
+    expect(room()).toBeUndefined();
+    expect(client.getSnapshot()).toEqual({
+      connection: "idle",
+      error: "connection lost",
+    });
+    vi.advanceTimersByTime(60_000);
+    expect(FakeSocket.all).toHaveLength(1);
+  });
+
+  it("does not send on the next connection what a lost one never delivered, and drops its error", async () => {
+    const client = connect(memoryStore());
+    const lost = client.request({ type: "watch", code: "ABCDE" });
+    last().drop();
+    await expect(lost).rejects.toThrow("connection lost");
+    expect(client.getSnapshot().error).toBe("connection lost");
+
+    const again = client.request({ type: "watch", code: "ABCDE" });
+    expect(client.getSnapshot().error).toBeNull();
+    last().accept();
+    expect(last().sent).toEqual([{ type: "watch", id: "2", code: "ABCDE" }]);
+    last().answer(spectator);
+    await expect(again).resolves.toMatchObject({ you: null });
   });
 
   it("rejects the commands in flight when the connection drops", async () => {

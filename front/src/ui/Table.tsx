@@ -106,6 +106,7 @@ export const Table = ({
   onLeave,
 }: Props) => {
   const [confirmingLeave, setConfirmingLeave] = useState(false);
+  const spectator = room.you === null;
   const inPlay = room.players.some(
     (player) => player.id === room.you && player.team === room.turn,
   );
@@ -164,11 +165,16 @@ export const Table = ({
           {room.turnPassesIn !== null && (
             <Countdown key={room.version} seconds={room.turnPassesIn} />
           )}
-          <Presence players={room.players} />
+          <Presence players={room.players} spectators={room.spectators} />
+          {spectator && (
+            <p className="sem-hint">Tu regardes la partie sans y jouer.</p>
+          )}
         </div>
         <Button
           variant="text"
-          onClick={ended ? onLeave : () => setConfirmingLeave(true)}
+          onClick={
+            ended || spectator ? onLeave : () => setConfirmingLeave(true)
+          }
         >
           {ended ? "Retour à l'accueil" : "Quitter"}
         </Button>

@@ -3,6 +3,10 @@ const EXACT: Record<string, string> = {
   "no such room": "Ce salon n'existe pas, ou plus.",
   "the game has started": "La partie a déjà commencé.",
   "the room is full": "Le salon est complet.",
+  "the game has not started":
+    "La partie n'a pas encore commencé : rejoins le salon pour jouer.",
+  "too many spectators": "Trop de monde regarde déjà cette partie.",
+  "spectators cannot play": "Un spectateur regarde sans jouer.",
   "a name has 1 to 20 characters": "Un nom fait de 1 à 20 caractères.",
   "only the host starts the game": "Seul l'hôte lance la partie.",
   "everyone must pick a team": "Tout le monde doit choisir une équipe.",

@@ -42,8 +42,11 @@ export const roomViewSchema = z.object({
   flags: z.object({ BABORD: z.number().int(), TRIBORD: z.number().int() }),
   winner: teamSchema.nullable(),
   players: z.array(playerSchema),
+  // People watching without a seat.
+  spectators: z.number().int(),
   board: z.array(cardSchema),
-  you: z.string(),
+  // Null for a spectator, who has no player of their own.
+  you: z.string().nullable(),
 });
 export type RoomView = z.infer<typeof roomViewSchema>;
 
@@ -71,6 +74,7 @@ export type ClientMessage = (
   | { type: "createRoom"; name: string }
   | { type: "joinRoom"; code: string; name: string }
   | { type: "rejoin"; code: string; token: string }
+  | { type: "watch"; code: string }
   | { type: "leave" }
   | { type: "joinTeam"; team: Team }
   | { type: "start" }

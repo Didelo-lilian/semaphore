@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import fr.didelo.semaphore.game.RoomView.CardView;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.stream.IntStream;
@@ -419,6 +420,112 @@ class RoomTest {
     game.room.reconnect(game.players.get(1).getId());
     clock.advance(Duration.ofMinutes(31));
     assertThat(game.room.abandonedFor(Duration.ofMinutes(30))).isFalse();
+  }
+
+  @Test
+  void aSpectatorSeesWhatALookoutSeesFromNoSeat() {
+    var game = new Game();
+    game.room.watch();
+    var lookout = game.room.viewFor(game.lookout().getId());
+
+    assertThat(game.room.spectatorView())
+        .usingRecursiveComparison()
+        .ignoringFields("you")
+        .isEqualTo(lookout);
+    assertThat(game.room.spectatorView().you()).isNull();
+    assertThat(game.room.spectatorView().spectators()).isEqualTo(1);
+
+    game.signal("voyage", 2);
+    game.reveal(game.indexOf(game.turn().kind(), 0));
+    assertThat(game.room.spectatorView())
+        .usingRecursiveComparison()
+        .ignoringFields("you")
+        .isEqualTo(game.room.viewFor(game.lookout().getId()));
+  }
+
+  @Test
+  void theKeyNeverReachesASpectatorBeforeTheEnd() {
+    var game = new Game();
+    game.room.watch();
+    var team = game.turn();
+    var views = new ArrayList<RoomView>();
+    views.add(game.room.spectatorView());
+
+    game.signal("voyage", 3);
+    views.add(game.room.spectatorView());
+    game.reveal(game.indexOf(team.kind(), 0));
+    views.add(game.room.spectatorView());
+    game.reveal(game.indexOf(CardKind.REEF, 0));
+    views.add(game.room.spectatorView());
+    game.signal("autre", 1);
+    views.add(game.room.spectatorView());
+    game.pass();
+    views.add(game.room.spectatorView());
+    game.signal("encore", 1);
+    views.add(game.room.spectatorView());
+    game.reveal(game.indexOf(CardKind.REEF, 1));
+    views.add(game.room.spectatorView());
+
+    var ended = views.remove(views.size() - 1);
+    assertThat(views)
+        .allSatisfy(
+            view -> {
+              assertThat(view.phase()).isNotEqualTo(Phase.ENDED);
+              assertThat(view.board())
+                  .allSatisfy(card -> assertThat(card.kind() != null).isEqualTo(card.revealed()));
+            });
+    assertThat(ended.phase()).isEqualTo(Phase.ENDED);
+    assertThat(ended.board()).allMatch(card -> card.kind() != null);
+  }
+
+  @Test
+  void aLobbyHasNothingToWatch() {
+    var room = new Room("ABCDE", Clock.systemUTC(), new Random(1), 2, POOL);
+    room.join("host");
+
+    refuses(room::watch, "not started");
+  }
+
+  @Test
+  void aRoomHoldsTwentySpectatorsOnTopOfItsPlayersAndEveryoneSeesTheCount() {
+    var game = new Game();
+    IntStream.range(0, Room.MAX_SPECTATORS).forEach(i -> game.room.watch());
+
+    refuses(game.room::watch, "too many");
+    assertThat(game.view().spectators()).isEqualTo(Room.MAX_SPECTATORS);
+
+    game.room.unwatch();
+    game.room.watch();
+    game.room.unwatch();
+    assertThat(game.view().spectators()).isEqualTo(Room.MAX_SPECTATORS - 1);
+  }
+
+  @Test
+  void watchingAndLeavingChangeTheVersionSoViewsAreResent() {
+    var game = new Game();
+    var before = game.view().version();
+
+    game.room.watch();
+    var watching = game.view().version();
+    game.room.unwatch();
+
+    assertThat(watching).isGreaterThan(before);
+    assertThat(game.view().version()).isGreaterThan(watching);
+  }
+
+  @Test
+  void spectatorsDoNotKeepARoomAlive() {
+    var clock = new MutableClock();
+    var game = new Game(POOL, clock);
+    game.players.forEach(p -> game.room.disconnect(p.getId()));
+
+    clock.advance(Duration.ofMinutes(29));
+    game.room.watch();
+    clock.advance(Duration.ofMinutes(2));
+    assertThat(game.room.abandonedFor(Duration.ofMinutes(30))).isTrue();
+
+    game.room.unwatch();
+    assertThat(game.room.abandonedFor(Duration.ofMinutes(30))).isTrue();
   }
 
   @Test

@@ -5,6 +5,7 @@ import fr.didelo.semaphore.game.IllegalMove;
 import fr.didelo.semaphore.game.Player;
 import fr.didelo.semaphore.game.Room;
 import fr.didelo.semaphore.game.RoomRegistry;
+import fr.didelo.semaphore.game.RoomView;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,10 +25,11 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * One connection per player. What changes a room happens under the room's lock; what goes back to
- * the players is built there and sent after the lock is released, so a slow connection never holds
- * a room. Each view carries the room's version, so a client drops one that arrives late. The answer
- * to a message carries the message's id, and what goes to the other players carries none.
+ * One connection per player or spectator. What changes a room happens under the room's lock; what
+ * goes back to the players is built there and sent after the lock is released, so a slow connection
+ * never holds a room. Each view carries the room's version, so a client drops one that arrives
+ * late. The answer to a message carries the message's id, and what goes to the other players
+ * carries none.
  */
 @Component
 @RequiredArgsConstructor
@@ -36,8 +38,15 @@ public class GameSocketHandler extends TextWebSocketHandler {
   private static final int SEND_TIME_LIMIT_MS = 5_000;
   private static final int SEND_BUFFER_LIMIT_BYTES = 64 * 1024;
 
-  /** Where a connection is: the room it joined and the player it speaks for. */
-  private record Seat(Room room, String playerId) {}
+  /**
+   * Where a connection is: the room it joined and the player it speaks for, none for a spectator.
+   */
+  private record Seat(Room room, String playerId) {
+
+    boolean spectator() {
+      return playerId == null;
+    }
+  }
 
   /** A message waiting for the room's lock to be released. */
   private record Delivery(WebSocketSession session, ServerMessage message) {}
@@ -69,6 +78,7 @@ public class GameSocketHandler extends TextWebSocketHandler {
             case ClientMessage.CreateRoom create -> create(session, id, create.name());
             case ClientMessage.JoinRoom join -> enter(session, id, room(join.code()), join.name());
             case ClientMessage.Rejoin rejoin -> rejoin(session, rejoin);
+            case ClientMessage.Watch watch -> watch(session, id, room(watch.code()));
             case ClientMessage.Leave leave -> leave(session);
             case ClientMessage.JoinTeam join ->
                 command(session, id, new Command.JoinTeam(join.team()));
@@ -94,7 +104,11 @@ public class GameSocketHandler extends TextWebSocketHandler {
     if (seat != null) {
       List<Delivery> deliveries;
       synchronized (seat.room()) {
-        seat.room().disconnect(seat.playerId());
+        if (seat.spectator()) {
+          seat.room().unwatch();
+        } else {
+          seat.room().disconnect(seat.playerId());
+        }
         deliveries = views(seat.room(), null, null);
       }
       deliver(deliveries);
@@ -136,6 +150,15 @@ public class GameSocketHandler extends TextWebSocketHandler {
     }
   }
 
+  private List<Delivery> watch(WebSocketSession session, String id, Room room) {
+    synchronized (room) {
+      requireToEnter(session, room);
+      room.watch();
+      seats.put(session.getId(), new Seat(room, null));
+      return views(room, session.getId(), id);
+    }
+  }
+
   private List<Delivery> rejoin(WebSocketSession session, ClientMessage.Rejoin rejoin) {
     var room = room(rejoin.code());
     var replaced = new ArrayList<WebSocketSession>();
@@ -150,7 +173,7 @@ public class GameSocketHandler extends TextWebSocketHandler {
               entry -> {
                 var same =
                     entry.getValue().room() == room
-                        && entry.getValue().playerId().equals(player.getId());
+                        && player.getId().equals(entry.getValue().playerId());
                 if (same) {
                   replaced.add(sessions.get(entry.getKey()));
                 }
@@ -182,7 +205,11 @@ public class GameSocketHandler extends TextWebSocketHandler {
       if (!seats.remove(session.getId(), seat)) {
         throw new IllegalMove("join a room first");
       }
-      seat.room().leave(seat.playerId());
+      if (seat.spectator()) {
+        seat.room().unwatch();
+      } else {
+        seat.room().leave(seat.playerId());
+      }
       return views(seat.room(), null, null);
     }
   }
@@ -191,6 +218,9 @@ public class GameSocketHandler extends TextWebSocketHandler {
     var seat = seats.get(session.getId());
     if (seat == null) {
       throw new IllegalMove("join a room first");
+    }
+    if (seat.spectator()) {
+      throw new IllegalMove("spectators cannot play");
     }
     synchronized (seat.room()) {
       // The connection may have closed while this message waited for the lock.
@@ -233,19 +263,32 @@ public class GameSocketHandler extends TextWebSocketHandler {
 
   /**
    * Every connected player of the room gets their own view: only the Signaleurs see the hidden
-   * cards. The view of the connection that sent the message carries its id, the others none.
+   * cards. The spectators all get the same one, built once. The view of the connection that sent
+   * the message carries its id, the others none.
    */
   private List<Delivery> views(Room room, String senderSessionId, String id) {
-    return seats.entrySet().stream()
-        .filter(entry -> entry.getValue().room() == room && sessions.containsKey(entry.getKey()))
-        .map(
-            entry ->
-                new Delivery(
-                    sessions.get(entry.getKey()),
-                    new ServerMessage.RoomUpdated(
-                        entry.getKey().equals(senderSessionId) ? id : null,
-                        room.viewFor(entry.getValue().playerId()))))
-        .toList();
+    var deliveries = new ArrayList<Delivery>();
+    RoomView spectatorView = null;
+    for (var entry : seats.entrySet()) {
+      var seat = entry.getValue();
+      var session = sessions.get(entry.getKey());
+      if (seat.room() != room || session == null) {
+        continue;
+      }
+      RoomView view;
+      if (seat.spectator()) {
+        spectatorView = spectatorView == null ? room.spectatorView() : spectatorView;
+        view = spectatorView;
+      } else {
+        view = room.viewFor(seat.playerId());
+      }
+      deliveries.add(
+          new Delivery(
+              session,
+              new ServerMessage.RoomUpdated(
+                  entry.getKey().equals(senderSessionId) ? id : null, view)));
+    }
+    return deliveries;
   }
 
   /** Runs a sweep on every room and sends the new views of the ones it changed. */

@@ -51,6 +51,28 @@ beforeEach(() => {
   FakeSocket.all = [];
 });
 
+const join = async (room: RoomView) => {
+  const seat = { code: room.code, token: "t" };
+  await mount(`/salon/${room.code}`, memoryStore(seat));
+  const socket = FakeSocket.last();
+  socket.accept();
+  socket.receive({
+    type: "joined",
+    playerId: room.you,
+    token: seat.token,
+    room,
+  });
+  return socket;
+};
+
+const lookoutGuessing = {
+  ...(lookout.room as RoomView),
+  phase: "GUESS" as const,
+  turn: "BABORD" as const,
+  signal: { word: "voyage", number: 2 },
+  revealsLeft: 2,
+};
+
 describe("the game in the browser", () => {
   it("creates a room and lands in its lobby", async () => {
     const { router } = await mount("/");
@@ -193,6 +215,81 @@ describe("the game in the browser", () => {
     );
     await waitFor(() => expect(router.state.location.pathname).toBe("/"));
     expect(store.load()).toBeNull();
+  });
+
+  it("sends the signal of the Signaleur and waits for the lookouts", async () => {
+    const room = { ...(signaler.room as RoomView), turn: "BABORD" as const };
+    const socket = await join(room);
+    await userEvent.type(await screen.findByLabelText("Ton signal"), "voyage");
+    await userEvent.click(screen.getByRole("button", { name: "2" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Envoyer le signal" }),
+    );
+    await waitFor(() =>
+      expect(socket.sent).toContainEqual({
+        type: "signal",
+        word: "voyage",
+        number: 2,
+      }),
+    );
+    socket.receive({
+      type: "roomUpdated",
+      room: {
+        ...room,
+        version: room.version + 1,
+        phase: "GUESS",
+        signal: { word: "voyage", number: 2 },
+        revealsLeft: 3,
+      },
+    });
+    expect(await screen.findByText("Tes Veilleurs cherchent…")).toBeVisible();
+    expect(screen.queryByLabelText("Ton signal")).toBeNull();
+  });
+
+  it("comes back in the middle of a guess with the signal and the revealed words", async () => {
+    const room = {
+      ...lookoutGuessing,
+      board: lookoutGuessing.board.map((card, index) =>
+        index === 0
+          ? { ...card, revealed: true, kind: "BABORD" as const }
+          : card,
+      ),
+    };
+    await join(room);
+    expect(await screen.findByText(/encore 2 au plus/)).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("Signal : voyage, 2.");
+    expect(document.querySelectorAll(".sem-word-button")).toHaveLength(23);
+  });
+
+  it("forgets a refusal once the room moves on", async () => {
+    const socket = await join(lookoutGuessing);
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: lookoutGuessing.board[0]?.word,
+      }),
+    );
+    await waitFor(() =>
+      expect(socket.sent).toContainEqual({ type: "reveal", index: 0 }),
+    );
+    socket.receive({
+      type: "error",
+      reason: "only the lookouts of the team in play can do that",
+    });
+    const refusal =
+      "Seuls les Veilleurs de l'équipe qui joue peuvent faire ça.";
+    expect(await screen.findByText(refusal)).toBeVisible();
+
+    socket.receive({
+      type: "roomUpdated",
+      room: {
+        ...lookoutGuessing,
+        version: lookoutGuessing.version + 1,
+        phase: "SIGNAL",
+        turn: "TRIBORD",
+        signal: null,
+      },
+    });
+    await waitFor(() => expect(screen.queryByText(refusal)).toBeNull());
   });
 
   it("gets its seat back after a reload", async () => {

@@ -36,13 +36,19 @@ flowchart TD
   pick --> view
 ```
 
-Both buttons and form exist only for the player who may use them, so the server's refusals ("not your turn", "not the Signaleur") are a safety net and not something a player normally meets. The front does not replay the rules: it does not count the `n + 1` reveals, it shows how many are left (`revealsLeft`), and a signal too close to a word of the grid is judged by the server, which answers with a reason shown next to the form (`reasons.ts`). The form only checks what is certain in the browser (one word, letters only) with the Zod schema, the number is one of four buttons.
+Both buttons and form exist only for the player who may use them, so the server's refusals ("not your turn", "not the Signaleur") are a safety net and not something a player normally meets. The front does not replay the rules: it does not count the `n + 1` reveals, it shows how many are left (`revealsLeft`), and a signal too close to a word of the grid is judged by the server, which answers with a reason shown next to the form (`reasons.ts`). The form refuses an empty field and nothing else: what makes a valid signal (one word, letters, hyphens allowed, not too close to the grid) is the server's rule, and a copy of it in the browser would drift (a first version refused hyphenated words that the server accepts). The number is one of four buttons.
 
 ### The cards and the signal
 
-- A hidden word becomes a button that covers its card, for the lookouts in play only. A revealed word is never one. While a command waits for its answer every button is disabled: the commands run one after the other ([ADR 0004](0004-a-react-front-on-the-design-system.md)), a second click would only queue behind the first.
+- A hidden word becomes a button that covers its card, for the lookouts in play only. A revealed word is never one. While a command waits for its answer the word buttons are `aria-disabled` and "Passer" is disabled: the commands run one after the other ([ADR 0004](0004-a-react-front-on-the-design-system.md)), a second click would only queue behind the first. A word button is not `disabled` so that the focus of a keyboard user stays on it. This is best effort: the client settles the oldest command on any view, so a view caused by someone else can free the buttons a moment early, and the server then refuses a second `reveal` of the same word ([#18](https://github.com/Didelo-lilian/semaphore/issues/18) gives the commands an id).
 - The signal is shown as a pennant that carries the word and the number, in the color of the team in play, with the mark of that team (triangle or circle) before the word. As everywhere in the game, the color is never alone: a shape tells the teams apart ([ADR 0001](0001-name-rules-and-visual-direction.md)). The text sits in the rectangular part of the pennant, clear of its tip: a first version clipped the whole pennant to a triangle and cut the number off.
 - A card turns over when it is revealed and the pennant is hoisted when a signal arrives. Both are one CSS animation, and `prefers-reduced-motion` turns both off.
+
+### Refusals, leaving, screen readers
+
+- A refusal answers the view it was sent from: when a newer view arrives, `SalonPage` forgets it, so a lookout who clicked a second too late does not keep a red message for the rest of the game. A refused signal has no new view, so it stays next to the form until the Signaleur tries again.
+- "Quitter" in the middle of a game asks first, because the seat cannot be taken back and a Signaleur who leaves blocks the turn of their team; the dialog says so to a Signaleur. After the end it leads home at once.
+- The line that says who must act is a live region (`<output>`), so a screen reader announces a new turn, and it carries the signal in words ("Signal : voyage, 2."); the pennant itself is hidden from assistive technology, where it would be read as "voyage2".
 
 ### Coming back in the middle of a turn needs no code
 

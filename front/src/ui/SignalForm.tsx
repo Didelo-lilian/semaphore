@@ -4,10 +4,9 @@ import { z } from "zod";
 
 const NUMBERS = [1, 2, 3, 4];
 
-const wordSchema = z
-  .string()
-  .trim()
-  .regex(/^\p{L}+$/u, "Un seul mot, avec des lettres.");
+// Only an empty field is refused here: what makes a valid signal (one word, letters, not too close to the grid) is the
+// server's rule, and its reason is shown next to the form.
+const wordSchema = z.string().trim().min(1, "Écris un mot.");
 
 interface Props {
   busy: boolean;
@@ -37,11 +36,11 @@ export const SignalForm = ({ busy, onSignal }: Props) => {
             value={field.state.value}
             onChange={(event) => field.handleChange(event.target.value)}
             onBlur={field.handleBlur}
-            error={field.state.meta.isTouched && !field.state.meta.isValid}
+            error={!field.state.meta.isValid}
             helperText={
-              field.state.meta.isTouched
-                ? field.state.meta.errors.map((e) => e?.message).join(" ")
-                : "Un mot qui fait penser aux mots de ton équipe."
+              field.state.meta.isValid
+                ? "Un mot qui fait penser aux mots de ton équipe."
+                : field.state.meta.errors.map((e) => e?.message).join(" ")
             }
             autoFocus
             fullWidth

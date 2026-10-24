@@ -1,4 +1,5 @@
-import { Alert, Button } from "@didelo/design-system";
+import { Alert, Button, Dialog } from "@didelo/design-system";
+import { useState } from "react";
 import type { Card, RoomView, Team } from "../protocol.ts";
 import { explain } from "../reasons.ts";
 import { SignalForm } from "./SignalForm.tsx";
@@ -17,7 +18,8 @@ const describe = (card: Card) => {
 
 /**
  * The grid as one player sees it: only a Signaleur sees the kind of a hidden word. With `onReveal`, a hidden word
- * is a button: the lookouts of the team in play pick their words there.
+ * is a button: the lookouts of the team in play pick their words there. While `busy` the buttons are `aria-disabled`
+ * rather than `disabled`, so the focus of a keyboard user stays where it is.
  */
 export const Board = ({
   board,
@@ -46,8 +48,8 @@ export const Board = ({
           <button
             type="button"
             className="sem-word-button"
-            disabled={busy}
-            onClick={() => onReveal(index)}
+            aria-disabled={busy}
+            onClick={busy ? undefined : () => onReveal(index)}
           >
             {card.word}
           </button>
@@ -78,6 +80,7 @@ export const Table = ({
   onPass,
   onLeave,
 }: Props) => {
+  const [confirmingLeave, setConfirmingLeave] = useState(false);
   const inPlay = room.players.some(
     (player) => player.id === room.you && player.team === room.turn,
   );
@@ -87,9 +90,10 @@ export const Table = ({
   const canSignal = room.phase === "SIGNAL" && inPlay && signaler;
   const canReveal = room.phase === "GUESS" && inPlay && !signaler;
   const turn = room.turn === null ? "" : TEAM_NAME[room.turn];
+  const ended = room.phase === "ENDED";
 
   let hint: string;
-  if (room.phase === "ENDED") {
+  if (ended) {
     hint = "La partie est terminée.";
   } else if (canSignal) {
     hint = "À toi : envoie un signal à tes Veilleurs.";
@@ -108,19 +112,30 @@ export const Table = ({
       <header className="sem-lobby-head">
         <div>
           <h1 id="table-title">
-            {room.phase === "ENDED" && room.winner !== null
+            {ended && room.winner !== null
               ? `${TEAM_NAME[room.winner]} gagne`
               : `Tour de ${turn}`}
           </h1>
-          <p className="sem-hint">{hint}</p>
+          <output className="sem-hint">
+            <span>{hint}</span>
+            {room.phase === "GUESS" && room.signal !== null && (
+              <span className="sem-sr-only">
+                {" "}
+                Signal : {room.signal.word}, {room.signal.number}.
+              </span>
+            )}
+          </output>
         </div>
-        <Button variant="text" onClick={onLeave}>
-          {room.phase === "ENDED" ? "Retour à l'accueil" : "Quitter"}
+        <Button
+          variant="text"
+          onClick={ended ? onLeave : () => setConfirmingLeave(true)}
+        >
+          {ended ? "Retour à l'accueil" : "Quitter"}
         </Button>
       </header>
 
       {room.signal !== null && room.turn !== null && (
-        <p className="sem-pennant" data-team={room.turn}>
+        <p className="sem-pennant" data-team={room.turn} aria-hidden="true">
           <TeamMark kind={room.turn} size={16} />
           <span className="sem-pennant-word">{room.signal.word}</span>
           <span className="sem-pennant-number">{room.signal.number}</span>
@@ -170,6 +185,25 @@ export const Table = ({
           Passer
         </Button>
       )}
+
+      <Dialog
+        open={confirmingLeave}
+        title="Quitter la partie ?"
+        onClose={() => setConfirmingLeave(false)}
+        actions={
+          <>
+            <Button variant="text" onClick={() => setConfirmingLeave(false)}>
+              Rester
+            </Button>
+            <Button variant="contained" onClick={onLeave}>
+              Quitter
+            </Button>
+          </>
+        }
+      >
+        Tu ne pourras pas reprendre ta place.
+        {signaler && " Tu es Signaleur : sans toi, la partie sera bloquée."}
+      </Dialog>
     </section>
   );
 };

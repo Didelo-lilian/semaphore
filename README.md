@@ -56,21 +56,30 @@ flowchart LR
 
 ## The table
 
-What a player sees and can do depends on the phase of the room, on the team in play and on their role. The screen is a function of the view the server sends to that player, so coming back after a reload needs nothing more ([ADR 0005](docs/adr/0005-the-table-by-role-and-phase.md)).
+What a player sees and can do depends on the phase of the room, on the team in play and on their role. The screen is a function of the view the server sends to that player, so coming back after a reload needs nothing more. [ADR 0005](docs/adr/0005-the-table-by-role-and-phase.md) has the diagram of who may act in each phase; this one follows a turn.
 
 ```mermaid
-flowchart TD
-  view(["A room view arrives"]) --> phase{"phase"}
-  phase -->|LOBBY| lobby["Lobby: pick a team,<br/>the host starts"]
-  phase -->|SIGNAL| sig{"Signaleur of the<br/>team in play?"}
-  phase -->|GUESS| gue{"Lookout of the<br/>team in play?"}
-  phase -->|ENDED| over["Winner, the whole key,<br/>back to the home page"]
-  sig -->|yes| form["Signal form<br/>sends signal"]
-  sig -->|no| waitsig["Waits for the Signaleur<br/>of the team in play"]
-  gue -->|yes| pick["Touch a hidden word: reveal<br/>or Passer: pass"]
-  gue -->|no| waitgue["Waits for the lookouts<br/>of the team in play"]
-  form --> view
-  pick --> view
+sequenceDiagram
+  participant S as Signaleur (team in play)
+  participant G as Server
+  participant L as Lookouts (team in play)
+  participant O as Everybody else
+  Note over S,O: SIGNAL, only the Signaleur has a form
+  S->>G: signal (word, number)
+  G-->>S: view, "Tes Veilleurs cherchent…"
+  G-->>L: view, pennant, words to touch, Passer
+  G-->>O: view, pennant, "Les Veilleurs de … cherchent."
+  Note over S,O: GUESS, only the lookouts act
+  loop while the words are their team's, n + 1 at most
+    L->>G: reveal (index)
+    G-->>S: view, the card turns over
+    G-->>L: view, the card turns over
+    G-->>O: view, the card turns over
+  end
+  L->>G: pass (or a wrong word, a reef, the limit)
+  G-->>S: view, SIGNAL, the other team's turn
+  G-->>L: view, SIGNAL, the other team's turn
+  G-->>O: view, SIGNAL, the other team's turn
 ```
 
 ## Tests

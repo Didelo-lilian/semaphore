@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import lookout from "../fixtures/room-lookout.json";
@@ -205,7 +205,7 @@ describe("Table", () => {
     const { unmount } = render(<Table room={room} {...props} />);
     const send = screen.getByRole("button", { name: "Envoyer le signal" });
     expect(send).toBeDisabled();
-    await userEvent.type(screen.getByLabelText("Ton signal"), "deux mots");
+    await userEvent.type(screen.getByLabelText("Ton signal"), "   ");
     expect(send).toBeDisabled();
     await userEvent.clear(screen.getByLabelText("Ton signal"));
     await userEvent.type(screen.getByLabelText("Ton signal"), "voyage");
@@ -221,6 +221,19 @@ describe("Table", () => {
     expect(
       screen.getByText("Le Signaleur de Tribord prépare son signal."),
     ).toBeInTheDocument();
+  });
+
+  it("leaves the rules of a word to the server", async () => {
+    const props = handlers();
+    const room = { ...(signaler.room as RoomView), turn: "BABORD" as const };
+    render(<Table room={room} {...props} />);
+    await userEvent.type(screen.getByLabelText("Ton signal"), "arc-en-ciel");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Envoyer le signal" }),
+    );
+    await waitFor(() =>
+      expect(props.onSignal).toHaveBeenCalledWith("arc-en-ciel", 1),
+    );
   });
 
   it("shows why the server refused a signal, next to the form", () => {
@@ -244,24 +257,63 @@ describe("Table", () => {
     render(<Table room={room} {...props} />);
     expect(screen.getByText(/encore 3 au plus/)).toBeInTheDocument();
     expect(screen.getByText("voyage")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Signal : voyage, 2.");
     await userEvent.click(screen.getByRole("button", { name: first }));
     expect(props.onReveal).toHaveBeenCalledWith(0);
     await userEvent.click(screen.getByRole("button", { name: "Passer" }));
     expect(props.onPass).toHaveBeenCalledOnce();
   });
 
-  it("does not offer a revealed word, and waits for the answer of the server", () => {
+  it("does not offer a revealed word, and waits for the answer of the server", async () => {
+    const props = handlers();
     const room = guessing(lookout.room as RoomView);
     room.board = room.board.map((card, index) =>
       index === 0 ? { ...card, revealed: true, kind: "BABORD" } : card,
     );
-    const { rerender } = render(<Table room={room} {...handlers()} />);
+    const { rerender } = render(<Table room={room} {...props} />);
     expect(
       screen.queryByRole("button", { name: room.board[0]?.word }),
     ).toBeNull();
     expect(document.querySelectorAll(".sem-word-button")).toHaveLength(23);
-    rerender(<Table room={room} {...handlers()} busy />);
+    rerender(<Table room={room} {...props} busy />);
     expect(screen.getByRole("button", { name: "Passer" })).toBeDisabled();
+    const second = screen.getByRole("button", { name: room.board[1]?.word });
+    expect(second).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(second);
+    expect(props.onReveal).not.toHaveBeenCalled();
+  });
+
+  it("asks before a player leaves a game in progress", async () => {
+    const props = handlers();
+    const { unmount } = render(
+      <Table room={lookout.room as RoomView} {...props} />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Quitter" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Quitter la partie ?",
+    });
+    expect(dialog).toHaveTextContent("Tu ne pourras pas reprendre ta place.");
+    expect(dialog).not.toHaveTextContent("Signaleur");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Rester" }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(props.onLeave).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Quitter" }));
+    await userEvent.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Quitter",
+      }),
+    );
+    expect(props.onLeave).toHaveBeenCalledOnce();
+    unmount();
+
+    render(<Table room={signaler.room as RoomView} {...handlers()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Quitter" }));
+    expect(await screen.findByRole("dialog")).toHaveTextContent(
+      "Tu es Signaleur : sans toi, la partie sera bloquée.",
+    );
   });
 
   it("gives the others nothing to click during a guess", () => {

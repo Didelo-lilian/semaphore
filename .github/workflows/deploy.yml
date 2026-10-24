@@ -1,0 +1,47 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+# Never cancel: a half-pushed image or a lost deploy trigger is worse than waiting.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  BACKEND_IMAGE: ghcr.io/didelo-lilian/semaphore
+  FRONT_IMAGE: ghcr.io/didelo-lilian/semaphore-front
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - run: |
+          docker build -t "$BACKEND_IMAGE:main" -t "$BACKEND_IMAGE:sha-${GITHUB_SHA::7}" backend
+          docker build -t "$FRONT_IMAGE:main" -t "$FRONT_IMAGE:sha-${GITHUB_SHA::7}" front
+          docker push --all-tags "$BACKEND_IMAGE"
+          docker push --all-tags "$FRONT_IMAGE"
+      # A GitHub App token, not GITHUB_TOKEN: GITHUB_TOKEN cannot start a workflow in another repository.
+      - uses: actions/create-github-app-token@v3
+        id: app
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: Didelo-lilian
+          repositories: infra
+      # Deploy app only restarts a stack on its new :main image, so it needs no approval; Server, which
+      # changes the server configuration, keeps its own.
+      - run: |
+          gh workflow run deploy-app.yml -R Didelo-lilian/infra -f stack=semaphore
+          gh workflow run deploy-app.yml -R Didelo-lilian/infra -f stack=play
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}

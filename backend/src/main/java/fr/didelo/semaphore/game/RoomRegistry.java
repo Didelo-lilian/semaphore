@@ -3,6 +3,7 @@ package fr.didelo.semaphore.game;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.Collection;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -47,6 +48,10 @@ public class RoomRegistry {
 
   public void drop(Room room) {
     rooms.remove(room.code(), room);
+  }
+
+  public Collection<Room> all() {
+    return rooms.values();
   }
 
   public Optional<Room> find(String code) {

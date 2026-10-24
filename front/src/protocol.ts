@@ -69,6 +69,7 @@ export type ClientMessage = (
   | { type: "createRoom"; name: string }
   | { type: "joinRoom"; code: string; name: string }
   | { type: "rejoin"; code: string; token: string }
+  | { type: "leave" }
   | { type: "joinTeam"; team: Team }
   | { type: "start" }
   | { type: "signal"; word: string; number: number }

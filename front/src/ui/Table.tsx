@@ -2,6 +2,7 @@ import { Alert, Button, Dialog } from "@didelo/design-system";
 import { useState } from "react";
 import type { Card, RoomView, Team } from "../protocol.ts";
 import { explain } from "../reasons.ts";
+import { Presence } from "./Presence.tsx";
 import { SignalForm } from "./SignalForm.tsx";
 import { TEAM_NAME, TeamMark } from "./TeamMark.tsx";
 
@@ -91,10 +92,21 @@ export const Table = ({
   const canReveal = room.phase === "GUESS" && inPlay && !signaler;
   const turn = room.turn === null ? "" : TEAM_NAME[room.turn];
   const ended = room.phase === "ENDED";
+  const inPlayers = room.players.filter((player) => player.team === room.turn);
+  const absentSignaler = inPlayers.find(
+    (player) => player.signaler && !player.connected,
+  );
+  const lookoutsAway = inPlayers
+    .filter((player) => !player.signaler)
+    .every((player) => !player.connected);
 
   let hint: string;
   if (ended) {
     hint = "La partie est terminée.";
+  } else if (room.phase === "SIGNAL" && absentSignaler !== undefined) {
+    hint = `${absentSignaler.name}, le Signaleur de ${turn}, est hors ligne : la partie l'attend.`;
+  } else if (room.phase === "GUESS" && lookoutsAway) {
+    hint = `Les Veilleurs de ${turn} sont hors ligne : la partie les attend.`;
   } else if (canSignal) {
     hint = "À toi : envoie un signal à tes Veilleurs.";
   } else if (room.phase === "SIGNAL") {
@@ -125,6 +137,7 @@ export const Table = ({
               </span>
             )}
           </output>
+          <Presence players={room.players} />
         </div>
         <Button
           variant="text"
@@ -161,7 +174,7 @@ export const Table = ({
               {room.players
                 .filter((player) => player.team === team)
                 .map((player) => (
-                  <li key={player.id}>
+                  <li key={player.id} data-online={player.connected}>
                     {player.name}
                     {player.id === room.you ? " (toi)" : ""}
                     {player.signaler ? " · Signaleur" : ""}

@@ -2,6 +2,7 @@ import { Alert, Button, Chip } from "@didelo/design-system";
 import { useState } from "react";
 import type { Player, RoomView, Team } from "../protocol.ts";
 import { explain } from "../reasons.ts";
+import { Presence } from "./Presence.tsx";
 import { TEAM_NAME, TeamMark } from "./TeamMark.tsx";
 
 const MIN_PER_TEAM = 2;
@@ -22,7 +23,7 @@ export const PlayerChip = ({
   player: Player;
   you: boolean;
 }) => (
-  <li>
+  <li data-online={player.connected}>
     <Chip
       label={[
         player.name,
@@ -42,7 +43,8 @@ export const Lobby = ({ room, error, onJoinTeam, onStart, onLeave }: Props) => {
   const me = room.players.find((player) => player.id === room.you);
   const link = `${window.location.origin}/?room=${room.code}`;
   const onTheDock = room.players.filter((player) => player.team === null);
-  const ready =
+  const away = room.players.filter((player) => !player.connected);
+  const teamsReady =
     onTheDock.length === 0 &&
     TEAMS.every(
       (team) =>
@@ -61,6 +63,7 @@ export const Lobby = ({ room, error, onJoinTeam, onStart, onLeave }: Props) => {
         <div>
           <h1 id="lobby-title">Salon</h1>
           <p className="sem-code sem-mono">{room.code}</p>
+          <Presence players={room.players} />
         </div>
         <div className="sem-actions">
           <Button variant="outlined" onClick={copy}>
@@ -131,15 +134,21 @@ export const Lobby = ({ room, error, onJoinTeam, onStart, onLeave }: Props) => {
             <Button
               variant="contained"
               size="large"
-              disabled={!ready}
+              disabled={!teamsReady || away.length > 0}
               onClick={onStart}
             >
               Lancer la partie
             </Button>
-            {!ready && (
+            {!teamsReady && (
               <p className="sem-hint">
                 Tout le monde doit avoir une équipe, avec au moins{" "}
                 {MIN_PER_TEAM} joueurs chacune.
+              </p>
+            )}
+            {away.length > 0 && (
+              <p className="sem-hint">
+                {away.map((player) => player.name).join(", ")} : hors ligne.
+                Lance la partie quand tout le monde est de retour.
               </p>
             )}
           </>

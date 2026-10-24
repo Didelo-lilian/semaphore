@@ -7,11 +7,11 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 
 /** A clock the test moves by hand. */
-class MutableClock extends Clock {
+public class MutableClock extends Clock {
 
   private Instant now = Instant.parse("2026-10-24T10:00:00Z");
 
-  void advance(Duration by) {
+  public void advance(Duration by) {
     now = now.plus(by);
   }
 

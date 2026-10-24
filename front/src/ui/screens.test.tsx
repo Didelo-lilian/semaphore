@@ -161,6 +161,134 @@ describe("Lobby", () => {
   });
 });
 
+describe("Presence", () => {
+  const noop = vi.fn();
+
+  it("counts who is online in the lobby, dims the others and holds the start", () => {
+    const players = [
+      player("a", "BABORD", true),
+      player("b", "BABORD"),
+      { ...player("c", "TRIBORD"), connected: false },
+      player("d", "TRIBORD"),
+    ];
+    render(
+      <Lobby
+        room={lobby({ players })}
+        error={null}
+        onJoinTeam={noop}
+        onStart={noop}
+        onLeave={noop}
+      />,
+    );
+    expect(screen.getByText("3 sur 4 en ligne")).toBeInTheDocument();
+    expect(screen.getByText("c · hors ligne").closest("li")).toHaveAttribute(
+      "data-online",
+      "false",
+    );
+    expect(screen.getByText("a (toi) · hôte").closest("li")).toHaveAttribute(
+      "data-online",
+      "true",
+    );
+    expect(
+      screen.getByRole("button", { name: "Lancer la partie" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText(
+        "c : hors ligne. Lance la partie quand tout le monde est de retour.",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("starts again once everybody is back", () => {
+    const players = [
+      player("a", "BABORD", true),
+      player("b", "BABORD"),
+      player("c", "TRIBORD"),
+      player("d", "TRIBORD"),
+    ];
+    render(
+      <Lobby
+        room={lobby({ players })}
+        error={null}
+        onJoinTeam={noop}
+        onStart={noop}
+        onLeave={noop}
+      />,
+    );
+    expect(screen.getByText("4 en ligne")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Lancer la partie" }),
+    ).toBeEnabled();
+    expect(screen.queryByText(/hors ligne/)).toBeNull();
+  });
+
+  const without = (room: RoomView, team: string, signaler: boolean) => ({
+    ...room,
+    players: room.players.map((p) =>
+      p.team === team && p.signaler === signaler
+        ? { ...p, connected: false }
+        : p,
+    ),
+  });
+  const props = {
+    busy: false,
+    error: null,
+    onSignal: vi.fn(),
+    onReveal: vi.fn(),
+    onPass: vi.fn(),
+    onLeave: vi.fn(),
+  };
+
+  it("says at the table who the game waits for: the Signaleur in play", () => {
+    render(
+      <Table
+        room={without(signaler.room as RoomView, "TRIBORD", true)}
+        {...props}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "Ben, le Signaleur de Tribord, est hors ligne : la partie l'attend.",
+      ),
+    ).toBeVisible();
+    expect(screen.getByText("3 sur 4 en ligne")).toBeInTheDocument();
+    expect(screen.getByText(/Ben · Signaleur/).closest("li")).toHaveAttribute(
+      "data-online",
+      "false",
+    );
+  });
+
+  it("says at the table who the game waits for: the lookouts in play", () => {
+    const room = {
+      ...without(signaler.room as RoomView, "BABORD", false),
+      phase: "GUESS" as const,
+      turn: "BABORD" as const,
+      signal: { word: "voyage", number: 2 },
+      revealsLeft: 3,
+    };
+    render(<Table room={room} {...props} />);
+    expect(
+      screen.getByText(
+        "Les Veilleurs de Bâbord sont hors ligne : la partie les attend.",
+      ),
+    ).toBeVisible();
+  });
+
+  it("does not say a Signaleur is missed while the lookouts are playing", () => {
+    const room = {
+      ...without(lookout.room as RoomView, "TRIBORD", true),
+      phase: "GUESS" as const,
+      turn: "TRIBORD" as const,
+      signal: { word: "voyage", number: 2 },
+      revealsLeft: 3,
+    };
+    render(<Table room={room} {...props} />);
+    expect(
+      screen.getByText("Les Veilleurs de Tribord cherchent."),
+    ).toBeVisible();
+  });
+});
+
 describe("Table", () => {
   // The fixtures are a game just started: Tribord is in play, `signaler` is the Signaleur of Bâbord and `lookout` a
   // lookout of Bâbord. These helpers move the turn to the player's own team and into the phase under test.

@@ -204,18 +204,58 @@ class WebSocketIT {
   }
 
   @Test
-  void aPlayerWhoLeavesTheLobbyIsGone() throws Exception {
+  void aPlayerWhoLeavesTheLobbyOnPurposeIsGoneAtOnce() throws Exception {
     var host = new Client(ALLOWED_ORIGIN);
     var code = createRoom(host, "Ana");
     var bob = playerIn(code, "Bob");
     host.await("roomUpdated", m -> sees(m, 2));
 
-    bob.close();
+    bob.send("{\"type\":\"leave\"}");
     host.await("roomUpdated", m -> sees(m, 1));
     var again = new Client(ALLOWED_ORIGIN);
     again.send(rejoin(bob));
 
     assertThat(again.error()).isEqualTo("unknown player");
+  }
+
+  @Test
+  void aPlayerWhoDropsFromTheLobbyShowsOfflineAndComesBackWithTheirSeat() throws Exception {
+    var host = new Client(ALLOWED_ORIGIN);
+    var code = createRoom(host, "Ana");
+    var bob = playerIn(code, "Bob");
+    bob.send("{\"type\":\"joinTeam\",\"team\":\"TRIBORD\"}");
+    host.await(
+        "roomUpdated",
+        m -> m.path("room").path("players").path(1).path("team").asString().equals("TRIBORD"));
+
+    bob.socket.abort();
+    var gone =
+        host.await(
+            "roomUpdated",
+            m -> !m.path("room").path("players").path(1).path("connected").asBoolean());
+    var again = new Client(ALLOWED_ORIGIN);
+    again.send(rejoin(bob));
+
+    assertThat(gone.path("room").path("players")).hasSize(2);
+    assertThat(again.await("joined").path("room").path("players").path(1).path("team").asString())
+        .isEqualTo("TRIBORD");
+    host.await(
+        "roomUpdated", m -> m.path("room").path("players").path(1).path("connected").asBoolean());
+  }
+
+  @Test
+  void aPlayerWhoLeavesAGameKeepsTheSeatOffline() throws Exception {
+    var players = startedGame();
+    var host = players.get(0);
+
+    players.get(3).send("{\"type\":\"leave\"}");
+    host.await(
+        "roomUpdated", m -> !m.path("room").path("players").path(3).path("connected").asBoolean());
+    var again = new Client(ALLOWED_ORIGIN);
+    again.send(rejoin(players.get(3)));
+
+    assertThat(again.await("joined").path("playerId").asString())
+        .isEqualTo(players.get(3).joined.path("playerId").asString());
   }
 
   @Test

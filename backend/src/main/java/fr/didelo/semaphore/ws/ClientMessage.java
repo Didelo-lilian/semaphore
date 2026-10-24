@@ -16,6 +16,7 @@ import fr.didelo.semaphore.game.Team;
   @JsonSubTypes.Type(value = ClientMessage.CreateRoom.class, name = "createRoom"),
   @JsonSubTypes.Type(value = ClientMessage.JoinRoom.class, name = "joinRoom"),
   @JsonSubTypes.Type(value = ClientMessage.Rejoin.class, name = "rejoin"),
+  @JsonSubTypes.Type(value = ClientMessage.Leave.class, name = "leave"),
   @JsonSubTypes.Type(value = ClientMessage.JoinTeam.class, name = "joinTeam"),
   @JsonSubTypes.Type(value = ClientMessage.Start.class, name = "start"),
   @JsonSubTypes.Type(value = ClientMessage.Signal.class, name = "signal"),
@@ -46,6 +47,9 @@ public sealed interface ClientMessage {
       requireNonNull(token);
     }
   }
+
+  /** Leaving a room on purpose. It has no answer: the player is no longer there to read it. */
+  record Leave(String id) implements ClientMessage {}
 
   record JoinTeam(String id, Team team) implements ClientMessage {
     public JoinTeam {

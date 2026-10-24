@@ -1,6 +1,6 @@
 # 3. Rooms, the state machine and the protocol
 
-Date: 2026-10-24 · Status: accepted
+Date: 2026-10-24 · Status: accepted, amended by [ADR 0006](0006-presence-and-disconnections.md)
 
 ## Context
 
@@ -75,6 +75,7 @@ sequenceDiagram
 | `createRoom {name}` | open a room and join it |
 | `joinRoom {code, name}` | join a room in its lobby |
 | `rejoin {code, token}` | come back after a lost connection |
+| `leave` | leave a room on purpose, with no answer ([ADR 0006](0006-presence-and-disconnections.md)) |
 | `joinTeam {team}`, `start`, `signal {word, number}`, `reveal {index}`, `pass` | the commands above |
 
 | Server sends | Meaning |
@@ -93,7 +94,7 @@ The id is the handler's business: `Room` never sees it, and `GameSocketHandler` 
 
 `RoomRegistry` keeps every room in memory under a five character code without `0`, `O`, `1`, `I` or `L`, since it is read aloud and typed. A room nobody is connected to for 30 minutes is dropped by a sweep that runs every minute, and so is a room nobody ever joined. A connection holds one seat: a second `createRoom`, `joinRoom` or `rejoin` on it is refused, and a room that could not be entered (a bad name) is dropped at once. A message with a missing field is as unreadable as broken JSON.
 
-A player is the connection that holds their token. In the lobby, closing the connection removes the player, so nobody absent blocks the start or keeps the host seat. Once the game has started, closing it only marks them disconnected and `rejoin` with the token gives the seat back; the new connection replaces the old one, which is closed, so a late close of the old one changes nothing.
+A player is the connection that holds their token. Closing the connection marks the player absent, in the lobby as in a game, and `rejoin` with the token gives the seat back; the new connection replaces the old one, which is closed, so a late close of the old one changes nothing. In the lobby the seat is kept for 30 seconds only and then the player is removed, so nobody absent blocks the start or keeps the host seat for long, and the host cannot start while someone is offline; leaving on purpose (`leave`) removes the player at once ([ADR 0006](0006-presence-and-disconnections.md)). Once the game has started the seat stays for good.
 
 Changes happen under the room's lock but the messages go out after it is released: a slow or broken connection (its buffer overflowing throws `SessionLimitExceededException`) never holds a room or stops the others from getting their view.
 
@@ -104,7 +105,7 @@ Changes happen under the room's lock but the messages go out after it is release
 ## Consequences
 
 - Messages are sent outside the room's lock, so two updates can reach a client out of order: the front keeps the view with the highest `version`.
-- A Signaleur who disconnects blocks the turn until they come back. This is a known limit of v0.1; a timeout that passes the turn is the next step if it happens in practice.
+- A Signaleur who disconnects blocks the turn until they come back. The table now says who the game is waiting for; a delay after which the turn passes is the second increment of [ADR 0006](0006-presence-and-disconnections.md).
 - A restart of the server loses every room. With several replicas a room lives in one of them: sticky sessions and Redis pub/sub come with the scaling step ([ADR 0002](0002-spring-boot-gradle-and-a-plain-websocket.md)), and `Room` does not change for it.
 - The records of `ClientMessage`, `ServerMessage` and `RoomView` are the contract the front validates with Zod ([#4](https://github.com/Didelo-lilian/semaphore/issues/4)).
 - A command that the server never answers is not timed out: only a lost connection rejects it.

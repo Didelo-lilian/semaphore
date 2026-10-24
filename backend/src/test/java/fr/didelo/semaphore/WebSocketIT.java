@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import tools.jackson.databind.JsonNode;
@@ -29,8 +30,10 @@ class WebSocketIT {
 
   @LocalServerPort int port;
 
+  // The application's own mapper, so the test reads the messages as the server writes them.
+  @Autowired JsonMapper json;
+
   private final HttpClient http = HttpClient.newHttpClient();
-  private final JsonMapper json = JsonMapper.builder().build();
   private final List<Client> clients = new ArrayList<>();
 
   /** One player's connection: what the server sends is parsed and queued. */

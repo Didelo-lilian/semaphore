@@ -9,12 +9,20 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.WebSocket;
 import java.net.http.WebSocketHandshakeException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
+import java.util.function.Predicate;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class WebSocketIT {
@@ -23,23 +31,139 @@ class WebSocketIT {
 
   @LocalServerPort int port;
 
-  private final HttpClient http = HttpClient.newHttpClient();
-  private final LinkedBlockingQueue<String> received = new LinkedBlockingQueue<>();
+  // The application's own mapper, so the test reads the messages as the server writes them.
+  @Autowired JsonMapper json;
 
-  private WebSocket connect(String origin) {
-    return http.newWebSocketBuilder()
-        .header("Origin", origin)
-        .buildAsync(
-            URI.create("ws://localhost:" + port + "/ws"),
-            new WebSocket.Listener() {
-              @Override
-              public CompletionStage<?> onText(WebSocket ws, CharSequence data, boolean last) {
-                received.add(data.toString());
-                ws.request(1);
-                return null;
-              }
-            })
-        .join();
+  private final HttpClient http = HttpClient.newHttpClient();
+  private final List<Client> clients = new ArrayList<>();
+
+  /** One player's connection: what the server sends is parsed, queued and the latest room kept. */
+  private final class Client {
+    private final LinkedBlockingQueue<JsonNode> received = new LinkedBlockingQueue<>();
+    private final WebSocket socket;
+    private volatile JsonNode joined;
+    private volatile JsonNode room;
+
+    Client(String origin) {
+      socket =
+          http.newWebSocketBuilder()
+              .header("Origin", origin)
+              .buildAsync(
+                  URI.create("ws://localhost:" + port + "/ws"),
+                  new WebSocket.Listener() {
+                    @Override
+                    public CompletionStage<?> onText(
+                        WebSocket ws, CharSequence data, boolean last) {
+                      var message = json.readTree(data.toString());
+                      var type = message.path("type").asString();
+                      if (type.equals("joined")) {
+                        joined = message;
+                      }
+                      if (type.equals("joined") || type.equals("roomUpdated")) {
+                        room = message.path("room");
+                      }
+                      received.add(message);
+                      ws.request(1);
+                      return null;
+                    }
+                  })
+              .join();
+      clients.add(this);
+    }
+
+    void send(String message) {
+      socket.sendText(message, true).join();
+    }
+
+    /** The next message of that type that satisfies the condition, others are skipped. */
+    JsonNode await(String type, Predicate<JsonNode> where) throws InterruptedException {
+      var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+      while (System.nanoTime() < deadline) {
+        var message = received.poll(100, TimeUnit.MILLISECONDS);
+        if (message != null
+            && message.path("type").asString().equals(type)
+            && where.test(message)) {
+          return message;
+        }
+      }
+      throw new AssertionError("no " + type + " message arrived in time");
+    }
+
+    JsonNode await(String type) throws InterruptedException {
+      return await(type, m -> true);
+    }
+
+    String error() throws InterruptedException {
+      return await("error").path("reason").asString();
+    }
+
+    JsonNode player(int index) {
+      return room.path("players").path(index);
+    }
+
+    void close() {
+      socket.sendClose(WebSocket.NORMAL_CLOSURE, "bye").join();
+    }
+  }
+
+  @AfterEach
+  void closeAll() {
+    clients.forEach(c -> c.socket.abort());
+  }
+
+  private static void eventually(BooleanSupplier condition) throws InterruptedException {
+    var deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+    while (!condition.getAsBoolean()) {
+      assertThat(System.nanoTime()).as("condition not met in time").isLessThan(deadline);
+      Thread.sleep(50);
+    }
+  }
+
+  private String createRoom(Client host, String name) throws InterruptedException {
+    host.send("{\"type\":\"createRoom\",\"name\":\"" + name + "\"}");
+    return host.await("joined").path("room").path("code").asString();
+  }
+
+  private Client playerIn(String code, String name) throws InterruptedException {
+    var client = new Client(ALLOWED_ORIGIN);
+    client.send("{\"type\":\"joinRoom\",\"code\":\"" + code + "\",\"name\":\"" + name + "\"}");
+    client.await("joined");
+    return client;
+  }
+
+  private static String rejoin(Client player) {
+    return "{\"type\":\"rejoin\",\"code\":\""
+        + player.room.path("code").asString()
+        + "\",\"token\":\""
+        + player.joined.path("token").asString()
+        + "\"}";
+  }
+
+  private static boolean sees(JsonNode update, int players) {
+    return update.path("room").path("players").size() == players;
+  }
+
+  /** Four players, two per team, game started: a1 and a2 on Bâbord, b1 and b2 on Tribord. */
+  private List<Client> startedGame() throws InterruptedException {
+    var host = new Client(ALLOWED_ORIGIN);
+    var code = createRoom(host, "a1");
+    var players = List.of(host, playerIn(code, "a2"), playerIn(code, "b1"), playerIn(code, "b2"));
+    for (var i = 0; i < players.size(); i++) {
+      players
+          .get(i)
+          .send("{\"type\":\"joinTeam\",\"team\":\"" + (i < 2 ? "BABORD" : "TRIBORD") + "\"}");
+    }
+    host.await(
+        "roomUpdated",
+        m ->
+            sees(m, 4)
+                && m.path("room").path("players").findValues("team").stream()
+                    .noneMatch(JsonNode::isNull));
+    host.send("{\"type\":\"start\"}");
+    for (var player : players) {
+      player.await("roomUpdated", m -> m.path("room").path("phase").asString().equals("SIGNAL"));
+    }
+    return players;
   }
 
   @Test
@@ -55,31 +179,148 @@ class WebSocketIT {
   }
 
   @Test
-  void echoesATypedMessage() throws Exception {
-    var ws = connect(ALLOWED_ORIGIN);
+  void aPlayerCreatesARoomAndGetsATokenToComeBack() throws Exception {
+    var host = new Client(ALLOWED_ORIGIN);
 
-    ws.sendText("{\"type\":\"echo\",\"text\":\"ahoy\"}", true).join();
+    host.send("{\"type\":\"createRoom\",\"name\":\"Ana\"}");
+    var joined = host.await("joined");
 
-    assertThat(received.poll(5, TimeUnit.SECONDS))
-        .isEqualTo("{\"type\":\"echoed\",\"text\":\"ahoy\"}");
+    assertThat(joined.path("room").path("code").asString()).matches("[A-HJKMN-Z2-9]{5}");
+    assertThat(joined.path("token").asString()).isNotBlank();
+    assertThat(joined.path("room").path("phase").asString()).isEqualTo("LOBBY");
+    assertThat(joined.path("room").path("players").get(0).path("host").asBoolean()).isTrue();
   }
 
   @Test
-  void answersAnErrorToAnUnreadableMessageAndStaysOpen() throws Exception {
-    var ws = connect(ALLOWED_ORIGIN);
+  void everyoneInTheRoomSeesANewcomer() throws Exception {
+    var host = new Client(ALLOWED_ORIGIN);
+    var code = createRoom(host, "Ana");
 
-    ws.sendText("{\"type\":\"nope\"}", true).join();
-    assertThat(received.poll(5, TimeUnit.SECONDS))
-        .isEqualTo("{\"type\":\"error\",\"reason\":\"unreadable message\"}");
+    playerIn(code, "Bob");
 
-    ws.sendText("{\"type\":\"echo\",\"text\":\"still here\"}", true).join();
-    assertThat(received.poll(5, TimeUnit.SECONDS))
-        .isEqualTo("{\"type\":\"echoed\",\"text\":\"still here\"}");
+    var update = host.await("roomUpdated", m -> sees(m, 2));
+    assertThat(update.path("room").path("players").path(1).path("name").asString())
+        .isEqualTo("Bob");
+  }
+
+  @Test
+  void aPlayerWhoLeavesTheLobbyIsGone() throws Exception {
+    var host = new Client(ALLOWED_ORIGIN);
+    var code = createRoom(host, "Ana");
+    var bob = playerIn(code, "Bob");
+    host.await("roomUpdated", m -> sees(m, 2));
+
+    bob.close();
+    host.await("roomUpdated", m -> sees(m, 1));
+    var again = new Client(ALLOWED_ORIGIN);
+    again.send(rejoin(bob));
+
+    assertThat(again.error()).isEqualTo("unknown player");
+  }
+
+  @Test
+  void aPlayerComesBackWithTheirTokenDuringTheGame() throws Exception {
+    var players = startedGame();
+    var host = players.get(0);
+    var lost = players.get(3);
+    var playerId = lost.joined.path("playerId").asString();
+
+    lost.socket.abort();
+    host.await(
+        "roomUpdated", m -> !m.path("room").path("players").path(3).path("connected").asBoolean());
+    var again = new Client(ALLOWED_ORIGIN);
+    again.send(rejoin(lost));
+
+    assertThat(again.await("joined").path("playerId").asString()).isEqualTo(playerId);
+    assertThat(
+            host.await(
+                "roomUpdated",
+                m -> m.path("room").path("players").path(3).path("connected").asBoolean()))
+        .isNotNull();
+  }
+
+  @Test
+  void aNewConnectionReplacesTheOldOneAndTheOldCloseChangesNothing() throws Exception {
+    var players = startedGame();
+    var host = players.get(0);
+    var old = players.get(3);
+
+    var again = new Client(ALLOWED_ORIGIN);
+    again.send(rejoin(old));
+    again.await("joined");
+    eventually(() -> old.socket.isInputClosed());
+    Thread.sleep(500);
+
+    assertThat(host.player(3).path("connected").asBoolean()).isTrue();
+  }
+
+  @Test
+  void theServerAnswersAnErrorAndKeepsTheConnectionOpen() throws Exception {
+    var client = new Client(ALLOWED_ORIGIN);
+
+    client.send("{\"type\":\"nope\"}");
+    assertThat(client.error()).isEqualTo("unreadable message");
+    client.send("{\"type\":\"joinRoom\",\"code\":\"00000\",\"name\":\"Ana\"}");
+    assertThat(client.error()).isEqualTo("no such room");
+    client.send("{\"type\":\"start\"}");
+    assertThat(client.error()).isEqualTo("join a room first");
+    client.send("{\"type\":\"createRoom\",\"name\":\"Ana\"}");
+    client.await("joined");
+    client.send("{\"type\":\"start\"}");
+    assertThat(client.error()).isEqualTo("everyone must pick a team");
+  }
+
+  @Test
+  void aMessageWithAMissingFieldIsRefusedAndTheConnectionStaysOpen() throws Exception {
+    var client = new Client(ALLOWED_ORIGIN);
+
+    client.send("{\"type\":\"createRoom\"}");
+    assertThat(client.error()).isEqualTo("unreadable message");
+    client.send("{\"type\":\"joinRoom\",\"name\":\"Ana\"}");
+    assertThat(client.error()).isEqualTo("unreadable message");
+    client.send("{\"type\":\"signal\",\"number\":1}");
+    assertThat(client.error()).isEqualTo("unreadable message");
+    client.send("{\"type\":\"joinTeam\"}");
+    assertThat(client.error()).isEqualTo("unreadable message");
+
+    assertThat(createRoom(client, "Ana")).hasSize(5);
+  }
+
+  @Test
+  void aConnectionOnlyEntersOneRoom() throws Exception {
+    var client = new Client(ALLOWED_ORIGIN);
+    var code = createRoom(client, "Ana");
+
+    client.send("{\"type\":\"createRoom\",\"name\":\"Ana\"}");
+    assertThat(client.error()).isEqualTo("you are already in a room");
+    client.send("{\"type\":\"joinRoom\",\"code\":\"" + code + "\",\"name\":\"Ana\"}");
+    assertThat(client.error()).isEqualTo("you are already in a room");
+    client.send(rejoin(client));
+    assertThat(client.error()).isEqualTo("you are already in a room");
+  }
+
+  @Test
+  void aGameStartsAndOnlyTheSignaleursReceiveTheKey() throws Exception {
+    var players = startedGame();
+
+    var withKey = new ArrayList<Integer>();
+    for (var i = 0; i < players.size(); i++) {
+      var board = players.get(i).room.path("board");
+      assertThat(board).hasSize(24);
+      var seesKey = board.get(0).path("kind").isString();
+      board.forEach(card -> assertThat(card.path("kind").isString()).isEqualTo(seesKey));
+      if (seesKey) {
+        withKey.add(i);
+      }
+    }
+
+    // a1 and b1 joined their team first: they are the Signaleurs for the whole grid.
+    assertThat(withKey).containsExactly(0, 2);
   }
 
   @Test
   void refusesAnotherOrigin() {
-    assertThatThrownBy(() -> connect("https://evil.example"))
+    assertThatThrownBy(() -> new Client("https://evil.example"))
         .hasCauseInstanceOf(WebSocketHandshakeException.class);
   }
 }

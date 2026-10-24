@@ -24,7 +24,8 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * One connection per player. What changes a room happens under the room's lock; what goes back to
  * the players is built there and sent after the lock is released, so a slow connection never holds
- * a room. Each view carries the room's version, so a client drops one that arrives late.
+ * a room. Each view carries the room's version, so a client drops one that arrives late. The answer
+ * to a message carries the message's id, and what goes to the other players carries none.
  */
 @Component
 @RequiredArgsConstructor
@@ -56,25 +57,29 @@ public class GameSocketHandler extends TextWebSocketHandler {
   @Override
   protected void handleTextMessage(WebSocketSession raw, TextMessage message) {
     var session = sessions.get(raw.getId());
+    // Stays null for a message too broken to read: there is no id to answer it with.
+    String id = null;
     try {
       var incoming = json.readValue(message.getPayload(), ClientMessage.class);
+      id = incoming.id();
       deliver(
           switch (incoming) {
-            case ClientMessage.CreateRoom create -> create(session, create.name());
-            case ClientMessage.JoinRoom join -> enter(session, room(join.code()), join.name());
+            case ClientMessage.CreateRoom create -> create(session, id, create.name());
+            case ClientMessage.JoinRoom join -> enter(session, id, room(join.code()), join.name());
             case ClientMessage.Rejoin rejoin -> rejoin(session, rejoin);
-            case ClientMessage.JoinTeam join -> command(session, new Command.JoinTeam(join.team()));
-            case ClientMessage.Start start -> command(session, new Command.Start());
+            case ClientMessage.JoinTeam join ->
+                command(session, id, new Command.JoinTeam(join.team()));
+            case ClientMessage.Start start -> command(session, id, new Command.Start());
             case ClientMessage.Signal signal ->
-                command(session, new Command.Signal(signal.word(), signal.number()));
+                command(session, id, new Command.Signal(signal.word(), signal.number()));
             case ClientMessage.Reveal reveal ->
-                command(session, new Command.Reveal(reveal.index()));
-            case ClientMessage.Pass pass -> command(session, new Command.Pass());
+                command(session, id, new Command.Reveal(reveal.index()));
+            case ClientMessage.Pass pass -> command(session, id, new Command.Pass());
           });
     } catch (JacksonException e) {
-      deliver(List.of(new Delivery(session, new ServerMessage.Error("unreadable message"))));
+      deliver(List.of(new Delivery(session, new ServerMessage.Error(id, "unreadable message"))));
     } catch (IllegalMove e) {
-      deliver(List.of(new Delivery(session, new ServerMessage.Error(e.getMessage()))));
+      deliver(List.of(new Delivery(session, new ServerMessage.Error(id, e.getMessage()))));
     }
   }
 
@@ -87,7 +92,7 @@ public class GameSocketHandler extends TextWebSocketHandler {
       List<Delivery> deliveries;
       synchronized (seat.room()) {
         seat.room().disconnect(seat.playerId());
-        deliveries = views(seat.room());
+        deliveries = views(seat.room(), null, null);
       }
       deliver(deliveries);
     }
@@ -99,20 +104,20 @@ public class GameSocketHandler extends TextWebSocketHandler {
     session.close(CloseStatus.SERVER_ERROR);
   }
 
-  private List<Delivery> create(WebSocketSession session, String name) {
+  private List<Delivery> create(WebSocketSession session, String id, String name) {
     var room = rooms.create();
     try {
-      return enter(session, room, name);
+      return enter(session, id, room, name);
     } catch (IllegalMove e) {
       rooms.drop(room);
       throw e;
     }
   }
 
-  private List<Delivery> enter(WebSocketSession session, Room room, String name) {
+  private List<Delivery> enter(WebSocketSession session, String id, Room room, String name) {
     synchronized (room) {
       requireToEnter(session, room);
-      return welcome(session, room, room.join(name));
+      return welcome(session, id, room, room.join(name));
     }
   }
 
@@ -137,7 +142,7 @@ public class GameSocketHandler extends TextWebSocketHandler {
                 return same;
               });
       room.reconnect(player.getId());
-      deliveries = welcome(session, room, player);
+      deliveries = welcome(session, rejoin.id(), room, player);
     }
     replaced.stream()
         .filter(Objects::nonNull)
@@ -152,7 +157,7 @@ public class GameSocketHandler extends TextWebSocketHandler {
     return deliveries;
   }
 
-  private List<Delivery> command(WebSocketSession session, Command command) {
+  private List<Delivery> command(WebSocketSession session, String id, Command command) {
     var seat = seats.get(session.getId());
     if (seat == null) {
       throw new IllegalMove("join a room first");
@@ -163,7 +168,7 @@ public class GameSocketHandler extends TextWebSocketHandler {
         throw new IllegalMove("join a room first");
       }
       seat.room().apply(seat.playerId(), command);
-      return views(seat.room());
+      return views(seat.room(), session.getId(), id);
     }
   }
 
@@ -184,30 +189,32 @@ public class GameSocketHandler extends TextWebSocketHandler {
     }
   }
 
-  private List<Delivery> welcome(WebSocketSession session, Room room, Player player) {
+  private List<Delivery> welcome(WebSocketSession session, String id, Room room, Player player) {
     seats.put(session.getId(), new Seat(room, player.getId()));
     var deliveries = new ArrayList<Delivery>();
     deliveries.add(
         new Delivery(
             session,
             new ServerMessage.Joined(
-                player.getId(), player.getToken(), room.viewFor(player.getId()))));
-    deliveries.addAll(views(room));
+                id, player.getId(), player.getToken(), room.viewFor(player.getId()))));
+    deliveries.addAll(views(room, null, null));
     return deliveries;
   }
 
   /**
    * Every connected player of the room gets their own view: only the Signaleurs see the hidden
-   * cards.
+   * cards. The view of the connection that sent the message carries its id, the others none.
    */
-  private List<Delivery> views(Room room) {
+  private List<Delivery> views(Room room, String senderSessionId, String id) {
     return seats.entrySet().stream()
         .filter(entry -> entry.getValue().room() == room && sessions.containsKey(entry.getKey()))
         .map(
             entry ->
                 new Delivery(
                     sessions.get(entry.getKey()),
-                    new ServerMessage.RoomUpdated(room.viewFor(entry.getValue().playerId()))))
+                    new ServerMessage.RoomUpdated(
+                        entry.getKey().equals(senderSessionId) ? id : null,
+                        room.viewFor(entry.getValue().playerId()))))
         .toList();
   }
 

@@ -1,0 +1,37 @@
+{
+  "type": "roomUpdated",
+  "id": "3",
+  "room": {
+    "code": "77STE",
+    "version": 3,
+    "phase": "LOBBY",
+    "turn": null,
+    "signal": null,
+    "revealsLeft": 0,
+    "flags": {
+      "BABORD": 2,
+      "TRIBORD": 2
+    },
+    "winner": null,
+    "players": [
+      {
+        "id": "2fdf93e9-81fe-4496-8370-25af6c4eea8c",
+        "name": "Ana",
+        "team": "BABORD",
+        "connected": true,
+        "host": true,
+        "signaler": false
+      },
+      {
+        "id": "c64485fa-bece-4901-befc-7686ea6038e4",
+        "name": "Bob",
+        "team": null,
+        "connected": true,
+        "host": false,
+        "signaler": false
+      }
+    ],
+    "board": [],
+    "you": "2fdf93e9-81fe-4496-8370-25af6c4eea8c"
+  }
+}

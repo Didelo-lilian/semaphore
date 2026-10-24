@@ -57,16 +57,16 @@ sequenceDiagram
   participant H as GameSocketHandler
   participant R as Room
   participant L as Lookouts' browsers
-  S->>H: {"type":"signal","word":"voyage","number":2}
+  S->>H: {"type":"signal","id":"7","word":"voyage","number":2}
   H->>R: apply(player, Signal), under the room's lock
   alt refused
     R-->>H: IllegalMove(reason)
-    H-->>S: {"type":"error","reason":"..."}
+    H-->>S: {"type":"error","id":"7","reason":"..."}
   else accepted
     R-->>H: the room has changed
     Note over H: one view per player is built under the lock,<br/>the sends happen after it is released
-    H-->>S: roomUpdated, the view with the key
-    H-->>L: roomUpdated, the view without the key
+    H-->>S: roomUpdated with id 7, the view with the key
+    H-->>L: roomUpdated without id, the view without the key
   end
 ```
 
@@ -79,9 +79,15 @@ sequenceDiagram
 
 | Server sends | Meaning |
 |---|---|
-| `joined {playerId, token, room}` | once, to the player who got in; the token is how they come back |
-| `roomUpdated {room}` | to every connected player of the room after each change, each with their view |
-| `error {reason}` | to the sender only; the connection stays open |
+| `joined {id?, playerId, token, room}` | once, to the player who got in; the token is how they come back |
+| `roomUpdated {id?, room}` | to every connected player of the room after each change, each with their view |
+| `error {id?, reason}` | to the sender only; the connection stays open |
+
+### Request ids
+
+Every client message may carry an `id`, a string the client picks (the front counts from 1 on each page load, and the `rejoin` that takes a seat back carries one too). The server echoes it on the answer to that message and nowhere else: the `joined` that answers a `createRoom`, `joinRoom` or `rejoin`, the `roomUpdated` that goes to the sender of a command, or the `error` that refuses it. The views sent to the other players, and the one the joiner gets after their `joined`, carry none, and the key is absent from the JSON rather than `null`. A client can therefore tell the answer to its own command from an update caused by someone else, even when the two arrive in any order.
+
+The id is the handler's business: `Room` never sees it, and `GameSocketHandler` threads it from the message to the views it builds. A message too broken to read has no id to echo, so its `error` carries none. The id is optional on the wire in both directions, so the contract changed without a flag day: a front from before it sends no id and gets none back, and a server from before it ignores the id a newer front sends (the front then settles its commands in order, see [ADR 0004](0004-a-react-front-on-the-design-system.md)).
 
 ### Rooms
 
@@ -101,4 +107,5 @@ Changes happen under the room's lock but the messages go out after it is release
 - A Signaleur who disconnects blocks the turn until they come back. This is a known limit of v0.1; a timeout that passes the turn is the next step if it happens in practice.
 - A restart of the server loses every room. With several replicas a room lives in one of them: sticky sessions and Redis pub/sub come with the scaling step ([ADR 0002](0002-spring-boot-gradle-and-a-plain-websocket.md)), and `Room` does not change for it.
 - The records of `ClientMessage`, `ServerMessage` and `RoomView` are the contract the front validates with Zod ([#4](https://github.com/Didelo-lilian/semaphore/issues/4)).
+- A command that the server never answers is not timed out: only a lost connection rejects it.
 - Twelve players, two per team at least and 160 words are constants or configuration, not rules: they can move without touching the state machine.

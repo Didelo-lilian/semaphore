@@ -45,19 +45,27 @@ export const roomViewSchema = z.object({
 });
 export type RoomView = z.infer<typeof roomViewSchema>;
 
+// The id of the client message this answers, absent from what the server sends to the other players.
+const answeredId = z.string().optional();
+
 export const serverMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("joined"),
+    id: answeredId,
     playerId: z.string(),
     token: z.string(),
     room: roomViewSchema,
   }),
-  z.object({ type: z.literal("roomUpdated"), room: roomViewSchema }),
-  z.object({ type: z.literal("error"), reason: z.string() }),
+  z.object({
+    type: z.literal("roomUpdated"),
+    id: answeredId,
+    room: roomViewSchema,
+  }),
+  z.object({ type: z.literal("error"), id: answeredId, reason: z.string() }),
 ]);
 export type ServerMessage = z.infer<typeof serverMessageSchema>;
 
-export type ClientMessage =
+export type ClientMessage = (
   | { type: "createRoom"; name: string }
   | { type: "joinRoom"; code: string; name: string }
   | { type: "rejoin"; code: string; token: string }
@@ -65,4 +73,8 @@ export type ClientMessage =
   | { type: "start" }
   | { type: "signal"; word: string; number: number }
   | { type: "reveal"; index: number }
-  | { type: "pass" };
+  | { type: "pass" }
+) & {
+  // The server echoes it on its answer to this message.
+  id?: string;
+};

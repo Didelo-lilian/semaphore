@@ -32,11 +32,17 @@ const room = () =>
   queryClient.getQueryData<{ code: string; version: number }>(roomKey);
 
 const last = FakeSocket.last;
+// What the server sends because of someone else: no id.
 const withVersion = (version: number) => ({
-  ...joined,
   type: "roomUpdated",
   room: { ...joined.room, version },
 });
+const seated = async (client: GameClient) => {
+  const created = client.request({ type: "createRoom", name: "Ana" });
+  last().accept();
+  last().answer(joined);
+  await created;
+};
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -95,7 +101,7 @@ describe("GameClient", () => {
     client.start();
     last().accept();
     expect(last().sent).toEqual([
-      { type: "rejoin", code: "ABCDE", token: "t" },
+      { type: "rejoin", id: expect.any(String), code: "ABCDE", token: "t" },
     ]);
   });
 
@@ -104,7 +110,7 @@ describe("GameClient", () => {
     const client = connect(store);
     client.start();
     last().accept();
-    last().receive({ type: "error", reason: "no such room" });
+    last().answer({ type: "error", reason: "no such room" });
     expect(store.load()).toBeNull();
     expect(room()).toBeUndefined();
     expect(client.getSnapshot()).toEqual({
@@ -130,7 +136,7 @@ describe("GameClient", () => {
     expect(FakeSocket.all).toHaveLength(3);
     last().accept();
     expect(last().sent).toEqual([
-      { type: "rejoin", code: "ABCDE", token: "t" },
+      { type: "rejoin", id: expect.any(String), code: "ABCDE", token: "t" },
     ]);
     expect(client.getSnapshot().connection).toBe("open");
   });
@@ -166,20 +172,92 @@ describe("GameClient", () => {
     const client = connect(memoryStore());
     const created = client.request({ type: "createRoom", name: "Ana" });
     last().accept();
-    last().receive(joined);
+    last().answer(joined);
     await expect(created).resolves.toMatchObject({ code: joined.room.code });
+  });
+
+  it("matches each of two commands in flight with its own answer", async () => {
+    const client = connect(memoryStore());
+    await seated(client);
+    let firstSettled = false;
+    const first = client
+      .request({ type: "joinTeam", team: "BABORD" })
+      .then((room) => {
+        firstSettled = true;
+        return room;
+      });
+    const second = client.request({ type: "reveal", index: 3 });
+    const [, idOfFirst, idOfSecond] = last().sent.map((message) => message.id);
+    expect(idOfFirst).not.toBe(idOfSecond);
+
+    last().answer(withVersion(5), 2);
+    await expect(second).resolves.toMatchObject({ version: 5 });
+    expect(firstSettled).toBe(false);
+    last().answer(withVersion(6), 1);
+    await expect(first).resolves.toMatchObject({ version: 6 });
+  });
+
+  it("does not settle a command with an update caused by someone else", async () => {
+    const client = connect(memoryStore());
+    await seated(client);
+    let settled = false;
+    const reveal = client.request({ type: "reveal", index: 3 }).then(() => {
+      settled = true;
+    });
+
+    last().receive(withVersion(5));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+    expect(room()?.version).toBe(5);
+
+    last().answer(withVersion(6));
+    await reveal;
+    expect(settled).toBe(true);
+  });
+
+  it("settles the oldest command with an answer without id while the server echoes none", async () => {
+    const client = connect(memoryStore());
+    const created = client.request({ type: "createRoom", name: "Ana" });
+    const started = client.request({ type: "start" });
+    last().accept();
+    const { id, ...withoutId } = joined;
+    last().receive(withoutId);
+    await expect(created).resolves.toMatchObject({ code: joined.room.code });
+    last().receive(withVersion(5));
+    await expect(started).resolves.toMatchObject({ version: 5 });
   });
 
   it("rejects a command the server refuses, and only that one", async () => {
     const client = connect(memoryStore());
     const refused = client.request({ type: "start" });
     last().accept();
-    last().receive({
+    last().answer({
       type: "error",
       reason: "each team needs at least 2 players",
     });
     await expect(refused).rejects.toThrow("each team needs at least 2 players");
     expect(client.getSnapshot().error).toBeNull();
+  });
+
+  it("rejects only the command a refusal answers, a refusal without id none", async () => {
+    const client = connect(memoryStore());
+    await seated(client);
+    let rejected = false;
+    const start = client.request({ type: "start" }).catch(() => {
+      rejected = true;
+    });
+    const pass = client.request({ type: "pass" });
+
+    last().answer({ type: "error", reason: "not your turn" }, 2);
+    await expect(pass).rejects.toThrow("not your turn");
+    last().receive({ type: "error", reason: "unknown player" });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(rejected).toBe(false);
+    expect(client.getSnapshot().error).toBe("unknown player");
+
+    last().answer(withVersion(5), 1);
+    await start;
+    expect(rejected).toBe(false);
   });
 
   it("shows a refusal nobody was waiting for", () => {

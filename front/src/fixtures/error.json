@@ -1,4 +1,5 @@
 {
   "type": "error",
+  "id": "5",
   "reason": "each team needs at least 2 players"
 }

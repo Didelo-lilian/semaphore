@@ -42,12 +42,14 @@ stateDiagram-v2
 ### Roles
 
 - The Signaleur is not picked: it is the first member of the team in the order they joined the room, and it stays for the whole grid. It cannot rotate between turns, because a former Signaleur who becomes a lookout still knows the key and the signal would no longer matter. Rotation comes with a rematch on a new grid.
-- The host is the first player of the room. Only they start the game, once everyone has a team and each team has at least two players (`semaphore.min-team-size`). A room holds twelve players. Nobody joins once the game has started.
+- The host is the first player of the room. Only they start the game, once everyone has a team and each team has at least two players (`semaphore.min-team-size`). A room holds twelve players. Nobody joins as a player once the game has started; they may watch it ([ADR 0006](0006-presence-and-disconnections.md)).
 - The starting team is drawn at random, as are the grid and the key.
 
 ### What a player sees
 
-Each player receives their own view of the room, never the room itself. The kind of a card (Bâbord, Tribord, calm waters, reef) is in the view only if the card is revealed, if the game is over, or if the viewer is a Signaleur: both Signaleurs see the key, the lookouts of both teams do not. The kind of a hidden card is therefore never on the wire to a lookout, and a test checks it over a real WebSocket. Every view carries the room's `version`, which grows with each change, so a client that receives two views out of order keeps the one with the highest version. It also carries `turnPassesIn`, the seconds left before the turn passes when the game waits for someone who is away, or null ([ADR 0006](0006-presence-and-disconnections.md)).
+Each player receives their own view of the room, never the room itself. The kind of a card (Bâbord, Tribord, calm waters, reef) is in the view only if the card is revealed, if the game is over, or if the viewer is a Signaleur: both Signaleurs see the key, the lookouts of both teams do not. The kind of a hidden card is therefore never on the wire to a lookout, and a test checks it over a real WebSocket. Every view carries the room's `version`, which grows with each change, so a client that receives two views out of order keeps the one with the highest version. It also carries `turnPassesIn`, the seconds left before the turn passes when the game waits for someone who is away, or null, and `spectators`, how many people watch the game ([ADR 0006](0006-presence-and-disconnections.md)).
+
+A spectator has no player: their view has `you` null, shows the kind of a card as a lookout's does (revealed cards, and the whole key once the game has ended) and is the same for every spectator, so it is built once per change however many there are. The key never reaches them before the end: a test builds their view after every move of a game, and another reads every message a spectator receives from a real WebSocket.
 
 ### The messages
 
@@ -77,26 +79,29 @@ sequenceDiagram
 | `createRoom {name}` | open a room and join it |
 | `joinRoom {code, name}` | join a room in its lobby |
 | `rejoin {code, token}` | come back after a lost connection |
+| `watch {code}` | watch a game in progress without a seat, answered by a view with no player of one's own ([ADR 0006](0006-presence-and-disconnections.md)) |
 | `leave` | leave a room on purpose, with no answer ([ADR 0006](0006-presence-and-disconnections.md)) |
 | `joinTeam {team}`, `start`, `signal {word, number}`, `reveal {index}`, `pass` | the commands above |
 
 | Server sends | Meaning |
 |---|---|
 | `joined {id?, playerId, token, room}` | once, to the player who got in; the token is how they come back |
-| `roomUpdated {id?, room}` | to every connected player of the room after each change, each with their view |
+| `roomUpdated {id?, room}` | to every connected player and spectator of the room after each change, each with their view; it is also the answer to `watch`, which has no `joined` since a spectator has no id of their own and no token |
 | `error {id?, reason}` | to the sender only; the connection stays open |
 
 ### Request ids
 
-Every client message may carry an `id`, a string the client picks (the front counts from 1 on each page load). The server echoes it on the answer to that message and nowhere else: the `joined` that answers a `createRoom`, `joinRoom` or `rejoin`, the `roomUpdated` that goes to the sender of a command, or the `error` that refuses it. The views sent to the other players, and the one the joiner gets after their `joined`, carry none, and the key is absent from the JSON rather than `null`. A client can therefore tell the answer to its own command from an update caused by someone else, even when the two arrive in any order.
+Every client message may carry an `id`, a string the client picks (the front counts from 1 on each page load). The server echoes it on the answer to that message and nowhere else: the `joined` that answers a `createRoom`, `joinRoom` or `rejoin`, the `roomUpdated` that goes to the sender of a command or answers a `watch`, or the `error` that refuses it. The views sent to the other players, and the one the joiner gets after their `joined`, carry none, and the key is absent from the JSON rather than `null`. A client can therefore tell the answer to its own command from an update caused by someone else, even when the two arrive in any order.
 
 The id is the handler's business: `Room` never sees it, and `GameSocketHandler` threads it from the message to the views it builds. A message too broken to read has no id to echo, so its `error` carries none. The id is optional on the wire in both directions, because it was introduced without a flag day: the front and the backend are deployed separately and each had to cope with the other being one version behind. Both have been deployed since v0.2.0, so the front now settles a command only with the answer that carries its id (see [ADR 0004](0004-a-react-front-on-the-design-system.md)).
 
 ### Rooms
 
-`RoomRegistry` keeps every room in memory under a five character code without `0`, `O`, `1`, `I` or `L`, since it is read aloud and typed. A room nobody is connected to for 30 minutes is dropped by a sweep that runs every minute, and so is a room nobody ever joined. A connection holds one seat: a second `createRoom`, `joinRoom` or `rejoin` on it is refused, and a room that could not be entered (a bad name) is dropped at once. A message with a missing field is as unreadable as broken JSON.
+`RoomRegistry` keeps every room in memory under a five character code without `0`, `O`, `1`, `I` or `L`, since it is read aloud and typed. A room none of whose players is connected for 30 minutes is dropped by a sweep that runs every minute, and so is a room nobody ever joined: spectators do not keep a room alive. A connection holds one seat, or watches: a second `createRoom`, `joinRoom` or `rejoin` on it is refused, and a room that could not be entered (a bad name) is dropped at once. A message with a missing field is as unreadable as broken JSON.
 
 A player is the connection that holds their token. Closing the connection marks the player absent, in the lobby as in a game, and `rejoin` with the token gives the seat back; the new connection replaces the old one, which is closed, so a late close of the old one changes nothing. In the lobby the seat is kept for 30 seconds only and then the player is removed, so nobody absent blocks the start or keeps the host seat for long, and the host cannot start while someone is offline; leaving on purpose (`leave`) removes the player at once ([ADR 0006](0006-presence-and-disconnections.md)). Once the game has started the seat stays for good, and a missing Signaleur costs their team its turns, then the game ([ADR 0006](0006-presence-and-disconnections.md)): the sweep that runs every second passes the turn after 60 seconds away, at once for someone who left on purpose, and ends the game when a Signaleur has been away for 5 minutes. Nobody replaces a Signaleur: the key stays with the first of the team.
+
+A spectator is a connection with no seat and no token, which the room only counts: closing it, or `leave`, takes them off the count at once, and a reload goes back through the invitation link. Every command of a spectator is refused ("spectators cannot play"), as is entering a room again.
 
 Changes happen under the room's lock but the messages go out after it is released: a slow or broken connection (its buffer overflowing throws `SessionLimitExceededException`) never holds a room or stops the others from getting their view.
 

@@ -32,6 +32,7 @@ public final class Room {
   public static final int FLAGS = 2;
   public static final int MAX_NUMBER = 4;
   public static final int MAX_PLAYERS = 12;
+  public static final int MAX_SPECTATORS = 20;
   // Longer than a reload or the front's first retries, short enough not to wait for a ghost.
   public static final Duration LOBBY_GRACE = Duration.ofSeconds(30);
   // Longer than a reload or a bad network: only a player who stays away costs their team the turn.
@@ -50,6 +51,8 @@ public final class Room {
       new EnumMap<>(Map.of(Team.BABORD, FLAGS, Team.TRIBORD, FLAGS));
   private List<Card> board = List.of();
   private Phase phase = Phase.LOBBY;
+  // Spectators have no seat and no token, so the room only counts them: they never keep it alive.
+  private int spectators;
   private Team turn;
   private ActiveSignal signal;
   private int revealsLeft;
@@ -97,6 +100,23 @@ public final class Room {
     lastActivity = clock.instant();
     version++;
     return player;
+  }
+
+  /** Counts one more spectator. A lobby has no game to watch: whoever comes to it plays. */
+  public void watch() {
+    if (phase == Phase.LOBBY) {
+      throw new IllegalMove("the game has not started");
+    }
+    if (spectators >= MAX_SPECTATORS) {
+      throw new IllegalMove("too many spectators");
+    }
+    spectators++;
+    version++;
+  }
+
+  public void unwatch() {
+    spectators--;
+    version++;
   }
 
   public void disconnect(String playerId) {
@@ -200,10 +220,21 @@ public final class Room {
   }
 
   public RoomView viewFor(String playerId) {
+    return view(players.get(playerId));
+  }
+
+  /** What a lookout sees, from no seat: the same for every spectator, so it is built once. */
+  public RoomView spectatorView() {
+    return view(null);
+  }
+
+  private RoomView view(Player viewer) {
     var now = clock.instant();
-    var viewer = players.get(playerId);
     var holdsKey =
-        phase != Phase.LOBBY && viewer.getTeam() != null && signaler(viewer.getTeam()) == viewer;
+        phase != Phase.LOBBY
+            && viewer != null
+            && viewer.getTeam() != null
+            && signaler(viewer.getTeam()) == viewer;
     var host = players.values().iterator().next();
     return new RoomView(
         code,
@@ -228,6 +259,7 @@ public final class Room {
                         p == host,
                         phase != Phase.LOBBY && p.getTeam() != null && signaler(p.getTeam()) == p))
             .toList(),
+        spectators,
         board.stream()
             .map(
                 c ->
@@ -236,7 +268,7 @@ public final class Room {
                         c.revealed(),
                         c.revealed() || holdsKey || phase == Phase.ENDED ? c.kind() : null))
             .toList(),
-        playerId);
+        viewer == null ? null : viewer.getId());
   }
 
   private void start(Player player) {

@@ -3,6 +3,7 @@ package fr.didelo.semaphore;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import fr.didelo.semaphore.game.Room;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -12,10 +13,12 @@ import java.net.http.WebSocketHandshakeException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Predicate;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,6 +43,8 @@ class WebSocketIT {
   /** One player's connection: what the server sends is parsed, queued and the latest room kept. */
   private final class Client {
     private final LinkedBlockingQueue<JsonNode> received = new LinkedBlockingQueue<>();
+    // Everything the server sent, whatever the test waited for.
+    private final List<JsonNode> history = new CopyOnWriteArrayList<>();
     private final WebSocket socket;
     private volatile JsonNode joined;
     private volatile JsonNode room;
@@ -51,18 +56,26 @@ class WebSocketIT {
               .buildAsync(
                   URI.create("ws://localhost:" + port + "/ws"),
                   new WebSocket.Listener() {
+                    // A message may arrive in several parts: only the last one completes the JSON.
+                    private final StringBuilder part = new StringBuilder();
+
                     @Override
                     public CompletionStage<?> onText(
                         WebSocket ws, CharSequence data, boolean last) {
-                      var message = json.readTree(data.toString());
-                      var type = message.path("type").asString();
-                      if (type.equals("joined")) {
-                        joined = message;
+                      part.append(data);
+                      if (last) {
+                        var message = json.readTree(part.toString());
+                        part.setLength(0);
+                        var type = message.path("type").asString();
+                        if (type.equals("joined")) {
+                          joined = message;
+                        }
+                        if (type.equals("joined") || type.equals("roomUpdated")) {
+                          room = message.path("room");
+                        }
+                        history.add(message);
+                        received.add(message);
                       }
-                      if (type.equals("joined") || type.equals("roomUpdated")) {
-                        room = message.path("room");
-                      }
-                      received.add(message);
                       ws.request(1);
                       return null;
                     }
@@ -137,6 +150,51 @@ class WebSocketIT {
         + "\",\"token\":\""
         + player.joined.path("token").asString()
         + "\"}";
+  }
+
+  private Client spectatorOf(String code) throws InterruptedException {
+    var client = new Client(ALLOWED_ORIGIN);
+    client.send("{\"type\":\"watch\",\"id\":\"w\",\"code\":\"" + code + "\"}");
+    client.await("roomUpdated", m -> m.path("id").asString().equals("w"));
+    return client;
+  }
+
+  private static boolean watchedBy(JsonNode update, int spectators) {
+    return update.path("room").path("spectators").asInt() == spectators;
+  }
+
+  private static boolean isTurn(JsonNode update, String phase, String team) {
+    return update.path("room").path("phase").asString().equals(phase)
+        && update.path("room").path("turn").asString().equals(team);
+  }
+
+  /**
+   * The team that starts hits both reefs over two of its turns, so the other team wins: the players
+   * are the ones of {@link #startedGame()}, the Signaleur of a team first.
+   */
+  private void playTheReefsOut(List<Client> players) throws Exception {
+    var team = players.get(1).room.path("turn").asString();
+    var other = team.equals("BABORD") ? "TRIBORD" : "BABORD";
+    var first = team.equals("BABORD") ? 0 : 2;
+    var second = 2 - first;
+    var board = players.get(first).room.path("board");
+    var reefs =
+        IntStream.range(0, board.size())
+            .filter(i -> board.get(i).path("kind").asString().equals("REEF"))
+            .toArray();
+    var signal = "{\"type\":\"signal\",\"word\":\"voyage\",\"number\":1}";
+
+    players.get(first).send(signal);
+    players.get(first + 1).await("roomUpdated", m -> isTurn(m, "GUESS", team));
+    players.get(first + 1).send("{\"type\":\"reveal\",\"index\":" + reefs[0] + "}");
+    players.get(second + 1).await("roomUpdated", m -> isTurn(m, "SIGNAL", other));
+    players.get(second).send(signal);
+    players.get(second + 1).await("roomUpdated", m -> isTurn(m, "GUESS", other));
+    players.get(second + 1).send("{\"type\":\"pass\"}");
+    players.get(first + 1).await("roomUpdated", m -> isTurn(m, "SIGNAL", team));
+    players.get(first).send(signal);
+    players.get(first + 1).await("roomUpdated", m -> isTurn(m, "GUESS", team));
+    players.get(first + 1).send("{\"type\":\"reveal\",\"index\":" + reefs[1] + "}");
   }
 
   private static boolean sees(JsonNode update, int players) {
@@ -408,6 +466,142 @@ class WebSocketIT {
 
     // a1 and b1 joined their team first: they are the Signaleurs for the whole grid.
     assertThat(withKey).containsExactly(0, 2);
+  }
+
+  @Test
+  void aVisitorWatchesAGameInProgressAndEveryoneSeesTheCount() throws Exception {
+    var players = startedGame();
+    var host = players.get(0);
+    var code = host.room.path("code").asString();
+
+    var spectator = spectatorOf(code);
+
+    assertThat(spectator.room.path("you").isNull()).isTrue();
+    assertThat(spectator.room.path("phase").asString()).isEqualTo("SIGNAL");
+    assertThat(spectator.history).noneMatch(m -> m.path("type").asString().equals("joined"));
+    var update = host.await("roomUpdated", m -> watchedBy(m, 1));
+    assertThat(update.has("id")).isFalse();
+    assertThat(update.path("room").path("you").asString()).isNotBlank();
+
+    spectator.send("{\"type\":\"leave\"}");
+    host.await("roomUpdated", m -> watchedBy(m, 0));
+  }
+
+  @Test
+  void aPlayerComesBackWhileSpectatorsWatch() throws Exception {
+    var players = startedGame();
+    var lost = players.get(3);
+    spectatorOf(players.get(0).room.path("code").asString());
+
+    lost.socket.abort();
+    players
+        .get(0)
+        .await(
+            "roomUpdated",
+            m -> !m.path("room").path("players").path(3).path("connected").asBoolean());
+    var again = new Client(ALLOWED_ORIGIN);
+    again.send(rejoin(lost));
+
+    assertThat(again.await("joined").path("room").path("spectators").asInt()).isEqualTo(1);
+  }
+
+  @Test
+  void theKeyNeverReachesASpectatorBeforeTheEnd() throws Exception {
+    var players = startedGame();
+    var spectator = spectatorOf(players.get(0).room.path("code").asString());
+
+    playTheReefsOut(players);
+    spectator.await("roomUpdated", m -> m.path("room").path("phase").asString().equals("ENDED"));
+
+    var views =
+        spectator.history.stream()
+            .filter(m -> m.path("type").asString().equals("roomUpdated"))
+            .map(m -> m.path("room"))
+            .toList();
+    assertThat(views).hasSizeGreaterThan(4);
+    for (var view : views) {
+      var ended = view.path("phase").asString().equals("ENDED");
+      assertThat(view.path("you").isNull()).isTrue();
+      for (var card : view.path("board")) {
+        assertThat(card.path("kind").isString())
+            .as("a card of a view in phase %s", view.path("phase").asString())
+            .isEqualTo(ended || card.path("revealed").asBoolean());
+      }
+    }
+    assertThat(views.get(views.size() - 1).path("phase").asString()).isEqualTo("ENDED");
+  }
+
+  @Test
+  void theServerRefusesEveryCommandOfASpectator() throws Exception {
+    var players = startedGame();
+    var code = players.get(0).room.path("code").asString();
+    var spectator = spectatorOf(code);
+
+    for (var command :
+        List.of(
+            "{\"type\":\"joinTeam\",\"id\":\"c\",\"team\":\"BABORD\"}",
+            "{\"type\":\"start\",\"id\":\"c\"}",
+            "{\"type\":\"signal\",\"id\":\"c\",\"word\":\"voyage\",\"number\":1}",
+            "{\"type\":\"reveal\",\"id\":\"c\",\"index\":0}",
+            "{\"type\":\"pass\",\"id\":\"c\"}")) {
+      spectator.send(command);
+      var refusal = spectator.await("error");
+      assertThat(refusal.path("reason").asString()).isEqualTo("spectators cannot play");
+      assertThat(refusal.path("id").asString()).isEqualTo("c");
+    }
+    for (var entering :
+        List.of(
+            "{\"type\":\"createRoom\",\"name\":\"Zoe\"}",
+            "{\"type\":\"joinRoom\",\"code\":\"" + code + "\",\"name\":\"Zoe\"}",
+            "{\"type\":\"watch\",\"code\":\"" + code + "\"}",
+            rejoin(players.get(3)))) {
+      spectator.send(entering);
+      assertThat(spectator.error()).isEqualTo("you are already in a room");
+    }
+    assertThat(spectator.history)
+        .noneMatch(
+            m ->
+                m.path("type").asString().equals("roomUpdated")
+                    && m.path("room").path("version").asInt()
+                        > players.get(0).room.path("version").asInt());
+  }
+
+  @Test
+  void aRoomHoldsTwentySpectators() throws Exception {
+    var players = startedGame();
+    var host = players.get(0);
+    var code = host.room.path("code").asString();
+    var spectators = new ArrayList<Client>();
+    for (var i = 0; i < Room.MAX_SPECTATORS; i++) {
+      spectators.add(spectatorOf(code));
+    }
+    host.await("roomUpdated", m -> watchedBy(m, Room.MAX_SPECTATORS));
+
+    var late = new Client(ALLOWED_ORIGIN);
+    late.send("{\"type\":\"watch\",\"code\":\"" + code + "\"}");
+    assertThat(late.error()).isEqualTo("too many spectators");
+
+    spectators.get(0).socket.abort();
+    host.await("roomUpdated", m -> watchedBy(m, Room.MAX_SPECTATORS - 1));
+    late.send("{\"type\":\"watch\",\"id\":\"w\",\"code\":\"" + code + "\"}");
+    assertThat(late.await("roomUpdated").path("room").path("spectators").asInt())
+        .isEqualTo(Room.MAX_SPECTATORS);
+  }
+
+  @Test
+  void aLobbyHasNothingToWatchAndAGameInProgressStillRefusesNewPlayers() throws Exception {
+    var host = new Client(ALLOWED_ORIGIN);
+    var lobbyCode = createRoom(host, "Ana");
+    var visitor = new Client(ALLOWED_ORIGIN);
+
+    visitor.send("{\"type\":\"watch\",\"code\":\"" + lobbyCode + "\"}");
+    assertThat(visitor.error()).isEqualTo("the game has not started");
+    visitor.send("{\"type\":\"watch\",\"code\":\"00000\"}");
+    assertThat(visitor.error()).isEqualTo("no such room");
+
+    var code = startedGame().get(0).room.path("code").asString();
+    visitor.send("{\"type\":\"joinRoom\",\"code\":\"" + code + "\",\"name\":\"Zoe\"}");
+    assertThat(visitor.error()).isEqualTo("the game has started");
   }
 
   @Test

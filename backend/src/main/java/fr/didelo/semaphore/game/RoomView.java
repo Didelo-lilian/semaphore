@@ -6,7 +6,8 @@ import java.util.Map;
 /**
  * A room as one player may see it: the kind of a card is null until it is revealed, unless they
  * hold the key. {@code turnPassesIn} is the seconds left, when the view is built, before the turn
- * passes because the game waits for someone who is away; null when it waits for nobody away.
+ * passes because the game waits for someone who is away; null when it waits for nobody away. {@code
+ * you} is null in a spectator's view, who has no seat; {@code spectators} counts them.
  */
 public record RoomView(
     String code,
@@ -19,6 +20,7 @@ public record RoomView(
     Map<Team, Integer> flags,
     Team winner,
     List<PlayerView> players,
+    int spectators,
     List<CardView> board,
     String you) {
 

@@ -1,6 +1,6 @@
 # 6. Presence and disconnections
 
-Date: 2026-10-24 · Status: accepted (increments 1 and 2 are built, increment 3 is proposed with a default for each choice)
+Date: 2026-10-24 · Status: accepted (the three increments are built; the defaults of the product choices are Lilian's to change)
 
 ## Context
 
@@ -20,7 +20,7 @@ Those are three decisions of different sizes, so this ADR cuts the work in incre
 |---|---|---|
 | 1 | **Who is online** (built with this ADR) | A lobby keeps an absent player for a grace period, a `leave` message for leaving on purpose, everyone's presence shown in the lobby and at the table, the start refused while someone is offline, the table saying who the game waits for |
 | 2 | **A missing Signaleur or host** ([#28](https://github.com/Didelo-lilian/semaphore/issues/28)) (built) | A delay after which the turn passes, the turn passing at once for someone who left on purpose, and the end of a game that nobody can play |
-| 3 | **Spectators** ([#29](https://github.com/Didelo-lilian/semaphore/issues/29)) | Watch a game in progress without a seat, read only |
+| 3 | **Spectators** ([#29](https://github.com/Didelo-lilian/semaphore/issues/29)) (built) | Watch a game in progress without a seat, read only |
 
 ### Defaults of the product choices
 
@@ -37,6 +37,8 @@ Those are three decisions of different sizes, so this ADR cuts the work in incre
 | What a spectator sees (3) | what a lookout sees: the key only once the game has ended | With the key they could whisper it to a lookout |
 | Spectator limit (3) | 20 per room, on top of the twelve players | Every change builds one view per connection under the room's lock |
 | A spectator's seat (3) | none: no token, reloading the page goes through the link again | There is nothing to restore, and spectators do not keep a room alive |
+| Watching a lobby (3) | refused: whoever comes to a lobby joins as a player | A lobby has no game to watch, and its visitors are the players it waits for |
+| Where one asks to watch (3) | a button on the invitation page, no name asked | The link is what a late friend has; only the link offers it, not the code typed by hand |
 
 ### Increment 1
 
@@ -84,11 +86,33 @@ stateDiagram-v2
   Played --> Ended: a Signaleur away for 5 min,<br/>the other team wins
 ```
 
+### Increment 3
+
+- **`watch {code}`** is a client message answered by a `roomUpdated` that carries its `id` and a view with no player of one's own (`you` null). There is no `joined`, since a spectator has neither a player id nor a token, and the connection remembers nothing: the front stores no seat, so a reload or a lost connection ends on the invitation page, which says the connection was lost.
+- **The room counts, the handler seats.** `Room.watch` and `Room.unwatch` change a counter; the room refuses `watch` in the lobby ("the game has not started") and beyond 20 ("too many spectators"). `GameSocketHandler` keeps the connection as a seat without a player and refuses every command from it ("spectators cannot play"). `Room.viewFor` stays the view of a player; `Room.spectatorView` is the view of a lookout from no seat, the same for everyone who watches.
+- **One view for all spectators.** Every change builds one view per player and a single one for all the spectators, under the room's lock as before, so 20 spectators cost one more view, not twenty. The serialization to JSON happens after the lock, as for the players.
+- **The key never reaches them before the end.** `RoomTest` builds the spectator view after every move of a game and checks that a hidden card has no kind until the game has ended; `WebSocketIT` plays a game to its end with a spectator connected and checks every message that reached them.
+- **They do not keep a room alive.** `watch` and `unwatch` touch neither `lastActivity` nor the players: the sweep of idle rooms ([ADR 0003](0003-rooms-the-state-machine-and-the-protocol.md)) looks at the players only.
+- **Everyone sees the count.** `spectators` is in every view; the table shows "N personnes regardent" next to the online count.
+- **The wire gains `watch`, `spectators` and a nullable `you`**; the `id` stays optional.
+
+```mermaid
+stateDiagram-v2
+  state "Visitor of the link" as Visitor
+  [*] --> Visitor: opens ?room=CODE
+  Visitor --> Player: joinRoom, in the lobby
+  Visitor --> Spectator: watch, game started
+  Visitor --> Visitor: joinRoom refused, game started<br/>watch refused, lobby or 20 watching
+  Spectator --> Visitor: leave, closed connection or reload<br/>(no token to come back with)
+```
+
 ## Consequences
 
 - A player who drops from the lobby stays on the list as "hors ligne" for 30 to 35 seconds and gets their seat, team and host seat back if they return in time. The front's automatic reconnection now covers the lobby too.
 - A room whose players are all away is still dropped by the sweep of idle rooms after 30 minutes ([ADR 0003](0003-rooms-the-state-machine-and-the-protocol.md)); an empty lobby is dropped the same way.
 - A missing Signaleur no longer blocks the game: the table says who it is waiting for and for how long, the turn passes after 60 seconds, and the team loses after 5 minutes. A team whose Signaleur stays away still gets a turn each time the other team has played, so the other team waits 60 seconds between two of its turns until the game ends.
 - The grace period is the same for every lobby and is not configurable: the tests move the clock, not a setting.
-- The deadline now exists in the view (`turnPassesIn`), so spectators ([#29](https://github.com/Didelo-lilian/semaphore/issues/29)) get it like the players; the spectator count does not exist yet.
+- The deadline now exists in the view (`turnPassesIn`), so spectators get it like the players, and `spectators` counts them in every view.
 - The delays are constants of `Room` (`TURN_GRACE`, `SIGNALER_LIMIT`), not settings: the tests move the clock. The front says nothing about the 5 minutes beyond a Signaleur who leaves, and a game ended that way shows its winner like any other.
+- A spectator whose connection drops, or who reloads, has to go through the link again: nothing is kept for them, and the front says the connection was lost. A room swept while spectators watch stops for them without a word; nothing could change in it anymore, since the sweep only drops a room whose players have all been away for 30 minutes.
+- Watching is offered by the invitation link only: someone who types a code by hand joins as a player. A lobby visitor who asks to watch is told the game has not started, and a late friend who tries to join a game in progress is told it has started, with the button to watch next to it.

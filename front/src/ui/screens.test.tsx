@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import lookout from "../fixtures/room-lookout.json";
 import signaler from "../fixtures/room-signaler.json";
+import spectator from "../fixtures/room-spectator.json";
 import waiting from "../fixtures/room-waiting.json";
 import type { RoomView } from "../protocol.ts";
 import { Home } from "./Home.tsx";
@@ -20,6 +21,7 @@ const lobby = (changes: Partial<RoomView>, you = "a"): RoomView => ({
   flags: { BABORD: 2, TRIBORD: 2 },
   winner: null,
   players: [],
+  spectators: 0,
   board: [],
   you,
   ...changes,
@@ -48,6 +50,7 @@ describe("Home", () => {
         error={null}
         onCreate={onCreate}
         onJoin={vi.fn()}
+        onWatch={vi.fn()}
       />,
     );
     const create = screen.getByRole("button", { name: "Créer un salon" });
@@ -66,6 +69,7 @@ describe("Home", () => {
         error={null}
         onCreate={vi.fn()}
         onJoin={onJoin}
+        onWatch={vi.fn()}
       />,
     );
     await userEvent.type(screen.getByLabelText("Ton nom"), "Ben");
@@ -83,6 +87,7 @@ describe("Home", () => {
         error="no such room"
         onCreate={vi.fn()}
         onJoin={onJoin}
+        onWatch={vi.fn()}
       />,
     );
     expect(screen.queryByLabelText("Code du salon")).toBeNull();
@@ -94,6 +99,40 @@ describe("Home", () => {
       screen.getByRole("button", { name: "Rejoindre le salon" }),
     );
     await waitFor(() => expect(onJoin).toHaveBeenCalledWith("USQ2H", "Ben"));
+  });
+
+  it("lets a visitor of an invite link watch without a name, and offers it only there", async () => {
+    const onWatch = vi.fn();
+    const { unmount } = render(
+      <Home
+        invited="USQ2H"
+        busy={false}
+        error="the game has started"
+        onCreate={vi.fn()}
+        onJoin={vi.fn()}
+        onWatch={onWatch}
+      />,
+    );
+    expect(screen.getByText("La partie a déjà commencé.")).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Regarder la partie" }),
+    );
+    expect(onWatch).toHaveBeenCalledWith("USQ2H");
+    unmount();
+
+    render(
+      <Home
+        invited={null}
+        busy={false}
+        error={null}
+        onCreate={vi.fn()}
+        onJoin={vi.fn()}
+        onWatch={onWatch}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Regarder la partie" }),
+    ).toBeNull();
   });
 });
 
@@ -541,5 +580,93 @@ describe("Table", () => {
       screen.getByRole("button", { name: "Retour à l'accueil" }),
     );
     expect(props.onLeave).toHaveBeenCalledOnce();
+  });
+
+  describe("for a spectator", () => {
+    const watcher = spectator.room as RoomView;
+
+    it("is read only: no form, no word to touch, no pass, and says so", () => {
+      const { unmount } = render(<Table room={watcher} {...handlers()} />);
+      expect(
+        screen.getByText("Tu regardes la partie sans y jouer."),
+      ).toBeVisible();
+      expect(
+        screen.getByText("Le Signaleur de Tribord prépare son signal."),
+      ).toBeVisible();
+      expect(screen.queryByLabelText("Ton signal")).toBeNull();
+      expect(document.querySelectorAll(".sem-word-button")).toHaveLength(0);
+      expect(screen.queryByText(/\(toi\)/)).toBeNull();
+      unmount();
+
+      // Even in a team's turn with its words to touch, nothing is a button for them.
+      render(<Table room={guessing(watcher)} {...handlers()} />);
+      expect(
+        screen.getByText("Les Veilleurs de Bâbord cherchent."),
+      ).toBeVisible();
+      expect(document.querySelectorAll(".sem-word-button")).toHaveLength(0);
+      expect(screen.queryByRole("button", { name: "Passer" })).toBeNull();
+    });
+
+    it("sees what a lookout sees: no key on a hidden word", () => {
+      render(<Table room={watcher} {...handlers()} />);
+      expect(document.querySelectorAll(".sem-word-mark")).toHaveLength(0);
+    });
+
+    it("leaves at once, with nothing to lose, and sees the whole key once the game has ended", async () => {
+      const props = handlers();
+      const { unmount } = render(<Table room={watcher} {...props} />);
+      await userEvent.click(screen.getByRole("button", { name: "Quitter" }));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(props.onLeave).toHaveBeenCalledOnce();
+      unmount();
+
+      render(
+        <Table
+          room={{
+            ...watcher,
+            phase: "ENDED",
+            winner: "BABORD",
+            board: (signaler.room as RoomView).board,
+          }}
+          {...handlers()}
+        />,
+      );
+      expect(document.querySelectorAll(".sem-word-mark")).toHaveLength(24);
+      expect(
+        screen.getByRole("button", { name: "Retour à l'accueil" }),
+      ).toBeInTheDocument();
+    });
+
+    it("says how many people watch, to the players as well", () => {
+      const { unmount } = render(<Table room={watcher} {...handlers()} />);
+      expect(screen.getByText("4 en ligne · 1 personne regarde")).toBeVisible();
+      unmount();
+
+      const { unmount: again } = render(
+        <Table
+          room={{ ...(lookout.room as RoomView), spectators: 3 }}
+          {...handlers()}
+        />,
+      );
+      expect(
+        screen.getByText("4 en ligne · 3 personnes regardent"),
+      ).toBeVisible();
+      expect(
+        screen.queryByText("Tu regardes la partie sans y jouer."),
+      ).toBeNull();
+      again();
+
+      render(<Table room={lookout.room as RoomView} {...handlers()} />);
+      expect(screen.getByText("4 en ligne")).toBeVisible();
+    });
+
+    it("shows why the server refuses a command, in French", () => {
+      render(
+        <Table room={watcher} {...handlers()} error="spectators cannot play" />,
+      );
+      expect(
+        screen.getByText("Un spectateur regarde sans jouer."),
+      ).toBeVisible();
+    });
   });
 });

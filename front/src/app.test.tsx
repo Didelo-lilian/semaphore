@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 import { GameClient } from "./client.ts";
@@ -8,6 +8,7 @@ import { FakeSocket } from "./fake-socket.ts";
 import joined from "./fixtures/joined-lobby.json";
 import lookout from "./fixtures/room-lookout.json";
 import signaler from "./fixtures/room-signaler.json";
+import spectator from "./fixtures/room-spectator.json";
 import waiting from "./fixtures/room-waiting.json";
 import { GameProvider } from "./game.tsx";
 import type { RoomView } from "./protocol.ts";
@@ -123,6 +124,88 @@ describe("the game in the browser", () => {
     const { router } = await mount(`/salon/${joined.room.code}`);
     await waitFor(() => expect(router.state.location.pathname).toBe("/"));
     expect(router.state.location.search).toEqual({ room: joined.room.code });
+  });
+
+  it("watches a game from an invitation link, with no seat to get back", async () => {
+    const { router, store } = await mount(`/?room=${spectator.room.code}`);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Regarder la partie" }),
+    );
+    await waitFor(() => expect(FakeSocket.all).toHaveLength(1));
+    FakeSocket.last().accept();
+    expect(FakeSocket.last().sent).toEqual([
+      { type: "watch", id: "1", code: spectator.room.code },
+    ]);
+    FakeSocket.last().answer(spectator);
+
+    expect(
+      await screen.findByText("Tu regardes la partie sans y jouer."),
+    ).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe(
+      `/salon/${spectator.room.code}`,
+    );
+    expect(screen.getByText("4 en ligne · 1 personne regarde")).toBeVisible();
+    expect(screen.queryByLabelText("Ton signal")).toBeNull();
+    expect(store.load()).toBeNull();
+
+    // A new view of the room reaches them like a player: a signal turns into a pennant.
+    FakeSocket.last().receive({
+      type: "roomUpdated",
+      room: {
+        ...spectator.room,
+        version: spectator.room.version + 1,
+        phase: "GUESS",
+        signal: { word: "voyage", number: 2 },
+        revealsLeft: 3,
+      },
+    });
+    expect(await screen.findByText("Signal : voyage, 2.")).toBeInTheDocument();
+    expect(document.querySelectorAll(".sem-word-button")).toHaveLength(0);
+  });
+
+  it("goes back to the invitation, saying why, when a spectator loses the connection", async () => {
+    const { router } = await mount(`/?room=${spectator.room.code}`);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Regarder la partie" }),
+    );
+    await waitFor(() => expect(FakeSocket.all).toHaveLength(1));
+    FakeSocket.last().accept();
+    FakeSocket.last().answer(spectator);
+    await screen.findByText("Tu regardes la partie sans y jouer.");
+
+    act(() => FakeSocket.last().drop());
+
+    expect(
+      await screen.findByText("Connexion perdue, réessaie."),
+    ).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/");
+    expect(router.state.location.search).toEqual({ room: spectator.room.code });
+  });
+
+  it("tells a visitor why a room cannot be watched, in French", async () => {
+    await mount("/?room=USQ2H");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Regarder la partie" }),
+    );
+    await waitFor(() => expect(FakeSocket.all).toHaveLength(1));
+    FakeSocket.last().accept();
+    FakeSocket.last().answer({
+      type: "error",
+      reason: "the game has not started",
+    });
+    expect(
+      await screen.findByText(
+        "La partie n'a pas encore commencé : rejoins le salon pour jouer.",
+      ),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Regarder la partie" }),
+    );
+    FakeSocket.last().answer({ type: "error", reason: "too many spectators" });
+    expect(
+      await screen.findByText("Trop de monde regarde déjà cette partie."),
+    ).toBeInTheDocument();
   });
 
   it("plays a whole game as a lookout, from the first turn to the end", async () => {

@@ -157,7 +157,9 @@ export class GameClient {
         this.attempts++;
         this.retry = setTimeout(() => this.connect("reconnecting"), delay);
       } else {
-        this.update({ connection: "idle" });
+        // Nothing to come back to, like a spectator who has no seat: the link starts again.
+        this.queryClient.removeQueries({ queryKey: roomKey });
+        this.update({ connection: "idle", error: "connection lost" });
       }
     };
   }

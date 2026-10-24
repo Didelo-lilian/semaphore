@@ -50,6 +50,7 @@ export const HomePage = () => {
       error={enter.error?.message ?? snapshot.error}
       onCreate={(name) => enter.mutate({ type: "createRoom", name })}
       onJoin={(code, name) => enter.mutate({ type: "joinRoom", code, name })}
+      onWatch={(code) => enter.mutate({ type: "watch", code })}
     />
   );
 };

@@ -10,6 +10,7 @@ interface Props {
   error: string | null;
   onCreate: (name: string) => void;
   onJoin: (code: string, name: string) => void;
+  onWatch: (code: string) => void;
 }
 
 const nameSchema = z
@@ -26,7 +27,14 @@ const cleanCode = (value: string) =>
 
 type Intent = "create" | "join";
 
-export const Home = ({ invited, busy, error, onCreate, onJoin }: Props) => {
+export const Home = ({
+  invited,
+  busy,
+  error,
+  onCreate,
+  onJoin,
+  onWatch,
+}: Props) => {
   const form = useForm({
     defaultValues: { name: "", code: "" },
     onSubmitMeta: { intent: "create" } as { intent: Intent },
@@ -144,6 +152,14 @@ export const Home = ({ invited, busy, error, onCreate, onJoin }: Props) => {
               </Button>
             )}
           </form.Subscribe>
+          <p className="sem-or">ou, si la partie est lancée</p>
+          <Button
+            variant="outlined"
+            disabled={busy}
+            onClick={() => onWatch(invited)}
+          >
+            Regarder la partie
+          </Button>
         </>
       )}
     </section>

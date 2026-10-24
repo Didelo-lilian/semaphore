@@ -84,9 +84,10 @@ export const SalonPage = () => {
     return <Navigate to="/salon/$code" params={{ code: room.code }} replace />;
   }
 
-  const leave = () => {
+  // Home first: with the seat gone, this page would send the visitor to the invitation to the room just left.
+  const leave = async () => {
+    await navigate({ to: "/" });
     client.leave();
-    navigate({ to: "/" });
   };
   const error = command.error?.message ?? snapshot.error;
 

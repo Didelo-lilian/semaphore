@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.0](https://github.com/Didelo-lilian/semaphore/compare/v0.1.0...v0.2.0) (2026-10-24)
+
+
+### Features
+
+* **front:** play a full game from the table ([#17](https://github.com/Didelo-lilian/semaphore/issues/17)) ([877663e](https://github.com/Didelo-lilian/semaphore/commit/877663e077a9f1ec4c805f336fe7a99b4e8419bf))
+* match each command with its answer by a request id ([#22](https://github.com/Didelo-lilian/semaphore/issues/22)) ([17f0740](https://github.com/Didelo-lilian/semaphore/commit/17f074023bddc018819a469a0c9ffcac8f464a09))
+
+
+### Bug fixes
+
+* **front:** go to the home page after leaving a room ([#21](https://github.com/Didelo-lilian/semaphore/issues/21)) ([ff64f19](https://github.com/Didelo-lilian/semaphore/commit/ff64f192a11673436a5812f5b13ee728b3c46491))
+
 ## 0.1.0 (2026-10-24)
 
 

@@ -214,6 +214,24 @@ describe("the game in the browser", () => {
       screen.getByRole("button", { name: "Retour à l'accueil" }),
     );
     await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+    expect(router.state.location.search).toEqual({});
+    expect(store.load()).toBeNull();
+  });
+
+  it("leaves the lobby for the home page, not for the invitation to the room just left", async () => {
+    const store = memoryStore({ code: joined.room.code, token: joined.token });
+    const { router } = await mount(`/salon/${joined.room.code}`, store);
+    FakeSocket.last().accept();
+    FakeSocket.last().receive(joined);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Quitter" }),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Créer un salon" }),
+    ).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/");
+    expect(router.state.location.search).toEqual({});
+    expect(screen.queryByText(joined.room.code)).toBeNull();
     expect(store.load()).toBeNull();
   });
 

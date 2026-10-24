@@ -24,11 +24,28 @@ jobs:
       # Formatting, compilation and the tests, including the WebSocket ones.
       - run: ./gradlew check
 
+  front:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: front
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: front/.nvmrc
+          cache: npm
+          cache-dependency-path: front/package-lock.json
+      - run: npm ci
+      # Lint, types, tests and the production build.
+      - run: npm run check
+
   image:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - run: docker build backend
+      - run: docker build front
 
   workflows:
     runs-on: ubuntu-latest

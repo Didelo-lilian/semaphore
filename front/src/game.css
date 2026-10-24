@@ -1,0 +1,272 @@
+/* Palette of ADR 0001: Bâbord and Tribord have almost the same luminance, shapes tell them apart. */
+:root {
+  --sem-ink: #10203a;
+  --sem-paper: #f4efe3;
+  --sem-navy: #0b1b33;
+  --sem-babord: #c2411c;
+  --sem-tribord: #0f7480;
+  --sem-sand: #d9c9a3;
+  --sem-reef: #1b1f2a;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--sem-navy);
+  color: var(--sem-paper);
+  font-family: var(--ds-font-family-sans);
+}
+
+.sem-mono {
+  font-family: var(--ds-font-family-mono);
+  letter-spacing: 0.12em;
+}
+
+.sem-shell {
+  box-sizing: border-box;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: var(--ds-space-6) var(--ds-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-4);
+}
+
+h1,
+h2 {
+  font-family: var(--ds-font-family-display);
+  margin: 0;
+}
+
+.sem-lead,
+.sem-hint {
+  color: var(--sem-sand);
+  margin: 0;
+}
+
+.sem-card {
+  background: var(--sem-paper);
+  color: var(--sem-ink);
+  border-radius: var(--ds-radius-lg);
+  padding: var(--ds-space-6);
+}
+
+.sem-card .sem-lead {
+  color: var(--sem-ink);
+}
+
+.sem-home {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-4);
+}
+
+.sem-or {
+  margin: 0;
+  text-align: center;
+  color: var(--ds-color-neutral-600);
+}
+
+.sem-join {
+  display: flex;
+  gap: var(--ds-space-3);
+  align-items: flex-start;
+}
+
+.sem-join > :first-child {
+  flex: 1;
+}
+
+.sem-lobby,
+.sem-table {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-4);
+}
+
+.sem-lobby-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-space-4);
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.sem-code {
+  margin: var(--ds-space-1) 0 0;
+  font-size: 2.25rem;
+  font-weight: var(--ds-font-weight-bold);
+}
+
+.sem-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-space-2);
+}
+
+.sem-teams {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--ds-space-4);
+}
+
+.sem-panel {
+  background: var(--sem-paper);
+  color: var(--sem-ink);
+  border-radius: var(--ds-radius-lg);
+  border-top: 6px solid var(--sem-sand);
+  padding: var(--ds-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-3);
+}
+
+.sem-panel[data-team="BABORD"] {
+  border-top-color: var(--sem-babord);
+  --sem-team: var(--sem-babord);
+}
+
+.sem-panel[data-team="TRIBORD"] {
+  border-top-color: var(--sem-tribord);
+  --sem-team: var(--sem-tribord);
+}
+
+.sem-panel h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-2);
+  color: var(--sem-team);
+}
+
+.sem-count {
+  margin-left: auto;
+  color: var(--sem-ink);
+  font-size: var(--ds-font-size-md);
+}
+
+.sem-players,
+.sem-roster {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-space-2);
+}
+
+.sem-roster {
+  flex-direction: column;
+  gap: var(--ds-space-1);
+}
+
+.sem-dock-title {
+  margin-bottom: var(--ds-space-2);
+}
+
+.sem-start {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ds-space-2);
+}
+
+.sem-mark {
+  flex: none;
+}
+
+.sem-board {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--ds-space-2);
+}
+
+.sem-word {
+  position: relative;
+  box-sizing: border-box;
+  min-height: 56px;
+  padding: var(--ds-space-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--ds-radius-md);
+  background: var(--sem-sand);
+  color: var(--sem-ink);
+  font-weight: var(--ds-font-weight-semibold);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.sem-word-mark {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  display: flex;
+}
+
+.sem-word[data-kind="BABORD"] .sem-word-mark {
+  color: var(--sem-babord);
+}
+
+.sem-word[data-kind="TRIBORD"] .sem-word-mark {
+  color: var(--sem-tribord);
+}
+
+.sem-word[data-kind="REEF"] .sem-word-mark {
+  color: var(--sem-reef);
+}
+
+.sem-word[data-revealed="true"] {
+  color: var(--sem-paper);
+}
+
+.sem-word[data-revealed="true"] .sem-word-mark {
+  color: var(--sem-paper);
+}
+
+.sem-word[data-revealed="true"][data-kind="BABORD"] {
+  background: var(--sem-babord);
+}
+
+.sem-word[data-revealed="true"][data-kind="TRIBORD"] {
+  background: var(--sem-tribord);
+}
+
+.sem-word[data-revealed="true"][data-kind="CALM"] {
+  background: var(--ds-color-neutral-500);
+}
+
+.sem-word[data-revealed="true"][data-kind="REEF"] {
+  background: var(--sem-reef);
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0 6px,
+    rgb(255 255 255 / 12%) 6px 8px
+  );
+}
+
+@media (max-width: 520px) {
+  .sem-join {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sem-board {
+    gap: var(--ds-space-1);
+  }
+
+  .sem-word {
+    font-size: var(--ds-font-size-sm);
+    min-height: 48px;
+  }
+}
+
+.sem-in-team {
+  margin: 0;
+  padding: var(--ds-space-2) 0;
+  text-align: center;
+  font-weight: var(--ds-font-weight-semibold);
+  color: var(--sem-team);
+}

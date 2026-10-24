@@ -14,7 +14,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE: ghcr.io/didelo-lilian/semaphore
+  BACKEND_IMAGE: ghcr.io/didelo-lilian/semaphore
+  FRONT_IMAGE: ghcr.io/didelo-lilian/semaphore-front
 
 jobs:
   image:
@@ -25,5 +26,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - run: |
-          docker build -t "$IMAGE:main" -t "$IMAGE:sha-${GITHUB_SHA::7}" backend
-          docker push --all-tags "$IMAGE"
+          docker build -t "$BACKEND_IMAGE:main" -t "$BACKEND_IMAGE:sha-${GITHUB_SHA::7}" backend
+          docker build -t "$FRONT_IMAGE:main" -t "$FRONT_IMAGE:sha-${GITHUB_SHA::7}" front
+          docker push --all-tags "$BACKEND_IMAGE"
+          docker push --all-tags "$FRONT_IMAGE"

@@ -1,0 +1,38 @@
+{
+  "type": "joined",
+  "playerId": "6934d99e-f222-4d75-8789-5448acb54a99",
+  "token": "00000000-0000-4000-8000-000000000000",
+  "room": {
+    "code": "ZQ5Z2",
+    "version": 2,
+    "phase": "LOBBY",
+    "turn": null,
+    "signal": null,
+    "revealsLeft": 0,
+    "flags": {
+      "BABORD": 2,
+      "TRIBORD": 2
+    },
+    "winner": null,
+    "players": [
+      {
+        "id": "ceb4d08d-dac3-4dcf-9acb-1dec308de628",
+        "name": "Ana",
+        "team": null,
+        "connected": true,
+        "host": true,
+        "signaler": false
+      },
+      {
+        "id": "6934d99e-f222-4d75-8789-5448acb54a99",
+        "name": "Ben",
+        "team": null,
+        "connected": true,
+        "host": false,
+        "signaler": false
+      }
+    ],
+    "board": [],
+    "you": "6934d99e-f222-4d75-8789-5448acb54a99"
+  }
+}

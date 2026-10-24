@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/Didelo-lilian/semaphore/compare/v0.2.0...v0.3.0) (2026-10-24)
+
+
+### Features
+
+* let a visitor watch a game in progress ([#33](https://github.com/Didelo-lilian/semaphore/issues/33)) ([4581bb8](https://github.com/Didelo-lilian/semaphore/commit/4581bb84c20b190b9b690d6fecb0255a29c66a7a))
+* pass the turn when a Signaleur is away ([#32](https://github.com/Didelo-lilian/semaphore/issues/32)) ([4a2751a](https://github.com/Didelo-lilian/semaphore/commit/4a2751a3e835b16f5dfeacd8d675817565525a6b))
+* show who is online and keep a lobby seat through a short disconnect ([#31](https://github.com/Didelo-lilian/semaphore/issues/31)) ([e7f3602](https://github.com/Didelo-lilian/semaphore/commit/e7f36025d4b273d288c04bdbef192e7f96ee2bb1))
+
+
+### Refactoring
+
+* **front:** drop the request id fallback from GameClient ([#24](https://github.com/Didelo-lilian/semaphore/issues/24)) ([67ef94f](https://github.com/Didelo-lilian/semaphore/commit/67ef94f51abec2daef2e5b9e608355c0531eaf60))
+
 ## [0.2.0](https://github.com/Didelo-lilian/semaphore/compare/v0.1.0...v0.2.0) (2026-10-24)
 
 

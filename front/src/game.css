@@ -158,6 +158,18 @@ h2 {
   font-size: var(--ds-font-size-md);
 }
 
+.sem-presence {
+  margin: var(--ds-space-1) 0 0;
+  color: var(--sem-sand);
+  font-size: var(--ds-font-size-sm);
+}
+
+/* The words "hors ligne" say it; the dimming only helps the eye (0.7 keeps the text above 4.5:1). */
+[data-online="false"] {
+  opacity: 0.7;
+  font-style: italic;
+}
+
 .sem-players,
 .sem-roster {
   list-style: none;

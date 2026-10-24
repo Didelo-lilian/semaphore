@@ -10,9 +10,11 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import fr.didelo.semaphore.game.MutableClock;
+import fr.didelo.semaphore.game.Room;
 import fr.didelo.semaphore.game.RoomRegistry;
 import fr.didelo.semaphore.game.WordList;
-import java.time.Clock;
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.web.socket.CloseStatus;
@@ -24,7 +26,8 @@ import tools.jackson.databind.json.JsonMapper;
 class GameSocketHandlerTest {
 
   private final JsonMapper json = JsonMapper.builder().build();
-  private final RoomRegistry registry = spy(new RoomRegistry(Clock.systemUTC(), new WordList(), 2));
+  private final MutableClock clock = new MutableClock();
+  private final RoomRegistry registry = spy(new RoomRegistry(clock, new WordList(), 2));
   private final GameSocketHandler handler = new GameSocketHandler(json, registry);
 
   private WebSocketSession connect(String id) throws Exception {
@@ -84,5 +87,23 @@ class GameSocketHandlerTest {
 
     assertThat(lastPayload(session)).contains("you are already in a room");
     verify(registry, times(1)).drop(any());
+  }
+
+  @Test
+  void theSweepTellsTheLobbyThatAnAbsentPlayerIsGone() throws Exception {
+    var host = connect("host");
+    var bob = connect("bob");
+    receive(host, "{\"type\":\"createRoom\",\"name\":\"Ana\"}");
+    var code = json.readTree(lastPayload(host)).path("room").path("code").asString();
+    receive(bob, "{\"type\":\"joinRoom\",\"code\":\"" + code + "\",\"name\":\"Bob\"}");
+    handler.afterConnectionClosed(bob, CloseStatus.GOING_AWAY);
+
+    clock.advance(Room.LOBBY_GRACE);
+    handler.dropAbsent();
+    assertThat(json.readTree(lastPayload(host)).path("room").path("players")).hasSize(2);
+
+    clock.advance(Duration.ofSeconds(1));
+    handler.dropAbsent();
+    assertThat(json.readTree(lastPayload(host)).path("room").path("players")).hasSize(1);
   }
 }

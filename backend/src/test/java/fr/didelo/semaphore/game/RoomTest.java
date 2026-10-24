@@ -414,17 +414,61 @@ class RoomTest {
   }
 
   @Test
-  void aPlayerWhoLeavesTheLobbyIsGoneAndTheHostSeatMovesOn() {
+  void aPlayerWhoLeavesTheLobbyIsGoneAtOnceAndTheHostSeatMovesOn() {
     var room = new Room("ABCDE", Clock.systemUTC(), new Random(1), 2, POOL);
     var host = room.join("host");
     var other = room.join("other");
 
-    room.disconnect(host.getId());
+    room.leave(host.getId());
 
     var view = room.viewFor(other.getId());
     assertThat(view.players()).hasSize(1);
     assertThat(view.players().get(0).host()).isTrue();
     assertThat(room.byToken(host.getToken())).isEmpty();
+  }
+
+  @Test
+  void aPlayerWhoDropsFromTheLobbyIsKeptOfflineForTheGracePeriodAndComesBackWithTheirTeam() {
+    var clock = new MutableClock();
+    var room = new Room("ABCDE", clock, new Random(1), 2, POOL);
+    var host = room.join("host");
+    var other = room.join("other");
+    room.apply(host.getId(), new Command.JoinTeam(Team.BABORD));
+
+    room.disconnect(host.getId());
+    clock.advance(Room.LOBBY_GRACE);
+
+    assertThat(room.dropAbsent()).isFalse();
+    var view = room.viewFor(other.getId());
+    assertThat(view.players()).hasSize(2);
+    assertThat(view.players().get(0).connected()).isFalse();
+    assertThat(view.players().get(0).host()).isTrue();
+
+    room.reconnect(host.getId());
+    clock.advance(Room.LOBBY_GRACE.plusSeconds(1));
+
+    assertThat(room.dropAbsent()).isFalse();
+    assertThat(room.viewFor(other.getId()).players().get(0).team()).isEqualTo(Team.BABORD);
+  }
+
+  @Test
+  void aLobbyDropsThePlayersAbsentForLongerThanTheGracePeriodAndTheHostSeatMovesOn() {
+    var clock = new MutableClock();
+    var room = new Room("ABCDE", clock, new Random(1), 2, POOL);
+    var host = room.join("host");
+    var other = room.join("other");
+    room.disconnect(host.getId());
+    var before = room.viewFor(other.getId()).version();
+
+    clock.advance(Room.LOBBY_GRACE.plusSeconds(1));
+
+    assertThat(room.dropAbsent()).isTrue();
+    var view = room.viewFor(other.getId());
+    assertThat(view.version()).isGreaterThan(before);
+    assertThat(view.players()).hasSize(1);
+    assertThat(view.players().get(0).host()).isTrue();
+    assertThat(room.byToken(host.getToken())).isEmpty();
+    assertThat(room.dropAbsent()).isFalse();
   }
 
   @Test
@@ -439,7 +483,26 @@ class RoomTest {
     var ghost = room.join("ghost");
     refuses(() -> room.apply(players.get(0).getId(), new Command.Start()), "pick a team");
 
-    room.disconnect(ghost.getId());
+    room.leave(ghost.getId());
+    room.apply(players.get(0).getId(), new Command.Start());
+
+    assertThat(room.phase()).isEqualTo(Phase.SIGNAL);
+  }
+
+  @Test
+  void theGameDoesNotStartWhileSomeoneIsOffline() {
+    var room = new Room("ABCDE", Clock.systemUTC(), new Random(1), 2, POOL);
+    var players = List.of(room.join("a1"), room.join("a2"), room.join("b1"), room.join("b2"));
+    players.forEach(
+        p ->
+            room.apply(
+                p.getId(),
+                new Command.JoinTeam(players.indexOf(p) < 2 ? Team.BABORD : Team.TRIBORD)));
+
+    room.disconnect(players.get(3).getId());
+    refuses(() -> room.apply(players.get(0).getId(), new Command.Start()), "online");
+
+    room.reconnect(players.get(3).getId());
     room.apply(players.get(0).getId(), new Command.Start());
 
     assertThat(room.phase()).isEqualTo(Phase.SIGNAL);
@@ -455,6 +518,20 @@ class RoomTest {
     game.room.reconnect(player.getId());
 
     assertThat(game.view().players().get(1).connected()).isTrue();
+    assertThat(game.room.byToken(player.getToken())).contains(player);
+  }
+
+  @Test
+  void aPlayerWhoLeavesAGameStaysOfflineLikeAfterAClosedConnection() {
+    var clock = new MutableClock();
+    var game = new Game(POOL, clock);
+    var player = game.players.get(1);
+
+    game.room.leave(player.getId());
+    clock.advance(Room.LOBBY_GRACE.multipliedBy(10));
+
+    assertThat(game.room.dropAbsent()).isFalse();
+    assertThat(game.view().players().get(1).connected()).isFalse();
     assertThat(game.room.byToken(player.getToken())).contains(player);
   }
 

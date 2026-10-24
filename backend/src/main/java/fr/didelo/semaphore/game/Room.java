@@ -30,6 +30,8 @@ public final class Room {
   public static final int FLAGS = 2;
   public static final int MAX_NUMBER = 4;
   public static final int MAX_PLAYERS = 12;
+  // Longer than a reload or the front's first retries, short enough not to wait for a ghost.
+  public static final Duration LOBBY_GRACE = Duration.ofSeconds(30);
 
   private final String code;
   private final Clock clock;
@@ -89,24 +91,49 @@ public final class Room {
     return player;
   }
 
-  /**
-   * Someone who leaves the lobby is gone, so they cannot block the start or keep the host seat.
-   * Once the game has started they keep their seat and may come back.
-   */
   public void disconnect(String playerId) {
-    if (phase == Phase.LOBBY) {
-      players.remove(playerId);
-    } else {
-      players.get(playerId).setConnected(false);
-    }
+    players.get(playerId).setAbsentSince(clock.instant());
     lastActivity = clock.instant();
     version++;
   }
 
   public void reconnect(String playerId) {
-    players.get(playerId).setConnected(true);
+    players.get(playerId).setAbsentSince(null);
     lastActivity = clock.instant();
     version++;
+  }
+
+  /**
+   * Leaving the lobby on purpose frees the seat at once, so nobody absent blocks the start or keeps
+   * the host seat. Once the game has started the seat stays, like after a closed connection.
+   */
+  public void leave(String playerId) {
+    if (phase != Phase.LOBBY) {
+      disconnect(playerId);
+      return;
+    }
+    players.remove(playerId);
+    lastActivity = clock.instant();
+    version++;
+  }
+
+  /** Drops the lobby players who have been absent longer than the grace period. */
+  public boolean dropAbsent() {
+    var now = clock.instant();
+    var dropped =
+        phase == Phase.LOBBY
+            && players
+                .values()
+                .removeIf(
+                    p ->
+                        !p.isConnected()
+                            && Duration.between(p.getAbsentSince(), now).compareTo(LOBBY_GRACE)
+                                > 0);
+    if (dropped) {
+      lastActivity = now;
+      version++;
+    }
+    return dropped;
   }
 
   public void apply(String playerId, Command command) {
@@ -170,6 +197,9 @@ public final class Room {
     }
     if (players.values().stream().anyMatch(p -> p.getTeam() == null)) {
       throw new IllegalMove("everyone must pick a team");
+    }
+    if (!players.values().stream().allMatch(Player::isConnected)) {
+      throw new IllegalMove("everyone must be online");
     }
     for (var team : Team.values()) {
       if (members(team).size() < minTeamSize) {

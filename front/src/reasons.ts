@@ -6,6 +6,7 @@ const EXACT: Record<string, string> = {
   "a name has 1 to 20 characters": "Un nom fait de 1 à 20 caractères.",
   "only the host starts the game": "Seul l'hôte lance la partie.",
   "everyone must pick a team": "Tout le monde doit choisir une équipe.",
+  "everyone must be online": "Tout le monde doit être en ligne.",
   "you are already in a room": "Tu es déjà dans un salon.",
   "join a room first": "Rejoins d'abord un salon.",
   "unknown player": "Ta place a disparu : rejoins le salon.",

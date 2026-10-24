@@ -168,6 +168,16 @@ describe("GameClient", () => {
     expect(client.getSnapshot()).toEqual({ connection: "idle", error: null });
   });
 
+  it("tells the server when it leaves", () => {
+    const client = connect(memoryStore());
+    client.send({ type: "createRoom", name: "Ana" });
+    last().accept();
+    last().receive(joined);
+    const socket = last();
+    client.leave();
+    expect(socket.sent.at(-1)).toEqual({ type: "leave" });
+  });
+
   it("settles a command with the answer of the server", async () => {
     const client = connect(memoryStore());
     const created = client.request({ type: "createRoom", name: "Ana" });

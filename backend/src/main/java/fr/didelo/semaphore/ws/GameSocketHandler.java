@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -67,6 +68,7 @@ public class GameSocketHandler extends TextWebSocketHandler {
             case ClientMessage.CreateRoom create -> create(session, id, create.name());
             case ClientMessage.JoinRoom join -> enter(session, id, room(join.code()), join.name());
             case ClientMessage.Rejoin rejoin -> rejoin(session, rejoin);
+            case ClientMessage.Leave leave -> leave(session);
             case ClientMessage.JoinTeam join ->
                 command(session, id, new Command.JoinTeam(join.team()));
             case ClientMessage.Start start -> command(session, id, new Command.Start());
@@ -93,6 +95,20 @@ public class GameSocketHandler extends TextWebSocketHandler {
       synchronized (seat.room()) {
         seat.room().disconnect(seat.playerId());
         deliveries = views(seat.room(), null, null);
+      }
+      deliver(deliveries);
+    }
+  }
+
+  /** The lobby keeps an absent player for a while: once it is over, the others see them go. */
+  @Scheduled(fixedDelay = 5_000)
+  void dropAbsent() {
+    for (var room : rooms.all()) {
+      List<Delivery> deliveries = List.of();
+      synchronized (room) {
+        if (room.dropAbsent()) {
+          deliveries = views(room, null, null);
+        }
       }
       deliver(deliveries);
     }
@@ -155,6 +171,21 @@ public class GameSocketHandler extends TextWebSocketHandler {
               }
             });
     return deliveries;
+  }
+
+  private List<Delivery> leave(WebSocketSession session) {
+    var seat = seats.get(session.getId());
+    if (seat == null) {
+      throw new IllegalMove("join a room first");
+    }
+    synchronized (seat.room()) {
+      // The connection may have closed while this message waited for the lock.
+      if (!seats.remove(session.getId(), seat)) {
+        throw new IllegalMove("join a room first");
+      }
+      seat.room().leave(seat.playerId());
+      return views(seat.room(), null, null);
+    }
   }
 
   private List<Delivery> command(WebSocketSession session, String id, Command command) {

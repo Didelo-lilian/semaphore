@@ -101,7 +101,11 @@ export class GameClient {
     });
   }
 
+  /** Tells the server first, so the lobby frees the seat at once instead of waiting for the grace period. */
   leave() {
+    if (this.socket?.readyState === WebSocket.OPEN) {
+      this.socket.send(JSON.stringify({ type: "leave" }));
+    }
     this.store.clear();
     this.pending = [];
     this.waiting = [];

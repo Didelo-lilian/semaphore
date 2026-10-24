@@ -41,7 +41,7 @@ Both buttons and form exist only for the player who may use them, so the server'
 ### The cards and the signal
 
 - A hidden word becomes a button that covers its card, for the lookouts in play only. A revealed word is never one. While a command waits for its answer every button is disabled: the commands run one after the other ([ADR 0004](0004-a-react-front-on-the-design-system.md)), a second click would only queue behind the first.
-- The signal is shown as a pennant that carries the word and the number, in the color of the team in play and in a triangle. As everywhere in the game, the color is never alone: a shape tells the teams apart ([ADR 0001](0001-name-rules-and-visual-direction.md)).
+- The signal is shown as a pennant that carries the word and the number, in the color of the team in play, with the mark of that team (triangle or circle) before the word. As everywhere in the game, the color is never alone: a shape tells the teams apart ([ADR 0001](0001-name-rules-and-visual-direction.md)). The text sits in the rectangular part of the pennant, clear of its tip: a first version clipped the whole pennant to a triangle and cut the number off.
 - A card turns over when it is revealed and the pennant is hoisted when a signal arrives. Both are one CSS animation, and `prefers-reduced-motion` turns both off.
 
 ### Coming back in the middle of a turn needs no code

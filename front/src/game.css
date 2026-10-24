@@ -304,16 +304,24 @@ h2 {
 
 /* The signal, hoisted as a pennant that carries its number. */
 .sem-pennant {
+  /* The text sits in the rectangle: the padding keeps it clear of the tip, whatever the length of the word. */
+  --sem-tip: 28px;
   display: flex;
   align-items: center;
   gap: var(--ds-space-3);
   align-self: flex-start;
   margin: 0;
-  padding: var(--ds-space-2) var(--ds-space-8) var(--ds-space-2)
-    var(--ds-space-4);
+  padding: var(--ds-space-2) calc(var(--sem-tip) + var(--ds-space-3))
+    var(--ds-space-2) var(--ds-space-4);
   background: var(--sem-team);
   color: #fff;
-  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--sem-tip)) 0,
+    100% 50%,
+    calc(100% - var(--sem-tip)) 100%,
+    0 100%
+  );
   animation: sem-hoist 350ms ease-out;
 }
 

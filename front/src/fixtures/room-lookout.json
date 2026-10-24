@@ -1,0 +1,173 @@
+{
+  "type": "roomUpdated",
+  "room": {
+    "code": "ZQ5Z2",
+    "version": 9,
+    "phase": "SIGNAL",
+    "turn": "TRIBORD",
+    "signal": null,
+    "revealsLeft": 0,
+    "flags": {
+      "BABORD": 2,
+      "TRIBORD": 2
+    },
+    "winner": null,
+    "players": [
+      {
+        "id": "ceb4d08d-dac3-4dcf-9acb-1dec308de628",
+        "name": "Ana",
+        "team": "BABORD",
+        "connected": true,
+        "host": true,
+        "signaler": true
+      },
+      {
+        "id": "6934d99e-f222-4d75-8789-5448acb54a99",
+        "name": "Ben",
+        "team": "TRIBORD",
+        "connected": true,
+        "host": false,
+        "signaler": true
+      },
+      {
+        "id": "adc8775d-19e1-4f6d-985a-dce440c59cd5",
+        "name": "Cleo",
+        "team": "BABORD",
+        "connected": true,
+        "host": false,
+        "signaler": false
+      },
+      {
+        "id": "9b4c00f2-0f10-48ed-bf6b-c3897222f1f0",
+        "name": "Dan",
+        "team": "TRIBORD",
+        "connected": true,
+        "host": false,
+        "signaler": false
+      }
+    ],
+    "board": [
+      {
+        "word": "cloche",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "cheminée",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "ferme",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "étoile",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "poulet",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "cathédrale",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "carte",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "diamant",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "tableau",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "araignée",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "fusée",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "volcan",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "lampe",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "chapeau",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "casque",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "beurre",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "cuisine",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "serpent",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "dauphin",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "glace",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "parapluie",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "flamme",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "palmier",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "médaille",
+        "revealed": false,
+        "kind": null
+      }
+    ],
+    "you": "adc8775d-19e1-4f6d-985a-dce440c59cd5"
+  }
+}

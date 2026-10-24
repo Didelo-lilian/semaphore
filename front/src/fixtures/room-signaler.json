@@ -1,0 +1,173 @@
+{
+  "type": "roomUpdated",
+  "room": {
+    "code": "ZQ5Z2",
+    "version": 9,
+    "phase": "SIGNAL",
+    "turn": "TRIBORD",
+    "signal": null,
+    "revealsLeft": 0,
+    "flags": {
+      "BABORD": 2,
+      "TRIBORD": 2
+    },
+    "winner": null,
+    "players": [
+      {
+        "id": "ceb4d08d-dac3-4dcf-9acb-1dec308de628",
+        "name": "Ana",
+        "team": "BABORD",
+        "connected": true,
+        "host": true,
+        "signaler": true
+      },
+      {
+        "id": "6934d99e-f222-4d75-8789-5448acb54a99",
+        "name": "Ben",
+        "team": "TRIBORD",
+        "connected": true,
+        "host": false,
+        "signaler": true
+      },
+      {
+        "id": "adc8775d-19e1-4f6d-985a-dce440c59cd5",
+        "name": "Cleo",
+        "team": "BABORD",
+        "connected": true,
+        "host": false,
+        "signaler": false
+      },
+      {
+        "id": "9b4c00f2-0f10-48ed-bf6b-c3897222f1f0",
+        "name": "Dan",
+        "team": "TRIBORD",
+        "connected": true,
+        "host": false,
+        "signaler": false
+      }
+    ],
+    "board": [
+      {
+        "word": "cloche",
+        "revealed": false,
+        "kind": "CALM"
+      },
+      {
+        "word": "cheminée",
+        "revealed": false,
+        "kind": "REEF"
+      },
+      {
+        "word": "ferme",
+        "revealed": false,
+        "kind": "CALM"
+      },
+      {
+        "word": "étoile",
+        "revealed": false,
+        "kind": "BABORD"
+      },
+      {
+        "word": "poulet",
+        "revealed": false,
+        "kind": "TRIBORD"
+      },
+      {
+        "word": "cathédrale",
+        "revealed": false,
+        "kind": "TRIBORD"
+      },
+      {
+        "word": "carte",
+        "revealed": false,
+        "kind": "TRIBORD"
+      },
+      {
+        "word": "diamant",
+        "revealed": false,
+        "kind": "TRIBORD"
+      },
+      {
+        "word": "tableau",
+        "revealed": false,
+        "kind": "BABORD"
+      },
+      {
+        "word": "araignée",
+        "revealed": false,
+        "kind": "REEF"
+      },
+      {
+        "word": "fusée",
+        "revealed": false,
+        "kind": "BABORD"
+      },
+      {
+        "word": "volcan",
+        "revealed": false,
+        "kind": "TRIBORD"
+      },
+      {
+        "word": "lampe",
+        "revealed": false,
+        "kind": "CALM"
+      },
+      {
+        "word": "chapeau",
+        "revealed": false,
+        "kind": "BABORD"
+      },
+      {
+        "word": "casque",
+        "revealed": false,
+        "kind": "CALM"
+      },
+      {
+        "word": "beurre",
+        "revealed": false,
+        "kind": "BABORD"
+      },
+      {
+        "word": "cuisine",
+        "revealed": false,
+        "kind": "TRIBORD"
+      },
+      {
+        "word": "serpent",
+        "revealed": false,
+        "kind": "BABORD"
+      },
+      {
+        "word": "dauphin",
+        "revealed": false,
+        "kind": "TRIBORD"
+      },
+      {
+        "word": "glace",
+        "revealed": false,
+        "kind": "CALM"
+      },
+      {
+        "word": "parapluie",
+        "revealed": false,
+        "kind": "BABORD"
+      },
+      {
+        "word": "flamme",
+        "revealed": false,
+        "kind": "BABORD"
+      },
+      {
+        "word": "palmier",
+        "revealed": false,
+        "kind": "CALM"
+      },
+      {
+        "word": "médaille",
+        "revealed": false,
+        "kind": "TRIBORD"
+      }
+    ],
+    "you": "ceb4d08d-dac3-4dcf-9acb-1dec308de628"
+  }
+}

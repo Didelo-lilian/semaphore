@@ -25,6 +25,18 @@ The state decides which commands are legal at all; the room then judges who send
 
 ADR 0001 announced five states with a "round end". A turn ends at once, so there is no state between two turns, and ADR 0001 is corrected.
 
+```mermaid
+stateDiagram-v2
+  [*] --> LOBBY: createRoom
+  LOBBY --> LOBBY: joinRoom, joinTeam
+  LOBBY --> SIGNAL: start
+  SIGNAL --> GUESS: signal
+  GUESS --> GUESS: reveal a word of the team in play
+  GUESS --> SIGNAL: pass, calm waters, the other team's word,<br/>a reef, the limit of n + 1 reached
+  GUESS --> ENDED: a team has all its words,<br/>or a second reef
+  ENDED --> [*]
+```
+
 ### Roles
 
 - The Signaleur is not picked. It is the member of the team at position *turns played* modulo *team size* in the order they joined the room, so each player takes the role in turn and nobody has to be chosen or to be willing.
@@ -37,7 +49,25 @@ Each player receives their own view of the room, never the room itself. The kind
 
 ### The messages
 
-One record per legal action, JSON with a `type` field.
+One record per legal action, JSON with a `type` field. This is what a command does, here a signal:
+
+```mermaid
+sequenceDiagram
+  participant S as Signaleur's browser
+  participant H as GameSocketHandler
+  participant R as Room
+  participant L as Lookouts' browsers
+  S->>H: {"type":"signal","word":"voyage","number":2}
+  H->>R: apply(player, Signal), under the room's lock
+  alt refused
+    R-->>H: IllegalMove(reason)
+    H-->>S: {"type":"error","reason":"..."}
+  else accepted
+    R-->>H: the room has changed
+    H-->>S: roomUpdated, the view with the key
+    H-->>L: roomUpdated, the view without the key
+  end
+```
 
 | Client sends | Meaning |
 |---|---|

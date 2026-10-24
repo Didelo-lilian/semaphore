@@ -132,7 +132,7 @@ class WebSocketIT {
   }
 
   private static String rejoin(Client player) {
-    return "{\"type\":\"rejoin\",\"code\":\""
+    return "{\"type\":\"rejoin\",\"id\":\"back\",\"code\":\""
         + player.room.path("code").asString()
         + "\",\"token\":\""
         + player.joined.path("token").asString()
@@ -231,12 +231,49 @@ class WebSocketIT {
     var again = new Client(ALLOWED_ORIGIN);
     again.send(rejoin(lost));
 
-    assertThat(again.await("joined").path("playerId").asString()).isEqualTo(playerId);
+    var answer = again.await("joined");
+    assertThat(answer.path("playerId").asString()).isEqualTo(playerId);
+    assertThat(answer.path("id").asString()).isEqualTo("back");
     assertThat(
             host.await(
                 "roomUpdated",
                 m -> m.path("room").path("players").path(3).path("connected").asBoolean()))
         .isNotNull();
+  }
+
+  @Test
+  void theAnswerCarriesTheIdOfTheMessageAndWhatGoesToTheOthersNone() throws Exception {
+    var host = new Client(ALLOWED_ORIGIN);
+    host.send("{\"type\":\"createRoom\",\"id\":\"1\",\"name\":\"Ana\"}");
+    var created = host.await("joined");
+    assertThat(created.path("id").asString()).isEqualTo("1");
+    var code = created.path("room").path("code").asString();
+
+    var bob = new Client(ALLOWED_ORIGIN);
+    bob.send("{\"type\":\"joinRoom\",\"id\":\"2\",\"code\":\"" + code + "\",\"name\":\"Bob\"}");
+    assertThat(bob.await("joined").path("id").asString()).isEqualTo("2");
+    assertThat(host.await("roomUpdated", m -> sees(m, 2)).has("id")).isFalse();
+
+    host.send("{\"type\":\"joinTeam\",\"id\":\"3\",\"team\":\"BABORD\"}");
+    host.await("roomUpdated", m -> m.path("id").asString().equals("3"));
+    var seenByBob =
+        bob.await(
+            "roomUpdated",
+            m -> m.path("room").path("players").path(0).path("team").asString().equals("BABORD"));
+    assertThat(seenByBob.has("id")).isFalse();
+
+    host.send("{\"type\":\"start\",\"id\":\"4\"}");
+    assertThat(host.await("error").path("id").asString()).isEqualTo("4");
+  }
+
+  @Test
+  void aMessageWithoutAnIdIsAnsweredWithoutOne() throws Exception {
+    var client = new Client(ALLOWED_ORIGIN);
+
+    client.send("{\"type\":\"start\"}");
+    assertThat(client.await("error").has("id")).isFalse();
+    client.send("{\"type\":\"createRoom\",\"name\":\"Ana\"}");
+    assertThat(client.await("joined").has("id")).isFalse();
   }
 
   @Test

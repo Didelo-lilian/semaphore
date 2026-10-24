@@ -27,6 +27,7 @@ const REPLACED = "replaced by a newer connection";
 const RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000];
 
 interface Waiting {
+  id: string;
   resolve: (room: RoomView) => void;
   reject: (reason: Error) => void;
 }
@@ -42,6 +43,9 @@ export class GameClient {
   private socket: WebSocket | null = null;
   private pending: ClientMessage[] = [];
   private waiting: Waiting[] = [];
+  private lastId = 0;
+  // compat: whether the server of this connection has shown that it echoes ids.
+  private echoes = false;
   private awaitingRejoin = false;
   private attempts = 0;
   private retry: ReturnType<typeof setTimeout> | undefined;
@@ -87,15 +91,15 @@ export class GameClient {
   }
 
   /**
-   * Sends a command and settles with the server's answer on this connection: `joined` or an
-   * update resolve it, `error` rejects it.
-   * shortcut: the protocol has no request id, so an update caused by someone else can settle a
-   * command early; upgrade by adding an id to the messages.
+   * Sends a command with an id and settles with the answer that carries it: `joined` or an update
+   * resolve it, `error` rejects it. What the server sends because of someone else has no id and
+   * settles nothing.
    */
   request(message: ClientMessage) {
     return new Promise<RoomView>((resolve, reject) => {
-      this.waiting.push({ resolve, reject });
-      this.send(message);
+      const id = String(++this.lastId);
+      this.waiting.push({ id, resolve, reject });
+      this.send({ ...message, id });
     });
   }
 
@@ -119,6 +123,7 @@ export class GameClient {
   private connect(connection: Connection) {
     clearTimeout(this.retry);
     this.update({ connection });
+    this.echoes = false;
     const socket = this.open(this.url);
     this.socket = socket;
     socket.onopen = () => {
@@ -127,7 +132,9 @@ export class GameClient {
       const session = this.store.load();
       if (session !== null && this.pending.length === 0) {
         this.awaitingRejoin = true;
-        socket.send(JSON.stringify({ type: "rejoin", ...session }));
+        // Its id lets the answer show whether the server echoes ids.
+        const id = String(++this.lastId);
+        socket.send(JSON.stringify({ type: "rejoin", id, ...session }));
       }
       for (const message of this.pending.splice(0)) {
         socket.send(JSON.stringify(message));
@@ -176,11 +183,11 @@ export class GameClient {
         this.awaitingRejoin = false;
         this.store.save({ code: received.room.code, token: received.token });
         this.show(received.room);
-        this.waiting.shift()?.resolve(received.room);
+        this.take(received.id)?.resolve(received.room);
         break;
       case "roomUpdated":
         this.show(received.room);
-        this.waiting.shift()?.resolve(received.room);
+        this.take(received.id)?.resolve(received.room);
         break;
       case "error": {
         if (this.awaitingRejoin) {
@@ -192,7 +199,7 @@ export class GameClient {
           this.update({ connection: "idle", error: received.reason });
           break;
         }
-        const waiting = this.waiting.shift();
+        const waiting = this.take(received.id);
         if (waiting === undefined) {
           this.update({ error: received.reason });
         } else {
@@ -201,6 +208,20 @@ export class GameClient {
         break;
       }
     }
+  }
+
+  /**
+   * The command an answer is for. compat: a server from before request ids echoes none, so until
+   * one has shown that it does, an answer without id is for the oldest command; remove it once
+   * every server echoes.
+   */
+  private take(id: string | undefined) {
+    this.echoes ||= id !== undefined;
+    let index = this.waiting.findIndex((waiting) => waiting.id === id);
+    if (id === undefined && !this.echoes) {
+      index = 0;
+    }
+    return index < 0 ? undefined : this.waiting.splice(index, 1)[0];
   }
 
   /** A view older than the one shown arrived late: the newest wins. */

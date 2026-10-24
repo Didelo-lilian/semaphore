@@ -1,9 +1,10 @@
 {
   "type": "joined",
-  "playerId": "6934d99e-f222-4d75-8789-5448acb54a99",
+  "id": "2",
+  "playerId": "c64485fa-bece-4901-befc-7686ea6038e4",
   "token": "00000000-0000-4000-8000-000000000000",
   "room": {
-    "code": "ZQ5Z2",
+    "code": "77STE",
     "version": 2,
     "phase": "LOBBY",
     "turn": null,
@@ -16,7 +17,7 @@
     "winner": null,
     "players": [
       {
-        "id": "ceb4d08d-dac3-4dcf-9acb-1dec308de628",
+        "id": "2fdf93e9-81fe-4496-8370-25af6c4eea8c",
         "name": "Ana",
         "team": null,
         "connected": true,
@@ -24,8 +25,8 @@
         "signaler": false
       },
       {
-        "id": "6934d99e-f222-4d75-8789-5448acb54a99",
-        "name": "Ben",
+        "id": "c64485fa-bece-4901-befc-7686ea6038e4",
+        "name": "Bob",
         "team": null,
         "connected": true,
         "host": false,
@@ -33,6 +34,6 @@
       }
     ],
     "board": [],
-    "you": "6934d99e-f222-4d75-8789-5448acb54a99"
+    "you": "c64485fa-bece-4901-befc-7686ea6038e4"
   }
 }

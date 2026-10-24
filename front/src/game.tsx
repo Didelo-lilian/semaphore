@@ -43,7 +43,7 @@ export const useCommand = (onSuccess?: (room: RoomView) => void) => {
   return useMutation({
     mutationFn: (message: ClientMessage) => client.request(message),
     onSuccess,
-    // Commands wait for their answer in order: two at once would swap their answers.
+    // A command is judged against the view the player saw: the next one goes out once this one is answered.
     scope: { id: "game" },
   });
 };

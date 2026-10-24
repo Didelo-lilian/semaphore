@@ -4,7 +4,7 @@ export class FakeSocket {
   static last = () => FakeSocket.all[FakeSocket.all.length - 1] as FakeSocket;
 
   readyState = 0;
-  sent: unknown[] = [];
+  sent: ({ id?: string } & Record<string, unknown>)[] = [];
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: string }) => void) | null = null;
   onclose: ((event: { reason: string }) => void) | null = null;
@@ -28,6 +28,11 @@ export class FakeSocket {
 
   receive(message: unknown) {
     this.onmessage?.({ data: JSON.stringify(message) });
+  }
+
+  /** The server's answer to a message sent (the last one by default): it carries that message's id. */
+  answer(message: object, to = this.sent.length - 1) {
+    this.receive({ ...message, id: this.sent[to]?.id });
   }
 
   drop(reason = "") {

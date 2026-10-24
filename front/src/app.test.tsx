@@ -56,7 +56,7 @@ const join = async (room: RoomView) => {
   await mount(`/salon/${room.code}`, memoryStore(seat));
   const socket = FakeSocket.last();
   socket.accept();
-  socket.receive({
+  socket.answer({
     type: "joined",
     playerId: room.you,
     token: seat.token,
@@ -83,9 +83,9 @@ describe("the game in the browser", () => {
     await waitFor(() => expect(FakeSocket.all).toHaveLength(1));
     FakeSocket.last().accept();
     expect(FakeSocket.last().sent).toEqual([
-      { type: "createRoom", name: "Ana" },
+      { type: "createRoom", id: "1", name: "Ana" },
     ]);
-    FakeSocket.last().receive(joined);
+    FakeSocket.last().answer(joined);
     expect(await screen.findByText(joined.room.code)).toBeInTheDocument();
     expect(router.state.location.pathname).toBe(`/salon/${joined.room.code}`);
   });
@@ -100,7 +100,7 @@ describe("the game in the browser", () => {
     await waitFor(() => expect(FakeSocket.all).toHaveLength(1));
     FakeSocket.last().accept();
     expect(FakeSocket.last().sent).toEqual([
-      { type: "joinRoom", code: "USQ2H", name: "Ben" },
+      { type: "joinRoom", id: "1", code: "USQ2H", name: "Ben" },
     ]);
   });
 
@@ -112,7 +112,7 @@ describe("the game in the browser", () => {
     );
     await waitFor(() => expect(FakeSocket.all).toHaveLength(1));
     FakeSocket.last().accept();
-    FakeSocket.last().receive({ type: "error", reason: "no such room" });
+    FakeSocket.last().answer({ type: "error", reason: "no such room" });
     expect(
       await screen.findByText("Ce salon n'existe pas, ou plus."),
     ).toBeInTheDocument();
@@ -136,13 +136,13 @@ describe("the game in the browser", () => {
     const { router } = await mount(`/salon/${seat.code}`, store);
     const socket = FakeSocket.last();
     socket.accept();
-    socket.receive({
+    socket.answer({
       type: "joined",
       playerId: lookout.room.you,
       token: seat.token,
       room: lookout.room,
     });
-    expect(socket.sent).toEqual([{ type: "rejoin", ...seat }]);
+    expect(socket.sent).toEqual([{ type: "rejoin", id: "1", ...seat }]);
     expect(
       await screen.findByText("Le Signaleur de Tribord prépare son signal."),
     ).toBeInTheDocument();
@@ -176,9 +176,9 @@ describe("the game in the browser", () => {
       await screen.findByRole("button", { name: board[0]?.word }),
     );
     await waitFor(() =>
-      expect(socket.sent).toContainEqual({ type: "reveal", index: 0 }),
+      expect(socket.sent).toContainEqual({ type: "reveal", id: "2", index: 0 }),
     );
-    socket.receive(
+    socket.answer(
       view(13, {
         phase: "GUESS",
         turn: "BABORD",
@@ -194,10 +194,10 @@ describe("the game in the browser", () => {
     );
 
     await userEvent.click(screen.getByRole("button", { name: "Passer" }));
-    await waitFor(() => expect(socket.sent).toContainEqual({ type: "pass" }));
-    socket.receive(
-      view(14, { phase: "SIGNAL", turn: "TRIBORD", signal: null }),
+    await waitFor(() =>
+      expect(socket.sent).toContainEqual({ type: "pass", id: "3" }),
     );
+    socket.answer(view(14, { phase: "SIGNAL", turn: "TRIBORD", signal: null }));
 
     socket.receive(
       view(15, {
@@ -222,7 +222,7 @@ describe("the game in the browser", () => {
     const store = memoryStore({ code: joined.room.code, token: joined.token });
     const { router } = await mount(`/salon/${joined.room.code}`, store);
     FakeSocket.last().accept();
-    FakeSocket.last().receive(joined);
+    FakeSocket.last().answer(joined);
     await userEvent.click(
       await screen.findByRole("button", { name: "Quitter" }),
     );
@@ -246,11 +246,12 @@ describe("the game in the browser", () => {
     await waitFor(() =>
       expect(socket.sent).toContainEqual({
         type: "signal",
+        id: "2",
         word: "voyage",
         number: 2,
       }),
     );
-    socket.receive({
+    socket.answer({
       type: "roomUpdated",
       room: {
         ...room,
@@ -287,9 +288,9 @@ describe("the game in the browser", () => {
       }),
     );
     await waitFor(() =>
-      expect(socket.sent).toContainEqual({ type: "reveal", index: 0 }),
+      expect(socket.sent).toContainEqual({ type: "reveal", id: "2", index: 0 }),
     );
-    socket.receive({
+    socket.answer({
       type: "error",
       reason: "only the lookouts of the team in play can do that",
     });
@@ -315,7 +316,7 @@ describe("the game in the browser", () => {
     await mount(`/salon/${joined.room.code}`, store);
     expect(screen.getByText("Connexion au salon…")).toBeInTheDocument();
     FakeSocket.last().accept();
-    FakeSocket.last().receive(joined);
+    FakeSocket.last().answer(joined);
     expect(await screen.findByText("Salon")).toBeInTheDocument();
   });
 });

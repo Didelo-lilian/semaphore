@@ -4,6 +4,7 @@ import joined from "./fixtures/joined-lobby.json";
 import answer from "./fixtures/room-answer.json";
 import lookout from "./fixtures/room-lookout.json";
 import signaler from "./fixtures/room-signaler.json";
+import waiting from "./fixtures/room-waiting.json";
 import { serverMessageSchema } from "./protocol.ts";
 
 // The fixtures are real messages captured from the running backend (the seat token is replaced).
@@ -32,6 +33,15 @@ describe("server messages", () => {
       message.type === "roomUpdated" &&
         message.room.board.every((c) => c.kind === null),
     ).toBe(true);
+  });
+
+  it("reads the seconds left before the turn passes, null when nobody away is waited for", () => {
+    const message = serverMessageSchema.parse(waiting);
+    expect(message.type === "roomUpdated" && message.room.turnPassesIn).toBe(
+      60,
+    );
+    const idle = serverMessageSchema.parse(lookout);
+    expect(idle.type === "roomUpdated" && idle.room.turnPassesIn).toBeNull();
   });
 
   it("reads an error, with the id of the message it refuses", () => {

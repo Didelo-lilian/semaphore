@@ -8,6 +8,7 @@
     "version": 2,
     "phase": "LOBBY",
     "turn": null,
+    "turnPassesIn": null,
     "signal": null,
     "revealsLeft": 0,
     "flags": {

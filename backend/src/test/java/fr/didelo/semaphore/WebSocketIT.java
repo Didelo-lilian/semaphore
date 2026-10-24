@@ -259,6 +259,21 @@ class WebSocketIT {
   }
 
   @Test
+  void theTurnPassesAtOnceWhenTheSignaleurInPlayLeaves() throws Exception {
+    var players = startedGame();
+    var lookout = players.get(1);
+    var turn = lookout.room.path("turn").asString();
+    var signaler = players.get(turn.equals("BABORD") ? 0 : 2);
+
+    signaler.send("{\"type\":\"leave\"}");
+
+    var update =
+        lookout.await("roomUpdated", m -> !m.path("room").path("turn").asString().equals(turn));
+    assertThat(update.path("room").path("phase").asString()).isEqualTo("SIGNAL");
+    assertThat(update.path("room").path("turnPassesIn").isNull()).isTrue();
+  }
+
+  @Test
   void aPlayerComesBackWithTheirTokenDuringTheGame() throws Exception {
     var players = startedGame();
     var host = players.get(0);

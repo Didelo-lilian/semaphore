@@ -8,6 +8,7 @@ import { FakeSocket } from "./fake-socket.ts";
 import joined from "./fixtures/joined-lobby.json";
 import lookout from "./fixtures/room-lookout.json";
 import signaler from "./fixtures/room-signaler.json";
+import waiting from "./fixtures/room-waiting.json";
 import { GameProvider } from "./game.tsx";
 import type { RoomView } from "./protocol.ts";
 import { createAppRouter } from "./router.tsx";
@@ -233,6 +234,29 @@ describe("the game in the browser", () => {
     expect(router.state.location.search).toEqual({});
     expect(screen.queryByText(joined.room.code)).toBeNull();
     expect(store.load()).toBeNull();
+  });
+
+  it("counts down while the game waits for an absent Signaleur, then shows the turn that passed", async () => {
+    const room = waiting.room as RoomView;
+    const socket = await join(room);
+    expect(await screen.findByRole("timer")).toHaveTextContent(
+      "Le tour passe dans 60 s.",
+    );
+
+    socket.receive({
+      type: "roomUpdated",
+      room: {
+        ...room,
+        version: room.version + 1,
+        turn: "BABORD",
+        turnPassesIn: null,
+      },
+    });
+
+    expect(
+      await screen.findByText("Le Signaleur de Bâbord prépare son signal."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("timer")).toBeNull();
   });
 
   it("sends the signal of the Signaleur and waits for the lookouts", async () => {

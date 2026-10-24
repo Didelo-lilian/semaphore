@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -103,15 +104,13 @@ public class GameSocketHandler extends TextWebSocketHandler {
   /** The lobby keeps an absent player for a while: once it is over, the others see them go. */
   @Scheduled(fixedDelay = 5_000)
   void dropAbsent() {
-    for (var room : rooms.all()) {
-      List<Delivery> deliveries = List.of();
-      synchronized (room) {
-        if (room.dropAbsent()) {
-          deliveries = views(room, null, null);
-        }
-      }
-      deliver(deliveries);
-    }
+    sweep(Room::dropAbsent);
+  }
+
+  /** The turn passes, or the game ends, when the game has waited long enough for someone away. */
+  @Scheduled(fixedDelay = 1_000)
+  void expire() {
+    sweep(Room::expire);
   }
 
   @Override
@@ -247,6 +246,19 @@ public class GameSocketHandler extends TextWebSocketHandler {
                         entry.getKey().equals(senderSessionId) ? id : null,
                         room.viewFor(entry.getValue().playerId()))))
         .toList();
+  }
+
+  /** Runs a sweep on every room and sends the new views of the ones it changed. */
+  private void sweep(Predicate<Room> changesRoom) {
+    for (var room : rooms.all()) {
+      List<Delivery> deliveries = List.of();
+      synchronized (room) {
+        if (changesRoom.test(room)) {
+          deliveries = views(room, null, null);
+        }
+      }
+      deliver(deliveries);
+    }
   }
 
   private void deliver(List<Delivery> deliveries) {

@@ -1,5 +1,5 @@
 import { Alert, Button, Dialog } from "@didelo/design-system";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Card, RoomView, Team } from "../protocol.ts";
 import { explain } from "../reasons.ts";
 import { Presence } from "./Presence.tsx";
@@ -61,6 +61,30 @@ export const Board = ({
     ))}
   </ol>
 );
+
+/**
+ * Counts down from what the server said when it built the view, so the browser's clock only measures the time since:
+ * a new view (new version) starts a new count.
+ */
+const Countdown = ({ seconds }: { seconds: number }) => {
+  const [left, setLeft] = useState(seconds);
+  useEffect(() => {
+    const start = performance.now();
+    const timer = setInterval(
+      () =>
+        setLeft(
+          Math.max(0, Math.ceil(seconds - (performance.now() - start) / 1000)),
+        ),
+      1000,
+    );
+    return () => clearInterval(timer);
+  }, [seconds]);
+  return (
+    <p className="sem-countdown" role="timer">
+      Le tour passe dans {left} s.
+    </p>
+  );
+};
 
 interface Props {
   room: RoomView;
@@ -137,6 +161,9 @@ export const Table = ({
               </span>
             )}
           </output>
+          {room.turnPassesIn !== null && (
+            <Countdown key={room.version} seconds={room.turnPassesIn} />
+          )}
           <Presence players={room.players} />
         </div>
         <Button
@@ -215,7 +242,8 @@ export const Table = ({
         }
       >
         Tu ne pourras pas reprendre ta place.
-        {signaler && " Tu es Signaleur : sans toi, la partie sera bloquée."}
+        {signaler &&
+          " Tu es Signaleur : sans toi, ton équipe ne peut plus jouer et finira par perdre la partie."}
       </Dialog>
     </section>
   );

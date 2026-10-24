@@ -18,7 +18,9 @@ class RoomTest {
   private static final List<String> POOL =
       IntStream.range(0, 26).mapToObj(i -> (char) ('a' + i) + "voile" + (char) ('a' + i)).toList();
 
-  /** A started game, two players per team. The key is read through the Signaleurs' views. */
+  /**
+   * A started game, two players per team by default. The key is read through the Signaleurs' views.
+   */
   private static class Game {
     final Room room;
     final List<Player> players;
@@ -28,13 +30,18 @@ class RoomTest {
     }
 
     Game(List<String> pool, Clock clock) {
+      this(pool, clock, 2);
+    }
+
+    Game(List<String> pool, Clock clock, int teamSize) {
       room = new Room("ABCDE", clock, new Random(7), 2, pool);
-      players = List.of(room.join("a1"), room.join("a2"), room.join("b1"), room.join("b2"));
+      players = IntStream.range(0, 2 * teamSize).mapToObj(i -> room.join("p" + i)).toList();
       players.forEach(
           p ->
               room.apply(
                   p.getId(),
-                  new Command.JoinTeam(players.indexOf(p) < 2 ? Team.BABORD : Team.TRIBORD)));
+                  new Command.JoinTeam(
+                      players.indexOf(p) < teamSize ? Team.BABORD : Team.TRIBORD)));
       room.apply(players.get(0).getId(), new Command.Start());
     }
 
@@ -60,11 +67,12 @@ class RoomTest {
       return signalerOf(turn());
     }
 
+    List<Player> lookouts() {
+      return players.stream().filter(p -> p.getTeam() == turn() && p != signaler()).toList();
+    }
+
     Player lookout() {
-      return players.stream()
-          .filter(p -> p.getTeam() == turn() && p != signaler())
-          .findFirst()
-          .orElseThrow();
+      return lookouts().get(0);
     }
 
     List<CardView> key() {
@@ -533,6 +541,224 @@ class RoomTest {
     assertThat(game.room.dropAbsent()).isFalse();
     assertThat(game.view().players().get(1).connected()).isFalse();
     assertThat(game.room.byToken(player.getToken())).contains(player);
+  }
+
+  @Test
+  void aSignaleurAwayForTheWholeDelayLosesTheTurnAndTheDelayStartsAgainOnTheirNextTurn() {
+    var clock = new MutableClock();
+    var game = new Game(POOL, clock);
+    var team = game.turn();
+    game.room.disconnect(game.signaler().getId());
+
+    clock.advance(Room.TURN_GRACE.minusSeconds(1));
+    assertThat(game.room.expire()).isFalse();
+    assertThat(game.turn()).isEqualTo(team);
+    clock.advance(Duration.ofSeconds(1));
+    assertThat(game.room.expire()).isTrue();
+    assertThat(game.turn()).isEqualTo(team.other());
+    assertThat(game.view().phase()).isEqualTo(Phase.SIGNAL);
+
+    game.signal("voyage", 1);
+    game.pass();
+    assertThat(game.turn()).isEqualTo(team);
+    clock.advance(Room.TURN_GRACE.minusSeconds(1));
+    assertThat(game.room.expire()).isFalse();
+    clock.advance(Duration.ofSeconds(1));
+    assertThat(game.room.expire()).isTrue();
+    assertThat(game.turn()).isEqualTo(team.other());
+  }
+
+  @Test
+  void aSignaleurWhoComesBackInTimeKeepsTheTurn() {
+    var clock = new MutableClock();
+    var game = new Game(POOL, clock);
+    var team = game.turn();
+    var signaler = game.signaler();
+    game.room.disconnect(signaler.getId());
+
+    clock.advance(Room.TURN_GRACE.minusSeconds(1));
+    game.room.reconnect(signaler.getId());
+    clock.advance(Room.TURN_GRACE.multipliedBy(2));
+
+    assertThat(game.room.expire()).isFalse();
+    assertThat(game.turn()).isEqualTo(team);
+    assertThat(game.view().turnPassesIn()).isNull();
+  }
+
+  @Test
+  void duringGuessTheTurnPassesOnceEveryLookoutOfTheTeamInPlayIsAwayForTheWholeDelay() {
+    var clock = new MutableClock();
+    var game = new Game(POOL, clock, 3);
+    game.signal("voyage", 2);
+    var team = game.turn();
+    var lookouts = game.lookouts();
+    // Nobody waits for the Signaleur once the signal is given.
+    game.room.disconnect(game.signaler().getId());
+    game.room.disconnect(lookouts.get(0).getId());
+
+    clock.advance(Room.TURN_GRACE);
+    assertThat(game.room.expire()).isFalse();
+    game.room.disconnect(lookouts.get(1).getId());
+    clock.advance(Room.TURN_GRACE.minusSeconds(1));
+    assertThat(game.room.expire()).isFalse();
+    clock.advance(Duration.ofSeconds(1));
+
+    assertThat(game.room.expire()).isTrue();
+    assertThat(game.turn()).isEqualTo(team.other());
+    assertThat(game.view().phase()).isEqualTo(Phase.SIGNAL);
+    assertThat(game.view().signal()).isNull();
+  }
+
+  @Test
+  void theViewTellsTheSecondsLeftBeforeTheTurnPasses() {
+    var clock = new MutableClock();
+    var game = new Game(POOL, clock);
+    assertThat(game.view().turnPassesIn()).isNull();
+
+    game.room.disconnect(game.signaler().getId());
+    assertThat(game.view().turnPassesIn()).isEqualTo(60);
+    clock.advance(Duration.ofMillis(1500));
+    assertThat(game.view().turnPassesIn()).isEqualTo(59);
+    clock.advance(Room.TURN_GRACE);
+    assertThat(game.view().turnPassesIn()).isZero();
+  }
+
+  @Test
+  void aSignaleurWhoLeavesPassesTheTurnAtOnceAndTheirTeamKeepsNoTurn() {
+    var game = new Game();
+    var team = game.turn();
+
+    game.room.leave(game.signaler().getId());
+
+    assertThat(game.turn()).isEqualTo(team.other());
+    assertThat(game.view().phase()).isEqualTo(Phase.SIGNAL);
+    assertThat(game.view().turnPassesIn()).isNull();
+    game.signal("voyage", 1);
+    game.pass();
+    assertThat(game.turn()).isEqualTo(team.other());
+  }
+
+  @Test
+  void duringGuessTheTurnPassesAtOnceWhenEveryLookoutLeft() {
+    var game = new Game(POOL, new MutableClock(), 3);
+    game.signal("voyage", 2);
+    var team = game.turn();
+    var lookouts = game.lookouts();
+
+    game.room.leave(lookouts.get(0).getId());
+    assertThat(game.turn()).isEqualTo(team);
+    game.room.leave(lookouts.get(1).getId());
+
+    assertThat(game.turn()).isEqualTo(team.other());
+    assertThat(game.view().phase()).isEqualTo(Phase.SIGNAL);
+  }
+
+  @Test
+  void aLookoutWhoLeftDoesNotShortenTheWaitForAnotherOneWhoIsJustAway() {
+    var clock = new MutableClock();
+    var game = new Game(POOL, clock, 3);
+    game.signal("voyage", 2);
+    var team = game.turn();
+    var lookouts = game.lookouts();
+
+    game.room.leave(lookouts.get(0).getId());
+    game.room.disconnect(lookouts.get(1).getId());
+
+    assertThat(game.turn()).isEqualTo(team);
+    assertThat(game.view().turnPassesIn()).isEqualTo(60);
+    clock.advance(Room.TURN_GRACE);
+    assertThat(game.room.expire()).isTrue();
+    assertThat(game.turn()).isEqualTo(team.other());
+  }
+
+  @Test
+  void aPlayerWhoLeftAndComesBackIsWaitedForAgainLikeAnyoneAway() {
+    var game = new Game(POOL, new MutableClock());
+    var team = game.turn();
+    var signaler = game.signaler();
+    game.room.leave(signaler.getId());
+    game.room.reconnect(signaler.getId());
+    game.room.disconnect(signaler.getId());
+
+    game.signal("voyage", 1);
+    game.pass();
+
+    assertThat(game.turn()).isEqualTo(team);
+    assertThat(game.view().turnPassesIn()).isEqualTo(60);
+  }
+
+  @Test
+  void whenBothSignaleursLeftTheTurnWaitsTheDelayInsteadOfBouncing() {
+    var clock = new MutableClock();
+    var game = new Game(POOL, clock);
+    var team = game.turn();
+    game.room.leave(game.signalerOf(team.other()).getId());
+    assertThat(game.turn()).isEqualTo(team);
+
+    game.room.leave(game.signaler().getId());
+
+    assertThat(game.turn()).isEqualTo(team);
+    assertThat(game.view().turnPassesIn()).isEqualTo(60);
+    clock.advance(Room.TURN_GRACE);
+    assertThat(game.room.expire()).isTrue();
+    assertThat(game.turn()).isEqualTo(team.other());
+    assertThat(game.room.expire()).isFalse();
+  }
+
+  @Test
+  void aTeamWhoseSignaleurHasBeenAwayForTheLimitLosesWhoeverIsInPlay() {
+    var clock = new MutableClock();
+    var game = new Game(POOL, clock);
+    var team = game.turn();
+    game.room.disconnect(game.signalerOf(team.other()).getId());
+
+    clock.advance(Room.SIGNALER_LIMIT.minusSeconds(1));
+    assertThat(game.room.expire()).isFalse();
+    assertThat(game.view().phase()).isEqualTo(Phase.SIGNAL);
+    clock.advance(Duration.ofSeconds(1));
+
+    assertThat(game.room.expire()).isTrue();
+    assertThat(game.view().phase()).isEqualTo(Phase.ENDED);
+    assertThat(game.view().winner()).isEqualTo(team);
+    assertThat(game.view().turnPassesIn()).isNull();
+    refuses(() -> game.signal("voyage", 1), "phase");
+    assertThat(game.room.expire()).isFalse();
+  }
+
+  @Test
+  void whenBothSignaleursAreAwayTheOneAwayLongestLoses() {
+    var clock = new MutableClock();
+    var game = new Game(POOL, clock);
+    var team = game.turn();
+    game.room.disconnect(game.signalerOf(team.other()).getId());
+    clock.advance(Duration.ofMinutes(1));
+    game.room.disconnect(game.signaler().getId());
+    clock.advance(Room.SIGNALER_LIMIT.minusMinutes(1));
+
+    assertThat(game.room.expire()).isTrue();
+
+    assertThat(game.view().winner()).isEqualTo(team);
+  }
+
+  @Test
+  void aMissingSignaleurIsNeverReplacedByALookout() {
+    var clock = new MutableClock();
+    var game = new Game(POOL, clock, 3);
+    var team = game.turn();
+    var signaler = game.signaler();
+    var lookouts = game.lookouts();
+    game.room.disconnect(signaler.getId());
+    clock.advance(Room.TURN_GRACE);
+    game.room.expire();
+    game.signal("voyage", 1);
+    game.pass();
+
+    assertThat(game.turn()).isEqualTo(team);
+    assertThat(game.signalerOf(team)).isSameAs(signaler);
+    refuses(
+        () -> game.room.apply(lookouts.get(0).getId(), new Command.Signal("autre", 1)),
+        "Signaleur");
+    assertThat(game.room.viewFor(lookouts.get(0).getId()).board()).allMatch(c -> c.kind() == null);
   }
 
   @Test

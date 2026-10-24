@@ -50,7 +50,8 @@ class GameSocketHandlerTest {
   }
 
   /**
-   * Four players, two per team, game started: the sessions of a1, a2, b1 and b2, the host first.
+   * Four players, two per team, game started: the sessions of p0 to p3, the host first, the first
+   * two on Bâbord.
    */
   private List<WebSocketSession> startedGame() throws Exception {
     var sessions = new ArrayList<WebSocketSession>();

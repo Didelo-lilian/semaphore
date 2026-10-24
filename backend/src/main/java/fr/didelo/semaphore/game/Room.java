@@ -168,6 +168,8 @@ public final class Room {
       phase = Phase.ENDED;
     } else if (passesAt().filter(at -> !now.isBefore(at)).isPresent()) {
       endTurn();
+      // The turn may have reached a team whose Signaleur left: it passes again at once.
+      expire();
     } else {
       return false;
     }
@@ -181,7 +183,6 @@ public final class Room {
       throw new IllegalMove("not possible in this phase");
     }
     lastActivity = clock.instant();
-    lastMove = lastActivity;
     version++;
     switch (command) {
       case Command.JoinTeam join -> player.setTeam(join.team());
@@ -193,7 +194,8 @@ public final class Room {
         endTurn();
       }
     }
-    // The turn may have reached a team whose Signaleur left: it passes again at once.
+    // Only a command that was accepted counts as a move: a refused one must not restart the wait.
+    lastMove = lastActivity;
     expire();
   }
 

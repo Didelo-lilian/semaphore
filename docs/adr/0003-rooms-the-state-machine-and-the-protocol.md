@@ -32,8 +32,8 @@ stateDiagram-v2
   LOBBY --> SIGNAL: start
   SIGNAL --> GUESS: signal
   GUESS --> GUESS: reveal a word of the team in play
-  SIGNAL --> SIGNAL: the Signaleur is away for 60 s,<br/>the turn passes to the other team
-  GUESS --> SIGNAL: pass, calm waters, the other team's word,<br/>a reef, the limit of n + 1 reached,<br/>every lookout away for 60 s
+  SIGNAL --> SIGNAL: the Signaleur is away for 60 s<br/>(at once if they left), the turn passes to the other team
+  GUESS --> SIGNAL: pass, calm waters, the other team's word,<br/>a reef, the limit of n + 1 reached,<br/>every lookout away for 60 s (at once if they left)
   GUESS --> ENDED: a team has all its words,<br/>or a second reef,<br/>or a Signaleur away for 5 min
   SIGNAL --> ENDED: a Signaleur away for 5 min
   ENDED --> [*]

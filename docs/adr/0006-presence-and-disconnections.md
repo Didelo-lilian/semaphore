@@ -79,7 +79,7 @@ stateDiagram-v2
   Waiting --> Played: one of them comes back
   Waiting --> Passed: 60 s after the later of the last move<br/>and the last of them leaving
   Waiting --> Passed: they all left on purpose, at once
-  Passed --> Waiting: the team's next turn, still away,<br/>the 60 s start again
+  Passed --> Waiting: the team's next turn, still away<br/>(and not left), the 60 s start again
   Waiting --> Ended: a Signaleur away for 5 min,<br/>the other team wins
   Played --> Ended: a Signaleur away for 5 min,<br/>the other team wins
 ```

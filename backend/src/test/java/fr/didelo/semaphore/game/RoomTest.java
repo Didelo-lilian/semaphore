@@ -625,7 +625,7 @@ class RoomTest {
 
   @Test
   void aSignaleurWhoLeavesPassesTheTurnAtOnceAndTheirTeamKeepsNoTurn() {
-    var game = new Game();
+    var game = new Game(POOL, new MutableClock());
     var team = game.turn();
 
     game.room.leave(game.signaler().getId());
@@ -688,6 +688,39 @@ class RoomTest {
   }
 
   @Test
+  void aRefusedCommandDoesNotRestartTheWait() {
+    var clock = new MutableClock();
+    var game = new Game(POOL, clock);
+    var team = game.turn();
+    game.room.disconnect(game.signaler().getId());
+    clock.advance(Room.TURN_GRACE.minusSeconds(1));
+
+    refuses(
+        () -> game.room.apply(game.lookout().getId(), new Command.Signal("voyage", 1)),
+        "Signaleur");
+    clock.advance(Duration.ofSeconds(1));
+
+    assertThat(game.room.expire()).isTrue();
+    assertThat(game.turn()).isEqualTo(team.other());
+  }
+
+  @Test
+  void aTurnThatPassesToATeamWhoseSignaleurLeftPassesAgainInTheSameSweep() {
+    var clock = new MutableClock();
+    var game = new Game(POOL, clock);
+    var team = game.turn();
+    game.room.disconnect(game.signaler().getId());
+    game.room.leave(game.signalerOf(team.other()).getId());
+    assertThat(game.turn()).isEqualTo(team);
+
+    clock.advance(Room.TURN_GRACE);
+
+    assertThat(game.room.expire()).isTrue();
+    assertThat(game.turn()).isEqualTo(team);
+    assertThat(game.view().turnPassesIn()).isEqualTo(60);
+  }
+
+  @Test
   void whenBothSignaleursLeftTheTurnWaitsTheDelayInsteadOfBouncing() {
     var clock = new MutableClock();
     var game = new Game(POOL, clock);
@@ -733,7 +766,7 @@ class RoomTest {
     game.room.disconnect(game.signalerOf(team.other()).getId());
     clock.advance(Duration.ofMinutes(1));
     game.room.disconnect(game.signaler().getId());
-    clock.advance(Room.SIGNALER_LIMIT.minusMinutes(1));
+    clock.advance(Room.SIGNALER_LIMIT);
 
     assertThat(game.room.expire()).isTrue();
 

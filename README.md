@@ -3,7 +3,7 @@ Real-time multiplayer word game for two teams: one player signals a word and a n
 
 **Sémaphore** is a word game for two teams on a 6×4 grid. Each team has a Signaleur who sends a word and a number, and lookouts who must find the matching words without hitting a reef. The rules and the visual direction are in [ADR 0001](docs/adr/0001-name-rules-and-visual-direction.md).
 
-First milestone, "Game v0.1": you can create a room, invite friends with a link, pick a team and start the game, and everyone sees the grid. Playing the turns comes next. The backend enforces every rule over a WebSocket; the front shows what it is told ([ADR 0004](docs/adr/0004-a-react-front-on-the-design-system.md)).
+You can create a room, invite friends with a link, pick a team, start the game and play it to the end: the Signaleur sends a signal, the lookouts touch words or pass, and the winner is announced with the whole key. The backend enforces every rule over a WebSocket; the front shows what it is told ([ADR 0004](docs/adr/0004-a-react-front-on-the-design-system.md)) and lets each player do only what their role allows in the phase of the game ([ADR 0005](docs/adr/0005-the-table-by-role-and-phase.md)).
 
 ## Run the backend
 
@@ -54,6 +54,34 @@ flowchart LR
   room -->|"RoomView, one per player:<br/>the key only for the Signaleurs"| handler
 ```
 
+## The table
+
+What a player sees and can do depends on the phase of the room, on the team in play and on their role. The screen is a function of the view the server sends to that player, so coming back after a reload needs nothing more. [ADR 0005](docs/adr/0005-the-table-by-role-and-phase.md) has the diagram of who may act in each phase; this one follows a turn.
+
+```mermaid
+sequenceDiagram
+  participant S as Signaleur (team in play)
+  participant G as Server
+  participant L as Lookouts (team in play)
+  participant O as Everybody else
+  Note over S,O: SIGNAL, only the Signaleur has a form
+  S->>G: signal (word, number)
+  G-->>S: view, "Tes Veilleurs cherchent…"
+  G-->>L: view, pennant, words to touch, Passer
+  G-->>O: view, pennant, "Les Veilleurs de … cherchent."
+  Note over S,O: GUESS, only the lookouts act
+  loop while the words are their team's, n + 1 at most
+    L->>G: reveal (index)
+    G-->>S: view, the card turns over
+    G-->>L: view, the card turns over
+    G-->>O: view, the card turns over
+  end
+  L->>G: pass (or a wrong word, a reef, the limit)
+  G-->>S: view, SIGNAL, the other team's turn
+  G-->>L: view, SIGNAL, the other team's turn
+  G-->>O: view, SIGNAL, the other team's turn
+```
+
 ## Tests
 
 | Kind | Where | What it proves |
@@ -64,7 +92,7 @@ flowchart LR
 | Handler | `GameSocketHandlerTest` | a broken connection does not stop the others, a room that could not be entered is not kept, one room per connection |
 | Protocol | `protocol.test.ts` | the Zod schemas read messages captured from the real backend (lobby, Signaleur's view, lookout's view, error) and refuse anything else |
 | Client | `client.test.ts` | the connection with a fake WebSocket: queued messages, seat remembered, late views dropped, rejoin after a reload, retries with growing delays, no fight between two tabs, commands settled by the server's answer |
-| Screens | `app.test.tsx`, `screens.test.tsx` | create a room and land in its lobby, invitation link, refusal shown where it was asked, room link without a seat, seat back after a reload, team choice, start rules, the key only for Signaleurs |
+| Screens | `app.test.tsx`, `screens.test.tsx` | create a room and land in its lobby, invitation link, refusal shown where it was asked, room link without a seat, seat back after a reload, team choice, start rules, the key only for Signaleurs, the table for each role and phase (signal form, words to touch, waiting lines, winner and whole key), a whole game played as a lookout through the router and a fake socket |
 
 `./gradlew check` runs the backend ones with the formatting check, `npm run check` the front ones with lint, types and the build. The pull request runs both (JDK 25, Node 24), builds the two images, lints the workflows, scans for secrets and runs CodeQL.
 

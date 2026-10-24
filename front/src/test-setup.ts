@@ -7,3 +7,10 @@ afterEach(cleanup);
 
 // jsdom does not implement it and the router calls it on navigation.
 window.scrollTo = () => {};
+
+// jsdom does not implement it either, and the Dialog of the design system observes its content with it.
+globalThis.ResizeObserver = class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};

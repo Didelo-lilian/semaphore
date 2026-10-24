@@ -44,6 +44,20 @@ h2 {
   margin: 0;
 }
 
+.sem-hint {
+  display: block;
+}
+
+/* Read by screen readers only. */
+.sem-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .sem-card {
   background: var(--sem-paper);
   color: var(--sem-ink);
@@ -181,6 +195,7 @@ h2 {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: var(--ds-space-2);
+  perspective: 800px;
 }
 
 .sem-word {
@@ -220,6 +235,7 @@ h2 {
 
 .sem-word[data-revealed="true"] {
   color: var(--sem-paper);
+  animation: sem-flip 280ms ease-out;
 }
 
 .sem-word[data-revealed="true"] .sem-word-mark {
@@ -260,6 +276,117 @@ h2 {
   .sem-word {
     font-size: var(--ds-font-size-sm);
     min-height: 48px;
+  }
+}
+
+.sem-signal {
+  align-items: flex-start;
+}
+
+.sem-numbers {
+  display: flex;
+  gap: var(--ds-space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* A hidden word a lookout can pick: the button covers the whole card. */
+.sem-word-button {
+  position: absolute;
+  inset: 0;
+  padding: var(--ds-space-2);
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.sem-word-button:hover:not([aria-disabled="true"]) {
+  background: rgb(16 32 58 / 10%);
+}
+
+.sem-word-button:focus-visible {
+  outline: 3px solid var(--sem-ink);
+  outline-offset: 2px;
+}
+
+.sem-word-button[aria-disabled="true"] {
+  cursor: progress;
+}
+
+/* The signal, hoisted as a pennant that carries its number. */
+.sem-pennant {
+  /* The text sits in the rectangle: the padding keeps it clear of the tip, whatever the length of the word. */
+  --sem-tip: 28px;
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  align-self: flex-start;
+  margin: 0;
+  padding: var(--ds-space-2) calc(var(--sem-tip) + var(--ds-space-3))
+    var(--ds-space-2) var(--ds-space-4);
+  background: var(--sem-team);
+  color: #fff;
+  clip-path: polygon(
+    0 0,
+    calc(100% - var(--sem-tip)) 0,
+    100% 50%,
+    calc(100% - var(--sem-tip)) 100%,
+    0 100%
+  );
+  animation: sem-hoist 350ms ease-out;
+}
+
+.sem-pennant[data-team="BABORD"] {
+  --sem-team: var(--sem-babord);
+}
+
+.sem-pennant[data-team="TRIBORD"] {
+  --sem-team: var(--sem-tribord);
+}
+
+.sem-pennant-word {
+  font-family: var(--ds-font-family-display);
+  font-weight: var(--ds-font-weight-bold);
+  font-size: var(--ds-font-size-lg);
+}
+
+.sem-pennant-number {
+  font-family: var(--ds-font-family-display);
+  font-weight: var(--ds-font-weight-bold);
+  font-size: 1.75rem;
+}
+
+@keyframes sem-flip {
+  from {
+    transform: rotateY(90deg);
+  }
+
+  to {
+    transform: rotateY(0);
+  }
+}
+
+@keyframes sem-hoist {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sem-pennant,
+  .sem-word[data-revealed="true"] {
+    animation: none;
   }
 }
 

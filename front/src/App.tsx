@@ -5,9 +5,9 @@ import {
   Outlet,
   useNavigate,
 } from "@tanstack/react-router";
+import { useEffect } from "react";
 import { useCommand, useGame, useRoom } from "./game.tsx";
 import type { Team } from "./protocol.ts";
-import { explain } from "./reasons.ts";
 import { Home } from "./ui/Home.tsx";
 import { Lobby } from "./ui/Lobby.tsx";
 import { Table } from "./ui/Table.tsx";
@@ -62,6 +62,15 @@ export const SalonPage = () => {
   const room = useRoom();
   const navigate = useNavigate();
   const command = useCommand();
+  const { reset } = command;
+  const version = room?.version;
+
+  // A refusal answers the view it was sent from: once the room moves on, it is stale.
+  useEffect(() => {
+    if (version !== undefined) {
+      reset();
+    }
+  }, [version, reset]);
 
   if (room === null) {
     // No seat in this tab: the link is an invitation.
@@ -90,9 +99,16 @@ export const SalonPage = () => {
       onLeave={leave}
     />
   ) : (
-    <>
-      <Table room={room} onLeave={leave} />
-      {error !== null && <Alert severity="error">{explain(error)}</Alert>}
-    </>
+    <Table
+      room={room}
+      busy={command.isPending}
+      error={error}
+      onSignal={(word, number) =>
+        command.mutate({ type: "signal", word, number })
+      }
+      onReveal={(index) => command.mutate({ type: "reveal", index })}
+      onPass={() => command.mutate({ type: "pass" })}
+      onLeave={leave}
+    />
   );
 };

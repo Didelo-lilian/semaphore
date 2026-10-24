@@ -32,7 +32,7 @@ class RoomRegistryTest {
     var keeper = kept.join("ana");
     var left = registry.create();
     var leaver = left.join("bob");
-    left.setConnected(leaver.getId(), false);
+    left.disconnect(leaver.getId());
     var neverJoined = registry.create();
 
     registry.dropAbandoned();

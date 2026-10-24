@@ -45,6 +45,10 @@ public class RoomRegistry {
     }
   }
 
+  public void drop(Room room) {
+    rooms.remove(room.code(), room);
+  }
+
   public Optional<Room> find(String code) {
     return Optional.ofNullable(rooms.get(code.strip().toUpperCase(java.util.Locale.ROOT)));
   }

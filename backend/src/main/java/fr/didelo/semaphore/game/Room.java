@@ -40,14 +40,14 @@ public final class Room {
   private final Map<String, Player> players = new LinkedHashMap<>();
   private final Map<Team, Integer> flags =
       new EnumMap<>(Map.of(Team.BABORD, FLAGS, Team.TRIBORD, FLAGS));
-  private final Map<Team, Integer> turnsPlayed =
-      new EnumMap<>(Map.of(Team.BABORD, 0, Team.TRIBORD, 0));
   private List<Card> board = List.of();
   private Phase phase = Phase.LOBBY;
   private Team turn;
   private ActiveSignal signal;
   private int revealsLeft;
   private Team winner;
+  // Grows with every change, so a client can drop a view that arrives after a newer one.
+  private int version;
   // Set by the first sweep when nobody ever acted: a room is built to be joined right away.
   private Instant lastActivity;
 
@@ -85,12 +85,28 @@ public final class Room {
     var player = new Player(UUID.randomUUID().toString(), UUID.randomUUID().toString(), trimmed);
     players.put(player.getId(), player);
     lastActivity = clock.instant();
+    version++;
     return player;
   }
 
-  public void setConnected(String playerId, boolean connected) {
-    players.get(playerId).setConnected(connected);
+  /**
+   * Someone who leaves the lobby is gone, so they cannot block the start or keep the host seat.
+   * Once the game has started they keep their seat and may come back.
+   */
+  public void disconnect(String playerId) {
+    if (phase == Phase.LOBBY) {
+      players.remove(playerId);
+    } else {
+      players.get(playerId).setConnected(false);
+    }
     lastActivity = clock.instant();
+    version++;
+  }
+
+  public void reconnect(String playerId) {
+    players.get(playerId).setConnected(true);
+    lastActivity = clock.instant();
+    version++;
   }
 
   public void apply(String playerId, Command command) {
@@ -99,6 +115,7 @@ public final class Room {
       throw new IllegalMove("not possible in this phase");
     }
     lastActivity = clock.instant();
+    version++;
     switch (command) {
       case Command.JoinTeam join -> player.setTeam(join.team());
       case Command.Start start -> start(player);
@@ -118,6 +135,7 @@ public final class Room {
     var host = players.values().iterator().next();
     return new RoomView(
         code,
+        version,
         phase,
         turn,
         signal,
@@ -234,7 +252,6 @@ public final class Room {
   }
 
   private void endTurn() {
-    turnsPlayed.merge(turn, 1, Integer::sum);
     turn = turn.other();
     signal = null;
     revealsLeft = 0;
@@ -251,15 +268,20 @@ public final class Room {
     return players.values().stream().filter(p -> p.getTeam() == team).toList();
   }
 
-  /** The Signaleur rotates: each turn the team plays, the next member in the order they joined. */
+  /**
+   * The Signaleur is the first member of the team in the order they joined the room, for the whole
+   * grid: someone who has seen the key cannot be a lookout on the same grid.
+   */
   private Player signaler(Team team) {
-    var members = members(team);
-    return members.get(turnsPlayed.get(team) % members.size());
+    return members(team).get(0);
   }
 
   static String normalize(String text) {
+    // œ and æ do not decompose into letters, so they are spelled out.
     return Normalizer.normalize(text.strip(), Normalizer.Form.NFD)
         .replaceAll("\\p{M}", "")
-        .toLowerCase(java.util.Locale.ROOT);
+        .toLowerCase(java.util.Locale.ROOT)
+        .replace("œ", "oe")
+        .replace("æ", "ae");
   }
 }

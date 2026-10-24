@@ -9,6 +9,7 @@ import java.util.Map;
  */
 public record RoomView(
     String code,
+    int version,
     Phase phase,
     Team turn,
     ActiveSignal signal,

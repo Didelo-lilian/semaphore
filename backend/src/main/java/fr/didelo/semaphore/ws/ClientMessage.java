@@ -1,12 +1,14 @@
 package fr.didelo.semaphore.ws;
 
+import static java.util.Objects.requireNonNull;
+
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import fr.didelo.semaphore.game.Team;
 
 /**
  * What a client may send. A message is either about getting into a room or a command the room
- * judges.
+ * judges. A field a client left out makes the message unreadable: the records refuse null.
  */
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
 @JsonSubTypes({
@@ -21,18 +23,40 @@ import fr.didelo.semaphore.game.Team;
 })
 public sealed interface ClientMessage {
 
-  record CreateRoom(String name) implements ClientMessage {}
+  record CreateRoom(String name) implements ClientMessage {
+    public CreateRoom {
+      requireNonNull(name);
+    }
+  }
 
-  record JoinRoom(String code, String name) implements ClientMessage {}
+  record JoinRoom(String code, String name) implements ClientMessage {
+    public JoinRoom {
+      requireNonNull(code);
+      requireNonNull(name);
+    }
+  }
 
   /** Back into a room after a lost connection, with the token the server gave on joining. */
-  record Rejoin(String code, String token) implements ClientMessage {}
+  record Rejoin(String code, String token) implements ClientMessage {
+    public Rejoin {
+      requireNonNull(code);
+      requireNonNull(token);
+    }
+  }
 
-  record JoinTeam(Team team) implements ClientMessage {}
+  record JoinTeam(Team team) implements ClientMessage {
+    public JoinTeam {
+      requireNonNull(team);
+    }
+  }
 
   record Start() implements ClientMessage {}
 
-  record Signal(String word, int number) implements ClientMessage {}
+  record Signal(String word, int number) implements ClientMessage {
+    public Signal {
+      requireNonNull(word);
+    }
+  }
 
   record Reveal(int index) implements ClientMessage {}
 

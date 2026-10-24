@@ -1,0 +1,32 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directory: /backend
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+  - package-ecosystem: gradle
+    directory: /backend
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      spring:
+        patterns: ["org.springframework.boot", "org.springframework.boot:*", "io.spring.dependency-management"]
+      dev-tools:
+        patterns: ["*"]
+        exclude-patterns: ["org.springframework.boot", "org.springframework.boot:*", "io.spring.dependency-management"]

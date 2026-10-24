@@ -1,0 +1,14 @@
+spring:
+  application:
+    name: semaphore
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Health only: the probes and the container health check need nothing else.
+        include: health
+
+semaphore:
+  # Browsers send the page's origin on a WebSocket handshake, and the server refuses the others.
+  allowed-origins: https://play.didelo.fr

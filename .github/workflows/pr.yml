@@ -1,0 +1,11 @@
+name: PR
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions: {}
+
+jobs:
+  conventions:
+    uses: Didelo-lilian/.github/.github/workflows/pr-conventions.yml@main

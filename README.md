@@ -74,10 +74,8 @@ flowchart LR
 flowchart LR
   dev["Branch<br/>signed commits"] --> pr["Pull request<br/>backend and front checks, image builds,<br/>actionlint, gitleaks, CodeQL, title"]
   pr -->|"squash merge"| main["main"]
-  main --> deploy["Deploy workflow"]
-  deploy --> ghcr[("GHCR<br/>semaphore:main<br/>semaphore-front:main")]
-  deploy -->|"GitHub App token"| infra["infra · Deploy app<br/>stacks semaphore and play"]
-  infra -->|"pull :main, restart"| vps["VPS"]
+  main --> image["Image workflow"]
+  image --> ghcr[("GHCR<br/>semaphore:main<br/>semaphore-front:main")]
   main --> release["Release workflow<br/>release-please"]
   release --> relpr["Release pull request<br/>version + CHANGELOG"]
   relpr -->|"merge"| tag["Tag vX.Y.Z<br/>GitHub release"]

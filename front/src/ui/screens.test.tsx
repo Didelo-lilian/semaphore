@@ -162,9 +162,29 @@ describe("Lobby", () => {
 });
 
 describe("Table", () => {
+  // The fixtures are a game just started: Tribord is in play, `signaler` is the Signaleur of Bâbord and `lookout` a
+  // lookout of Bâbord. These helpers move the turn to the player's own team and into the phase under test.
+  const guessing = (room: RoomView, changes: Partial<RoomView> = {}) => ({
+    ...room,
+    phase: "GUESS" as const,
+    turn: "BABORD" as const,
+    signal: { word: "voyage", number: 2 },
+    revealsLeft: 3,
+    ...changes,
+  });
+
+  const handlers = () => ({
+    busy: false,
+    error: null,
+    onSignal: vi.fn(),
+    onReveal: vi.fn(),
+    onPass: vi.fn(),
+    onLeave: vi.fn(),
+  });
+
   it("shows the key of a hidden word to a Signaleur only", () => {
     const { unmount } = render(
-      <Table room={signaler.room as RoomView} onLeave={vi.fn()} />,
+      <Table room={signaler.room as RoomView} {...handlers()} />,
     );
     const keyed = screen
       .getAllByRole("listitem")
@@ -175,7 +195,114 @@ describe("Table", () => {
       );
     expect(keyed).toHaveLength(24);
     unmount();
-    render(<Table room={lookout.room as RoomView} onLeave={vi.fn()} />);
+    render(<Table room={lookout.room as RoomView} {...handlers()} />);
     expect(document.querySelectorAll(".sem-word-mark")).toHaveLength(0);
+  });
+
+  it("lets the Signaleur in play send a signal, and nobody else", async () => {
+    const props = handlers();
+    const room = { ...(signaler.room as RoomView), turn: "BABORD" as const };
+    const { unmount } = render(<Table room={room} {...props} />);
+    const send = screen.getByRole("button", { name: "Envoyer le signal" });
+    expect(send).toBeDisabled();
+    await userEvent.type(screen.getByLabelText("Ton signal"), "deux mots");
+    expect(send).toBeDisabled();
+    await userEvent.clear(screen.getByLabelText("Ton signal"));
+    await userEvent.type(screen.getByLabelText("Ton signal"), "voyage");
+    await userEvent.click(screen.getByRole("button", { name: "2" }));
+    await userEvent.click(send);
+    await waitFor(() =>
+      expect(props.onSignal).toHaveBeenCalledWith("voyage", 2),
+    );
+    unmount();
+
+    render(<Table room={signaler.room as RoomView} {...handlers()} />);
+    expect(screen.queryByLabelText("Ton signal")).toBeNull();
+    expect(
+      screen.getByText("Le Signaleur de Tribord prépare son signal."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows why the server refused a signal, next to the form", () => {
+    const room = { ...(signaler.room as RoomView), turn: "BABORD" as const };
+    render(
+      <Table
+        room={room}
+        {...handlers()}
+        error="the signal is too close to a word on the grid"
+      />,
+    );
+    expect(
+      screen.getByText("Ce signal est trop proche d'un mot de la grille."),
+    ).toBeInTheDocument();
+  });
+
+  it("lets the lookouts in play pick a hidden word or pass", async () => {
+    const props = handlers();
+    const room = guessing(lookout.room as RoomView);
+    const first = room.board[0]?.word ?? "";
+    render(<Table room={room} {...props} />);
+    expect(screen.getByText(/encore 3 au plus/)).toBeInTheDocument();
+    expect(screen.getByText("voyage")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: first }));
+    expect(props.onReveal).toHaveBeenCalledWith(0);
+    await userEvent.click(screen.getByRole("button", { name: "Passer" }));
+    expect(props.onPass).toHaveBeenCalledOnce();
+  });
+
+  it("does not offer a revealed word, and waits for the answer of the server", () => {
+    const room = guessing(lookout.room as RoomView);
+    room.board = room.board.map((card, index) =>
+      index === 0 ? { ...card, revealed: true, kind: "BABORD" } : card,
+    );
+    const { rerender } = render(<Table room={room} {...handlers()} />);
+    expect(
+      screen.queryByRole("button", { name: room.board[0]?.word }),
+    ).toBeNull();
+    expect(document.querySelectorAll(".sem-word-button")).toHaveLength(23);
+    rerender(<Table room={room} {...handlers()} busy />);
+    expect(screen.getByRole("button", { name: "Passer" })).toBeDisabled();
+  });
+
+  it("gives the others nothing to click during a guess", () => {
+    const base = lookout.room as RoomView;
+    const { unmount } = render(
+      <Table room={guessing(base, { turn: "TRIBORD" })} {...handlers()} />,
+    );
+    expect(
+      screen.getByText("Les Veilleurs de Tribord cherchent."),
+    ).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Passer" })).toBeNull();
+    expect(document.querySelectorAll(".sem-word-button")).toHaveLength(0);
+    unmount();
+
+    render(
+      <Table room={guessing(signaler.room as RoomView)} {...handlers()} />,
+    );
+    expect(screen.getByText("Tes Veilleurs cherchent…")).toBeVisible();
+    expect(document.querySelectorAll(".sem-word-button")).toHaveLength(0);
+    expect(screen.queryByLabelText("Ton signal")).toBeNull();
+  });
+
+  it("announces the winner, shows the whole key and leads back home", async () => {
+    const props = handlers();
+    const room = {
+      ...(lookout.room as RoomView),
+      phase: "ENDED" as const,
+      turn: "TRIBORD" as const,
+      winner: "TRIBORD" as const,
+      board: (signaler.room as RoomView).board,
+    };
+    render(<Table room={room} {...props} />);
+    expect(
+      screen.getByRole("heading", { name: "Tribord gagne" }),
+    ).toBeInTheDocument();
+    expect(document.querySelectorAll(".sem-word-mark")).toHaveLength(24);
+    expect(document.querySelectorAll(".sem-word-button")).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: "Passer" })).toBeNull();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Retour à l'accueil" }),
+    );
+    expect(props.onLeave).toHaveBeenCalledOnce();
   });
 });

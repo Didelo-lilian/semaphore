@@ -21,4 +21,4 @@ The server holds every room and every rule ([ADR 0003](0003-rooms-the-state-mach
 - The pull request checked it in two browser tabs: create, invitation link, teams, start, reload, a room that does not exist.
 - The protocol has no request id, so an update caused by someone else can settle a command early. The shortcut is in `GameClient.request`; the upgrade is an id on the messages.
 - The bundle is 548 kB (170 kB gzipped), mostly MUI. Code splitting comes if it matters.
-- This version shows the started game (grid, key for the Signaleurs only, flags); playing the turns is the next step.
+- This version shows the started game (grid, key for the Signaleurs only, flags); playing the turns is in [ADR 0005](0005-the-table-by-role-and-phase.md).

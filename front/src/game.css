@@ -263,6 +263,117 @@ h2 {
   }
 }
 
+.sem-signal {
+  align-items: flex-start;
+}
+
+.sem-numbers {
+  display: flex;
+  gap: var(--ds-space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* A hidden word a lookout can pick: the button covers the whole card. */
+.sem-word-button {
+  position: absolute;
+  inset: 0;
+  padding: var(--ds-space-2);
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.sem-word-button:hover:not(:disabled) {
+  background: rgb(16 32 58 / 10%);
+}
+
+.sem-word-button:focus-visible {
+  outline: 3px solid var(--sem-ink);
+  outline-offset: 2px;
+}
+
+.sem-word-button:disabled {
+  cursor: progress;
+}
+
+/* The signal, hoisted as a pennant that carries its number. */
+.sem-pennant {
+  display: flex;
+  align-items: center;
+  gap: var(--ds-space-3);
+  align-self: flex-start;
+  margin: 0;
+  padding: var(--ds-space-2) var(--ds-space-8) var(--ds-space-2)
+    var(--ds-space-4);
+  background: var(--sem-team);
+  color: #fff;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+  animation: sem-hoist 350ms ease-out;
+}
+
+.sem-pennant[data-team="BABORD"] {
+  --sem-team: var(--sem-babord);
+}
+
+.sem-pennant[data-team="TRIBORD"] {
+  --sem-team: var(--sem-tribord);
+}
+
+.sem-pennant-word {
+  font-family: var(--ds-font-family-display);
+  font-weight: var(--ds-font-weight-bold);
+  font-size: var(--ds-font-size-lg);
+}
+
+.sem-pennant-number {
+  font-family: var(--ds-font-family-display);
+  font-weight: var(--ds-font-weight-bold);
+  font-size: 1.75rem;
+}
+
+.sem-board {
+  perspective: 800px;
+}
+
+.sem-word[data-revealed="true"] {
+  animation: sem-flip 280ms ease-out;
+}
+
+@keyframes sem-flip {
+  from {
+    transform: rotateY(90deg);
+  }
+
+  to {
+    transform: rotateY(0);
+  }
+}
+
+@keyframes sem-hoist {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sem-pennant,
+  .sem-word[data-revealed="true"] {
+    animation: none;
+  }
+}
+
 .sem-in-team {
   margin: 0;
   padding: var(--ds-space-2) 0;

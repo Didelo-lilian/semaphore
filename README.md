@@ -3,7 +3,7 @@ Real-time multiplayer word game for two teams: one player signals a word and a n
 
 **Sémaphore** is a word game for two teams on a 6×4 grid. Each team has a Signaleur who sends a word and a number, and lookouts who must find the matching words without hitting a reef. The rules and the visual direction are in [ADR 0001](docs/adr/0001-name-rules-and-visual-direction.md).
 
-First milestone, "Game v0.1": you can create a room, invite friends with a link, pick a team and start the game, and everyone sees the grid. Playing the turns comes next. The backend enforces every rule over a WebSocket; the front shows what it is told ([ADR 0004](docs/adr/0004-a-react-front-on-the-design-system.md)).
+You can create a room, invite friends with a link, pick a team, start the game and play it to the end: the Signaleur sends a signal, the lookouts touch words or pass, and the winner is announced with the whole key. The backend enforces every rule over a WebSocket; the front shows what it is told ([ADR 0004](docs/adr/0004-a-react-front-on-the-design-system.md)) and lets each player do only what their role allows in the phase of the game ([ADR 0005](docs/adr/0005-the-table-by-role-and-phase.md)).
 
 ## Run the backend
 
@@ -54,6 +54,25 @@ flowchart LR
   room -->|"RoomView, one per player:<br/>the key only for the Signaleurs"| handler
 ```
 
+## The table
+
+What a player sees and can do depends on the phase of the room, on the team in play and on their role. The screen is a function of the view the server sends to that player, so coming back after a reload needs nothing more ([ADR 0005](docs/adr/0005-the-table-by-role-and-phase.md)).
+
+```mermaid
+flowchart TD
+  view(["A room view arrives"]) --> phase{"phase"}
+  phase -->|LOBBY| lobby["Lobby: pick a team,<br/>the host starts"]
+  phase -->|SIGNAL| sig{"Signaleur of the<br/>team in play?"}
+  phase -->|GUESS| gue{"Lookout of the<br/>team in play?"}
+  phase -->|ENDED| over["Winner, the whole key,<br/>back to the home page"]
+  sig -->|yes| form["Signal form<br/>sends signal"]
+  sig -->|no| waitsig["Waits for the Signaleur<br/>of the team in play"]
+  gue -->|yes| pick["Touch a hidden word: reveal<br/>or Passer: pass"]
+  gue -->|no| waitgue["Waits for the lookouts<br/>of the team in play"]
+  form --> view
+  pick --> view
+```
+
 ## Tests
 
 | Kind | Where | What it proves |
@@ -64,7 +83,7 @@ flowchart LR
 | Handler | `GameSocketHandlerTest` | a broken connection does not stop the others, a room that could not be entered is not kept, one room per connection |
 | Protocol | `protocol.test.ts` | the Zod schemas read messages captured from the real backend (lobby, Signaleur's view, lookout's view, error) and refuse anything else |
 | Client | `client.test.ts` | the connection with a fake WebSocket: queued messages, seat remembered, late views dropped, rejoin after a reload, retries with growing delays, no fight between two tabs, commands settled by the server's answer |
-| Screens | `app.test.tsx`, `screens.test.tsx` | create a room and land in its lobby, invitation link, refusal shown where it was asked, room link without a seat, seat back after a reload, team choice, start rules, the key only for Signaleurs |
+| Screens | `app.test.tsx`, `screens.test.tsx` | create a room and land in its lobby, invitation link, refusal shown where it was asked, room link without a seat, seat back after a reload, team choice, start rules, the key only for Signaleurs, the table for each role and phase (signal form, words to touch, waiting lines, winner and whole key), a whole game played as a lookout through the router and a fake socket |
 
 `./gradlew check` runs the backend ones with the formatting check, `npm run check` the front ones with lint, types and the build. The pull request runs both (JDK 25, Node 24), builds the two images, lints the workflows, scans for secrets and runs CodeQL.
 

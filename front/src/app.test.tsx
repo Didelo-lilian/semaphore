@@ -6,7 +6,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { GameClient } from "./client.ts";
 import { FakeSocket } from "./fake-socket.ts";
 import joined from "./fixtures/joined-lobby.json";
+import lookout from "./fixtures/room-lookout.json";
+import signaler from "./fixtures/room-signaler.json";
 import { GameProvider } from "./game.tsx";
+import type { RoomView } from "./protocol.ts";
 import { createAppRouter } from "./router.tsx";
 import type { Session, SessionStore } from "./session.ts";
 
@@ -97,6 +100,99 @@ describe("the game in the browser", () => {
     const { router } = await mount(`/salon/${joined.room.code}`);
     await waitFor(() => expect(router.state.location.pathname).toBe("/"));
     expect(router.state.location.search).toEqual({ room: joined.room.code });
+  });
+
+  it("plays a whole game as a lookout, from the first turn to the end", async () => {
+    const seat = { code: lookout.room.code, token: "t" };
+    const store = memoryStore(seat);
+    // What the server sends this lookout of Bâbord, one view per change, the way ADR 0003 orders them.
+    const view = (version: number, changes: Partial<RoomView>) => ({
+      type: "roomUpdated",
+      room: { ...lookout.room, version, ...changes },
+    });
+    const board = lookout.room.board;
+    const { router } = await mount(`/salon/${seat.code}`, store);
+    const socket = FakeSocket.last();
+    socket.accept();
+    socket.receive({
+      type: "joined",
+      playerId: lookout.room.you,
+      token: seat.token,
+      room: lookout.room,
+    });
+    expect(socket.sent).toEqual([{ type: "rejoin", ...seat }]);
+    expect(
+      await screen.findByText("Le Signaleur de Tribord prépare son signal."),
+    ).toBeInTheDocument();
+
+    socket.receive(
+      view(10, {
+        phase: "GUESS",
+        signal: { word: "mer", number: 1 },
+        revealsLeft: 2,
+      }),
+    );
+    expect(
+      await screen.findByText("Les Veilleurs de Tribord cherchent."),
+    ).toBeInTheDocument();
+    expect(document.querySelectorAll(".sem-word-button")).toHaveLength(0);
+
+    socket.receive(view(11, { phase: "SIGNAL", turn: "BABORD", signal: null }));
+    expect(
+      await screen.findByText("Le Signaleur de Bâbord prépare son signal."),
+    ).toBeInTheDocument();
+
+    socket.receive(
+      view(12, {
+        phase: "GUESS",
+        turn: "BABORD",
+        signal: { word: "voyage", number: 2 },
+        revealsLeft: 3,
+      }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: board[0]?.word }),
+    );
+    await waitFor(() =>
+      expect(socket.sent).toContainEqual({ type: "reveal", index: 0 }),
+    );
+    socket.receive(
+      view(13, {
+        phase: "GUESS",
+        turn: "BABORD",
+        signal: { word: "voyage", number: 2 },
+        revealsLeft: 2,
+        board: board.map((card, index) =>
+          index === 0 ? { ...card, revealed: true, kind: "BABORD" } : card,
+        ),
+      }),
+    );
+    await waitFor(() =>
+      expect(document.querySelectorAll(".sem-word-button")).toHaveLength(23),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Passer" }));
+    await waitFor(() => expect(socket.sent).toContainEqual({ type: "pass" }));
+    socket.receive(
+      view(14, { phase: "SIGNAL", turn: "TRIBORD", signal: null }),
+    );
+
+    socket.receive(
+      view(15, {
+        phase: "ENDED",
+        turn: "TRIBORD",
+        winner: "TRIBORD",
+        board: (signaler.room as RoomView).board,
+      }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Tribord gagne" }),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Retour à l'accueil" }),
+    );
+    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+    expect(store.load()).toBeNull();
   });
 
   it("gets its seat back after a reload", async () => {

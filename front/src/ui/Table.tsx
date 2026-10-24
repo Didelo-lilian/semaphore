@@ -1,5 +1,7 @@
-import { Button } from "@didelo/design-system";
+import { Alert, Button } from "@didelo/design-system";
 import type { Card, RoomView, Team } from "../protocol.ts";
+import { explain } from "../reasons.ts";
+import { SignalForm } from "./SignalForm.tsx";
 import { TEAM_NAME, TeamMark } from "./TeamMark.tsx";
 
 const TEAMS: Team[] = ["BABORD", "TRIBORD"];
@@ -13,10 +15,21 @@ const describe = (card: Card) => {
   return `${card.word}, ${state}${kind}`;
 };
 
-/** The grid as one player sees it: only a Signaleur sees the kind of a hidden word. */
-export const Board = ({ board }: { board: Card[] }) => (
+/**
+ * The grid as one player sees it: only a Signaleur sees the kind of a hidden word. With `onReveal`, a hidden word
+ * is a button: the lookouts of the team in play pick their words there.
+ */
+export const Board = ({
+  board,
+  busy = false,
+  onReveal,
+}: {
+  board: Card[];
+  busy?: boolean;
+  onReveal?: (index: number) => void;
+}) => (
   <ol className="sem-board" aria-label="Grille">
-    {board.map((card) => (
+    {board.map((card, index) => (
       <li
         key={card.word}
         className="sem-word"
@@ -29,76 +42,134 @@ export const Board = ({ board }: { board: Card[] }) => (
             <TeamMark kind={card.kind} size={14} />
           </span>
         )}
-        <span>{card.word}</span>
+        {onReveal !== undefined && !card.revealed ? (
+          <button
+            type="button"
+            className="sem-word-button"
+            disabled={busy}
+            onClick={() => onReveal(index)}
+          >
+            {card.word}
+          </button>
+        ) : (
+          <span>{card.word}</span>
+        )}
       </li>
     ))}
   </ol>
 );
 
+interface Props {
+  room: RoomView;
+  busy: boolean;
+  error: string | null;
+  onSignal: (word: string, number: number) => void;
+  onReveal: (index: number) => void;
+  onPass: () => void;
+  onLeave: () => void;
+}
+
 export const Table = ({
   room,
+  busy,
+  error,
+  onSignal,
+  onReveal,
+  onPass,
   onLeave,
-}: {
-  room: RoomView;
-  onLeave: () => void;
-}) => (
-  <section className="sem-table" aria-labelledby="table-title">
-    <header className="sem-lobby-head">
-      <div>
-        <h1 id="table-title">
-          {room.phase === "ENDED" && room.winner !== null
-            ? `${TEAM_NAME[room.winner]} gagne`
-            : room.turn !== null
-              ? `Tour de ${TEAM_NAME[room.turn]}`
-              : "Salon"}
-        </h1>
-        <p className="sem-hint">
-          {room.signal !== null
-            ? `Signal : ${room.signal.word} (${room.signal.number}), encore ${room.revealsLeft} mots à révéler au plus.`
-            : room.phase === "ENDED"
-              ? "La partie est terminée."
-              : "Le Signaleur prépare son signal."}
+}: Props) => {
+  const inPlay = room.players.some(
+    (player) => player.id === room.you && player.team === room.turn,
+  );
+  const signaler = room.players.some(
+    (player) => player.id === room.you && player.signaler,
+  );
+  const canSignal = room.phase === "SIGNAL" && inPlay && signaler;
+  const canReveal = room.phase === "GUESS" && inPlay && !signaler;
+  const turn = room.turn === null ? "" : TEAM_NAME[room.turn];
+
+  let hint: string;
+  if (room.phase === "ENDED") {
+    hint = "La partie est terminée.";
+  } else if (canSignal) {
+    hint = "À toi : envoie un signal à tes Veilleurs.";
+  } else if (room.phase === "SIGNAL") {
+    hint = `Le Signaleur de ${turn} prépare son signal.`;
+  } else if (canReveal) {
+    hint = `À toi : touche un mot, encore ${room.revealsLeft} au plus, ou passe.`;
+  } else if (inPlay) {
+    hint = "Tes Veilleurs cherchent…";
+  } else {
+    hint = `Les Veilleurs de ${turn} cherchent.`;
+  }
+
+  return (
+    <section className="sem-table" aria-labelledby="table-title">
+      <header className="sem-lobby-head">
+        <div>
+          <h1 id="table-title">
+            {room.phase === "ENDED" && room.winner !== null
+              ? `${TEAM_NAME[room.winner]} gagne`
+              : `Tour de ${turn}`}
+          </h1>
+          <p className="sem-hint">{hint}</p>
+        </div>
+        <Button variant="text" onClick={onLeave}>
+          {room.phase === "ENDED" ? "Retour à l'accueil" : "Quitter"}
+        </Button>
+      </header>
+
+      {room.signal !== null && room.turn !== null && (
+        <p className="sem-pennant" data-team={room.turn}>
+          <TeamMark kind={room.turn} size={16} />
+          <span className="sem-pennant-word">{room.signal.word}</span>
+          <span className="sem-pennant-number">{room.signal.number}</span>
         </p>
+      )}
+
+      <div className="sem-teams">
+        {TEAMS.map((team) => (
+          <section
+            key={team}
+            className="sem-panel"
+            data-theme="light"
+            data-team={team}
+            aria-label={`Équipe ${TEAM_NAME[team]}`}
+          >
+            <h2>
+              <TeamMark kind={team} /> {TEAM_NAME[team]}
+              <span className="sem-count" title="Drapeaux restants">
+                ⚑ {room.flags[team]}
+              </span>
+            </h2>
+            <ul className="sem-roster">
+              {room.players
+                .filter((player) => player.team === team)
+                .map((player) => (
+                  <li key={player.id}>
+                    {player.name}
+                    {player.id === room.you ? " (toi)" : ""}
+                    {player.signaler ? " · Signaleur" : ""}
+                    {player.connected ? "" : " · hors ligne"}
+                  </li>
+                ))}
+            </ul>
+          </section>
+        ))}
       </div>
-      <Button variant="text" onClick={onLeave}>
-        Quitter
-      </Button>
-    </header>
 
-    <div className="sem-teams">
-      {TEAMS.map((team) => (
-        <section
-          key={team}
-          className="sem-panel"
-          data-theme="light"
-          data-team={team}
-          aria-label={`Équipe ${TEAM_NAME[team]}`}
-        >
-          <h2>
-            <TeamMark kind={team} /> {TEAM_NAME[team]}
-            <span className="sem-count" title="Drapeaux restants">
-              ⚑ {room.flags[team]}
-            </span>
-          </h2>
-          <ul className="sem-roster">
-            {room.players
-              .filter((player) => player.team === team)
-              .map((player) => (
-                <li key={player.id}>
-                  {player.name}
-                  {player.id === room.you ? " (toi)" : ""}
-                  {player.signaler ? " · Signaleur" : ""}
-                  {player.connected ? "" : " · hors ligne"}
-                </li>
-              ))}
-          </ul>
-        </section>
-      ))}
-    </div>
-
-    <Board board={room.board} />
-    <p className="sem-hint">
-      Cette version affiche la partie : les tours se jouent dans la prochaine.
-    </p>
-  </section>
-);
+      {error !== null && <Alert severity="error">{explain(error)}</Alert>}
+      {canSignal && <SignalForm busy={busy} onSignal={onSignal} />}
+      <Board
+        board={room.board}
+        busy={busy}
+        onReveal={canReveal ? onReveal : undefined}
+      />
+      {canReveal && (
+        <Button variant="outlined" disabled={busy} onClick={onPass}>
+          Passer
+        </Button>
+      )}
+    </section>
+  );
+};

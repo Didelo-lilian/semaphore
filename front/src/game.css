@@ -158,6 +158,12 @@ h2 {
   font-size: var(--ds-font-size-md);
 }
 
+.sem-countdown {
+  margin: var(--ds-space-1) 0 0;
+  color: var(--sem-sand);
+  font-variant-numeric: tabular-nums;
+}
+
 .sem-presence {
   margin: var(--ds-space-1) 0 0;
   color: var(--sem-sand);

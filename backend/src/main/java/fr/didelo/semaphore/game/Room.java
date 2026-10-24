@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -14,6 +15,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.random.RandomGenerator;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import lombok.RequiredArgsConstructor;
 
 /**
@@ -32,6 +34,10 @@ public final class Room {
   public static final int MAX_PLAYERS = 12;
   // Longer than a reload or the front's first retries, short enough not to wait for a ghost.
   public static final Duration LOBBY_GRACE = Duration.ofSeconds(30);
+  // Longer than a reload or a bad network: only a player who stays away costs their team the turn.
+  public static final Duration TURN_GRACE = Duration.ofSeconds(60);
+  // A game must be able to end when a team has nobody left to give its signals.
+  public static final Duration SIGNALER_LIMIT = Duration.ofMinutes(5);
 
   private final String code;
   private final Clock clock;
@@ -52,6 +58,8 @@ public final class Room {
   private int version;
   // Set by the first sweep when nobody ever acted: a room is built to be joined right away.
   private Instant lastActivity;
+  // The last command or pass of the turn: the wait for someone away starts again after each one.
+  private Instant lastMove;
 
   public String code() {
     return code;
@@ -98,18 +106,23 @@ public final class Room {
   }
 
   public void reconnect(String playerId) {
-    players.get(playerId).setAbsentSince(null);
+    var player = players.get(playerId);
+    player.setAbsentSince(null);
+    player.setLeft(false);
     lastActivity = clock.instant();
     version++;
   }
 
   /**
    * Leaving the lobby on purpose frees the seat at once, so nobody absent blocks the start or keeps
-   * the host seat. Once the game has started the seat stays, like after a closed connection.
+   * the host seat. Once the game has started the seat stays, like after a closed connection, but
+   * the game does not wait for someone who left.
    */
   public void leave(String playerId) {
     if (phase != Phase.LOBBY) {
       disconnect(playerId);
+      players.get(playerId).setLeft(true);
+      expire();
       return;
     }
     players.remove(playerId);
@@ -136,6 +149,34 @@ public final class Room {
     return dropped;
   }
 
+  /**
+   * Ends the game when a team has had no Signaleur for too long, else passes the turn once the game
+   * has waited long enough for whoever is away. Returns whether the room changed.
+   */
+  public boolean expire() {
+    if (phase != Phase.SIGNAL && phase != Phase.GUESS) {
+      return false;
+    }
+    var now = clock.instant();
+    var abandoned =
+        Stream.of(Team.values())
+            .map(this::signaler)
+            .filter(s -> !s.isConnected() && !now.isBefore(s.getAbsentSince().plus(SIGNALER_LIMIT)))
+            .min(Comparator.comparing(Player::getAbsentSince));
+    if (abandoned.isPresent()) {
+      winner = abandoned.get().getTeam().other();
+      phase = Phase.ENDED;
+    } else if (passesAt().filter(at -> !now.isBefore(at)).isPresent()) {
+      endTurn();
+      // The turn may have reached a team whose Signaleur left: it passes again at once.
+      expire();
+    } else {
+      return false;
+    }
+    version++;
+    return true;
+  }
+
   public void apply(String playerId, Command command) {
     var player = players.get(playerId);
     if (!phase.allows(command)) {
@@ -153,9 +194,13 @@ public final class Room {
         endTurn();
       }
     }
+    // Only a command that was accepted counts as a move: a refused one must not restart the wait.
+    lastMove = lastActivity;
+    expire();
   }
 
   public RoomView viewFor(String playerId) {
+    var now = clock.instant();
     var viewer = players.get(playerId);
     var holdsKey =
         phase != Phase.LOBBY && viewer.getTeam() != null && signaler(viewer.getTeam()) == viewer;
@@ -165,6 +210,9 @@ public final class Room {
         version,
         phase,
         turn,
+        passesAt()
+            .map(at -> (int) Math.max(0, Math.ceilDiv(Duration.between(now, at).toMillis(), 1000)))
+            .orElse(null),
         signal,
         revealsLeft,
         Map.copyOf(flags),
@@ -281,7 +329,30 @@ public final class Room {
     }
   }
 
+  /**
+   * When the turn passes for lack of anyone to play it, empty while the game waits for nobody away.
+   * The Signaleur is waited for during {@code SIGNAL}, the lookouts during {@code GUESS}; someone
+   * who left is not, unless the other team's Signaleur left too: the turn would bounce between two
+   * teams that nobody can play for.
+   */
+  private Optional<Instant> passesAt() {
+    if (phase != Phase.SIGNAL && phase != Phase.GUESS) {
+      return Optional.empty();
+    }
+    var awaited =
+        phase == Phase.SIGNAL ? List.of(signaler(turn)) : members(turn).stream().skip(1).toList();
+    if (awaited.stream().anyMatch(Player::isConnected)) {
+      return Optional.empty();
+    }
+    var away =
+        awaited.stream().map(Player::getAbsentSince).max(Comparator.naturalOrder()).orElseThrow();
+    var since = away.isAfter(lastMove) ? away : lastMove;
+    var atOnce = awaited.stream().allMatch(Player::isLeft) && !signaler(turn.other()).isLeft();
+    return Optional.of(since.plus(atOnce ? Duration.ZERO : TURN_GRACE));
+  }
+
   private void endTurn() {
+    lastMove = clock.instant();
     turn = turn.other();
     signal = null;
     revealsLeft = 0;

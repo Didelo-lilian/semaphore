@@ -5,6 +5,7 @@
     "version": 9,
     "phase": "SIGNAL",
     "turn": "TRIBORD",
+    "turnPassesIn": null,
     "signal": null,
     "revealsLeft": 0,
     "flags": {

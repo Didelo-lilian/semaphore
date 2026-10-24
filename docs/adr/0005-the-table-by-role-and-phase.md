@@ -36,7 +36,7 @@ flowchart TD
   pick --> view
 ```
 
-Presence changes one line of that table: when the Signaleur in play is offline during `SIGNAL`, or all the lookouts in play are during `GUESS`, the live line names who the game is waiting for instead ([ADR 0006](0006-presence-and-disconnections.md)).
+Presence changes one line of that table: when the Signaleur in play is offline during `SIGNAL`, or all the lookouts in play are during `GUESS`, the live line names who the game is waiting for instead, and a line under it counts down the seconds left before the turn passes ([ADR 0006](0006-presence-and-disconnections.md)). The count starts from the `turnPassesIn` of the view and the browser's own timer measures the time since: the browser never compares its clock with the server's, and each new view starts the count again. It is outside the live region on purpose, so a screen reader announces the line once and not every second.
 
 Both buttons and form exist only for the player who may use them, so the server's refusals ("not your turn", "not the Signaleur") are a safety net and not something a player normally meets. The front does not replay the rules: it does not count the `n + 1` reveals, it shows how many are left (`revealsLeft`), and a signal too close to a word of the grid is judged by the server, which answers with a reason shown next to the form (`reasons.ts`). The form refuses an empty field and nothing else: what makes a valid signal (one word, letters, hyphens allowed, not too close to the grid) is the server's rule, and a copy of it in the browser would drift (a first version refused hyphenated words that the server accepts). The number is one of four buttons.
 
@@ -49,7 +49,7 @@ Both buttons and form exist only for the player who may use them, so the server'
 ### Refusals, leaving, screen readers
 
 - A refusal answers the view it was sent from: when a newer view arrives, `SalonPage` forgets it, so a lookout who clicked a second too late does not keep a red message for the rest of the game. A refused signal has no new view, so it stays next to the form until the Signaleur tries again.
-- "Quitter" in the middle of a game asks first, because the seat cannot be taken back and a Signaleur who leaves blocks the turn of their team; the dialog says so to a Signaleur. After the end it leads home at once.
+- "Quitter" in the middle of a game asks first, because the seat cannot be taken back and a Signaleur who leaves leaves their team without turns, and finally without the game; the dialog says so to a Signaleur. After the end it leads home at once.
 - The line that says who must act is a live region (`<output>`), so a screen reader announces a new turn, and it carries the signal in words ("Signal : voyage, 2."); the pennant itself is hidden from assistive technology, where it would be read as "voyage2".
 
 ### Coming back in the middle of a turn needs no code
@@ -59,6 +59,6 @@ A reload or a lost connection ends in `rejoin`, and the answer is the whole curr
 ## Consequences
 
 - The tests follow the table: `screens.test.tsx` renders it for each role and phase (what is shown, what can be clicked, what it sends), and `app.test.tsx` plays a game as a lookout through the router and a fake socket, from the first turn to the winner and back home.
-- A Signaleur who closes their tab still blocks the turn: the server has no timeout yet ([ADR 0006](0006-presence-and-disconnections.md) plans one), but the table says who the game is waiting for, and the lookouts of that team can only wait or leave. The rooms keep living for 30 minutes after the last activity ([ADR 0003](0003-rooms-the-state-machine-and-the-protocol.md)).
+- A Signaleur who closes their tab no longer blocks the turn for good: the table says who the game is waiting for and counts the seconds down, then the turn passes ([ADR 0006](0006-presence-and-disconnections.md)). The lookouts of that team can only wait, or leave. The rooms keep living for 30 minutes after the last activity ([ADR 0003](0003-rooms-the-state-machine-and-the-protocol.md)).
 - There is no rematch: the Signaleur is fixed for a grid ([ADR 0003](0003-rooms-the-state-machine-and-the-protocol.md)), so a new game is a new room. Rotation of the Signaleur comes with the rematch.
 - Every merge to `main` of this repository redeploys the application, and the rooms are in memory: a game in progress does not survive it.

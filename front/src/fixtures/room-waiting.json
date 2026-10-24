@@ -1,0 +1,174 @@
+{
+  "type": "roomUpdated",
+  "room": {
+    "code": "CJWZ4",
+    "version": 10,
+    "phase": "SIGNAL",
+    "turn": "TRIBORD",
+    "turnPassesIn": 60,
+    "signal": null,
+    "revealsLeft": 0,
+    "flags": {
+      "BABORD": 2,
+      "TRIBORD": 2
+    },
+    "winner": null,
+    "players": [
+      {
+        "id": "55c42e1f-2618-4459-86cf-ec61f1e92253",
+        "name": "Ana",
+        "team": "BABORD",
+        "connected": true,
+        "host": true,
+        "signaler": true
+      },
+      {
+        "id": "d91d0e97-62c0-4d27-a923-f48d2e104606",
+        "name": "Ben",
+        "team": "TRIBORD",
+        "connected": false,
+        "host": false,
+        "signaler": true
+      },
+      {
+        "id": "c27cbf45-bf2a-44d8-ae7b-5596e5b2045d",
+        "name": "Cleo",
+        "team": "BABORD",
+        "connected": true,
+        "host": false,
+        "signaler": false
+      },
+      {
+        "id": "186edb6b-246d-4b2c-8906-3d28470f1ae3",
+        "name": "Dan",
+        "team": "TRIBORD",
+        "connected": true,
+        "host": false,
+        "signaler": false
+      }
+    ],
+    "board": [
+      {
+        "word": "forêt",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "cinéma",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "couteau",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "tortue",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "tambour",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "beurre",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "fromage",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "clé",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "lettre",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "masque",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "escargot",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "branche",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "diamant",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "fantôme",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "marteau",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "arbre",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "ordinateur",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "assiette",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "bureau",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "statue",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "océan",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "désert",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "rateau",
+        "revealed": false,
+        "kind": null
+      },
+      {
+        "word": "galaxie",
+        "revealed": false,
+        "kind": null
+      }
+    ],
+    "you": "c27cbf45-bf2a-44d8-ae7b-5596e5b2045d"
+  }
+}

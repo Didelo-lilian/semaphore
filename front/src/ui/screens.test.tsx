@@ -1,8 +1,9 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import lookout from "../fixtures/room-lookout.json";
 import signaler from "../fixtures/room-signaler.json";
+import waiting from "../fixtures/room-waiting.json";
 import type { RoomView } from "../protocol.ts";
 import { Home } from "./Home.tsx";
 import { Lobby } from "./Lobby.tsx";
@@ -13,6 +14,7 @@ const lobby = (changes: Partial<RoomView>, you = "a"): RoomView => ({
   version: 1,
   phase: "LOBBY",
   turn: null,
+  turnPassesIn: null,
   signal: null,
   revealsLeft: 0,
   flags: { BABORD: 2, TRIBORD: 2 },
@@ -286,6 +288,61 @@ describe("Presence", () => {
     expect(
       screen.getByText("Les Veilleurs de Tribord cherchent."),
     ).toBeVisible();
+    expect(screen.queryByRole("timer")).toBeNull();
+  });
+
+  describe("when the turn is about to pass", () => {
+    afterEach(() => vi.useRealTimers());
+
+    it("shows the seconds left next to the line that says who the game waits for, and counts down", () => {
+      vi.useFakeTimers();
+      render(<Table room={waiting.room as RoomView} {...props} />);
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Ben, le Signaleur de Tribord, est hors ligne : la partie l'attend.",
+      );
+      expect(screen.getByRole("status")).not.toHaveTextContent("Le tour passe");
+      expect(screen.getByRole("timer")).toHaveTextContent(
+        "Le tour passe dans 60 s.",
+      );
+
+      act(() => vi.advanceTimersByTime(2000));
+      expect(screen.getByRole("timer")).toHaveTextContent(
+        "Le tour passe dans 58 s.",
+      );
+      act(() => vi.advanceTimersByTime(120_000));
+      expect(screen.getByRole("timer")).toHaveTextContent(
+        "Le tour passe dans 0 s.",
+      );
+    });
+
+    it("starts the count again with every new view and drops it when nobody is waited for", () => {
+      vi.useFakeTimers();
+      const room = waiting.room as RoomView;
+      const { rerender } = render(<Table room={room} {...props} />);
+      act(() => vi.advanceTimersByTime(5000));
+
+      rerender(
+        <Table
+          room={{ ...room, version: room.version + 1, turnPassesIn: 60 }}
+          {...props}
+        />,
+      );
+      expect(screen.getByRole("timer")).toHaveTextContent(
+        "Le tour passe dans 60 s.",
+      );
+      act(() => vi.advanceTimersByTime(1000));
+      expect(screen.getByRole("timer")).toHaveTextContent(
+        "Le tour passe dans 59 s.",
+      );
+
+      rerender(
+        <Table
+          room={{ ...room, version: room.version + 2, turnPassesIn: null }}
+          {...props}
+        />,
+      );
+      expect(screen.queryByRole("timer")).toBeNull();
+    });
   });
 });
 
@@ -440,7 +497,7 @@ describe("Table", () => {
     render(<Table room={signaler.room as RoomView} {...handlers()} />);
     await userEvent.click(screen.getByRole("button", { name: "Quitter" }));
     expect(await screen.findByRole("dialog")).toHaveTextContent(
-      "Tu es Signaleur : sans toi, la partie sera bloquée.",
+      "Tu es Signaleur : sans toi, ton équipe ne peut plus jouer et finira par perdre la partie.",
     );
   });
 

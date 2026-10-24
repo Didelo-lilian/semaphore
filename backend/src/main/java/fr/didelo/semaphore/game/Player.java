@@ -16,6 +16,8 @@ public final class Player {
   @Setter private Team team;
   // Null while the player is connected.
   @Setter private Instant absentSince;
+  // Absent on purpose (`leave`): the game does not wait for them.
+  @Setter private boolean left;
 
   public boolean isConnected() {
     return absentSince == null;

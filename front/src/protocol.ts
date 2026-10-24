@@ -35,6 +35,8 @@ export const roomViewSchema = z.object({
   version: z.number().int(),
   phase: phaseSchema,
   turn: teamSchema.nullable(),
+  // Seconds left, when the server built the view, before the turn passes for lack of anyone to play it.
+  turnPassesIn: z.number().int().nullable(),
   signal: z.object({ word: z.string(), number: z.number().int() }).nullable(),
   revealsLeft: z.number().int(),
   flags: z.object({ BABORD: z.number().int(), TRIBORD: z.number().int() }),

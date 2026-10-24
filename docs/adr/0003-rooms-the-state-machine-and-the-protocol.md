@@ -32,8 +32,10 @@ stateDiagram-v2
   LOBBY --> SIGNAL: start
   SIGNAL --> GUESS: signal
   GUESS --> GUESS: reveal a word of the team in play
-  GUESS --> SIGNAL: pass, calm waters, the other team's word,<br/>a reef, the limit of n + 1 reached
-  GUESS --> ENDED: a team has all its words,<br/>or a second reef
+  SIGNAL --> SIGNAL: the Signaleur is away for 60 s<br/>(at once if they left), the turn passes to the other team
+  GUESS --> SIGNAL: pass, calm waters, the other team's word,<br/>a reef, the limit of n + 1 reached,<br/>every lookout away for 60 s (at once if they left)
+  GUESS --> ENDED: a team has all its words,<br/>or a second reef,<br/>or a Signaleur away for 5 min
+  SIGNAL --> ENDED: a Signaleur away for 5 min
   ENDED --> [*]
 ```
 
@@ -45,7 +47,7 @@ stateDiagram-v2
 
 ### What a player sees
 
-Each player receives their own view of the room, never the room itself. The kind of a card (Bâbord, Tribord, calm waters, reef) is in the view only if the card is revealed, if the game is over, or if the viewer is a Signaleur: both Signaleurs see the key, the lookouts of both teams do not. The kind of a hidden card is therefore never on the wire to a lookout, and a test checks it over a real WebSocket. Every view carries the room's `version`, which grows with each change, so a client that receives two views out of order keeps the one with the highest version.
+Each player receives their own view of the room, never the room itself. The kind of a card (Bâbord, Tribord, calm waters, reef) is in the view only if the card is revealed, if the game is over, or if the viewer is a Signaleur: both Signaleurs see the key, the lookouts of both teams do not. The kind of a hidden card is therefore never on the wire to a lookout, and a test checks it over a real WebSocket. Every view carries the room's `version`, which grows with each change, so a client that receives two views out of order keeps the one with the highest version. It also carries `turnPassesIn`, the seconds left before the turn passes when the game waits for someone who is away, or null ([ADR 0006](0006-presence-and-disconnections.md)).
 
 ### The messages
 
@@ -94,7 +96,7 @@ The id is the handler's business: `Room` never sees it, and `GameSocketHandler` 
 
 `RoomRegistry` keeps every room in memory under a five character code without `0`, `O`, `1`, `I` or `L`, since it is read aloud and typed. A room nobody is connected to for 30 minutes is dropped by a sweep that runs every minute, and so is a room nobody ever joined. A connection holds one seat: a second `createRoom`, `joinRoom` or `rejoin` on it is refused, and a room that could not be entered (a bad name) is dropped at once. A message with a missing field is as unreadable as broken JSON.
 
-A player is the connection that holds their token. Closing the connection marks the player absent, in the lobby as in a game, and `rejoin` with the token gives the seat back; the new connection replaces the old one, which is closed, so a late close of the old one changes nothing. In the lobby the seat is kept for 30 seconds only and then the player is removed, so nobody absent blocks the start or keeps the host seat for long, and the host cannot start while someone is offline; leaving on purpose (`leave`) removes the player at once ([ADR 0006](0006-presence-and-disconnections.md)). Once the game has started the seat stays for good.
+A player is the connection that holds their token. Closing the connection marks the player absent, in the lobby as in a game, and `rejoin` with the token gives the seat back; the new connection replaces the old one, which is closed, so a late close of the old one changes nothing. In the lobby the seat is kept for 30 seconds only and then the player is removed, so nobody absent blocks the start or keeps the host seat for long, and the host cannot start while someone is offline; leaving on purpose (`leave`) removes the player at once ([ADR 0006](0006-presence-and-disconnections.md)). Once the game has started the seat stays for good, and a missing Signaleur costs their team its turns, then the game ([ADR 0006](0006-presence-and-disconnections.md)): the sweep that runs every second passes the turn after 60 seconds away, at once for someone who left on purpose, and ends the game when a Signaleur has been away for 5 minutes. Nobody replaces a Signaleur: the key stays with the first of the team.
 
 Changes happen under the room's lock but the messages go out after it is released: a slow or broken connection (its buffer overflowing throws `SessionLimitExceededException`) never holds a room or stops the others from getting their view.
 
@@ -105,7 +107,7 @@ Changes happen under the room's lock but the messages go out after it is release
 ## Consequences
 
 - Messages are sent outside the room's lock, so two updates can reach a client out of order: the front keeps the view with the highest `version`.
-- A Signaleur who disconnects blocks the turn until they come back. The table now says who the game is waiting for; a delay after which the turn passes is the second increment of [ADR 0006](0006-presence-and-disconnections.md).
+- A Signaleur who disconnects no longer blocks the turn for good: the table says who the game is waiting for and for how long, the turn passes after 60 seconds, and the team loses after 5 minutes ([ADR 0006](0006-presence-and-disconnections.md)). The one who comes back keeps the key, since nobody replaced them.
 - A restart of the server loses every room. With several replicas a room lives in one of them: sticky sessions and Redis pub/sub come with the scaling step ([ADR 0002](0002-spring-boot-gradle-and-a-plain-websocket.md)), and `Room` does not change for it.
 - The records of `ClientMessage`, `ServerMessage` and `RoomView` are the contract the front validates with Zod ([#4](https://github.com/Didelo-lilian/semaphore/issues/4)).
 - A command that the server never answers is not timed out: only a lost connection rejects it.

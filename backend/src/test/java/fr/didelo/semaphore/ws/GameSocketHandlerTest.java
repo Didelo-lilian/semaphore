@@ -15,6 +15,8 @@ import fr.didelo.semaphore.game.Room;
 import fr.didelo.semaphore.game.RoomRegistry;
 import fr.didelo.semaphore.game.WordList;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.web.socket.CloseStatus;
@@ -45,6 +47,30 @@ class GameSocketHandlerTest {
     var sent = ArgumentCaptor.forClass(TextMessage.class);
     verify(session, atLeastOnce()).sendMessage(sent.capture());
     return sent.getValue().getPayload();
+  }
+
+  /**
+   * Four players, two per team, game started: the sessions of p0 to p3, the host first, the first
+   * two on Bâbord.
+   */
+  private List<WebSocketSession> startedGame() throws Exception {
+    var sessions = new ArrayList<WebSocketSession>();
+    var host = connect("p0");
+    receive(host, "{\"type\":\"createRoom\",\"name\":\"p0\"}");
+    var code = json.readTree(lastPayload(host)).path("room").path("code").asString();
+    sessions.add(host);
+    for (var i = 1; i < 4; i++) {
+      var session = connect("p" + i);
+      receive(session, "{\"type\":\"joinRoom\",\"code\":\"" + code + "\",\"name\":\"p" + i + "\"}");
+      sessions.add(session);
+    }
+    for (var i = 0; i < 4; i++) {
+      receive(
+          sessions.get(i),
+          "{\"type\":\"joinTeam\",\"team\":\"" + (i < 2 ? "BABORD" : "TRIBORD") + "\"}");
+    }
+    receive(host, "{\"type\":\"start\"}");
+    return sessions;
   }
 
   @Test
@@ -114,5 +140,28 @@ class GameSocketHandlerTest {
     receive(session, "{\"type\":\"leave\"}");
 
     assertThat(lastPayload(session)).contains("\"error\"").contains("join a room first");
+  }
+
+  @Test
+  void theSweepPassesTheTurnWhenTheSignaleurInPlayStaysAway() throws Exception {
+    var sessions = startedGame();
+    var lookout = sessions.get(1);
+    var turn = json.readTree(lastPayload(lookout)).path("room").path("turn").asString();
+    var signaler = sessions.get(turn.equals("BABORD") ? 0 : 2);
+
+    handler.afterConnectionClosed(signaler, CloseStatus.GOING_AWAY);
+    assertThat(json.readTree(lastPayload(lookout)).path("room").path("turnPassesIn").asInt())
+        .isEqualTo(60);
+
+    clock.advance(Room.TURN_GRACE.minusSeconds(1));
+    handler.expire();
+    assertThat(json.readTree(lastPayload(lookout)).path("room").path("turn").asString())
+        .isEqualTo(turn);
+
+    clock.advance(Duration.ofSeconds(1));
+    handler.expire();
+    var room = json.readTree(lastPayload(lookout)).path("room");
+    assertThat(room.path("turn").asString()).isNotEqualTo(turn);
+    assertThat(room.path("turnPassesIn").isNull()).isTrue();
   }
 }

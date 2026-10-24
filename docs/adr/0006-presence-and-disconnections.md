@@ -1,6 +1,6 @@
 # 6. Presence and disconnections
 
-Date: 2026-10-24 · Status: accepted (increment 1 is built with this ADR, increments 2 and 3 are proposed with a default for each choice)
+Date: 2026-10-24 · Status: accepted (increments 1 and 2 are built, increment 3 is proposed with a default for each choice)
 
 ## Context
 
@@ -19,7 +19,7 @@ Those are three decisions of different sizes, so this ADR cuts the work in incre
 | # | Increment | What it adds |
 |---|---|---|
 | 1 | **Who is online** (built with this ADR) | A lobby keeps an absent player for a grace period, a `leave` message for leaving on purpose, everyone's presence shown in the lobby and at the table, the start refused while someone is offline, the table saying who the game waits for |
-| 2 | **A missing Signaleur or host** ([#28](https://github.com/Didelo-lilian/semaphore/issues/28)) | A delay after which the turn passes, and the end of a game that nobody can play |
+| 2 | **A missing Signaleur or host** ([#28](https://github.com/Didelo-lilian/semaphore/issues/28)) (built) | A delay after which the turn passes, the turn passing at once for someone who left on purpose, and the end of a game that nobody can play |
 | 3 | **Spectators** ([#29](https://github.com/Didelo-lilian/semaphore/issues/29)) | Watch a game in progress without a seat, read only |
 
 ### Defaults of the product choices
@@ -56,10 +56,39 @@ stateDiagram-v2
   Online --> Offline: leave, in a game
 ```
 
+### Increment 2
+
+- **The room decides, the handler sweeps.** `Room.expire` ends the game or passes the turn once the wait is over, and says whether the room changed; `GameSocketHandler` runs it every second on every room and sends the new views. The room also calls it after every command and when a player leaves, so a turn that reaches a team whose Signaleur left passes again at once, without waiting for the sweep.
+- **Who the game waits for**: the Signaleur of the team in play during `SIGNAL`, the lookouts of that team during `GUESS`. A Signaleur is not waited for once the signal is given, nor while the other team plays.
+- **The turn passes after 60 seconds** when everyone the game waits for is away. The wait is counted from the later of the last move (a command or a pass) and the moment the last of them left, so it starts again on every turn of that team: a Signaleur who is still away when their turn comes back has 60 seconds again instead of losing the turn at once. Someone who comes back in time cancels it.
+- **Someone who left on purpose is not waited for.** The room marks the player as `left` (a `rejoin` with the token clears the mark), and the turn passes at once when everyone it waits for has left. One exception: when the other team's Signaleur has left too, the turn would bounce for good between two teams that nobody can play for, so the 60 seconds apply.
+- **A game must end.** A team whose Signaleur has been away for 5 minutes, gone or not, loses and the other team wins, whoever is in play: a team without its Signaleur can never give a signal again. When both Signaleurs are away, the one who has been away longest loses.
+- **Nobody takes the key.** The Signaleur stays the first of the team ([ADR 0003](0003-rooms-the-state-machine-and-the-protocol.md)), so a team without its Signaleur loses its turns, then the game.
+- **The view says how long is left.** `turnPassesIn` is the whole seconds left before the turn passes, rounded up, and null when the game waits for nobody away. It is computed when the view is built, with the room's clock. The browser reads no wall clock: it counts down from the number it received with its own timer, and each new view starts the count again. The table shows it under the line that says who the game waits for, outside the live region, so a screen reader announces the line once and not every second.
+- **The wire gains that field and nothing else**: no client message, and the `id` stays optional.
+
+```mermaid
+stateDiagram-v2
+  state "Turn being played" as Played
+  state "Waiting for the ones who are away" as Waiting
+  state "Turn passed" as Passed
+  state "Game ended" as Ended
+  [*] --> Played: someone the game waits for is online
+  [*] --> Waiting: all of them are away
+  Played --> Waiting: the last of them goes away
+  Waiting --> Played: one of them comes back
+  Waiting --> Passed: 60 s after the later of the last move<br/>and the last of them leaving
+  Waiting --> Passed: they all left on purpose, at once
+  Passed --> Waiting: the team's next turn, still away<br/>(and not left), the 60 s start again
+  Waiting --> Ended: a Signaleur away for 5 min,<br/>the other team wins
+  Played --> Ended: a Signaleur away for 5 min,<br/>the other team wins
+```
+
 ## Consequences
 
 - A player who drops from the lobby stays on the list as "hors ligne" for 30 to 35 seconds and gets their seat, team and host seat back if they return in time. The front's automatic reconnection now covers the lobby too.
 - A room whose players are all away is still dropped by the sweep of idle rooms after 30 minutes ([ADR 0003](0003-rooms-the-state-machine-and-the-protocol.md)); an empty lobby is dropped the same way.
-- The known limit of a missing Signaleur is unchanged until increment 2, but it is no longer silent: the table says who it is waiting for.
+- A missing Signaleur no longer blocks the game: the table says who it is waiting for and for how long, the turn passes after 60 seconds, and the team loses after 5 minutes. A team whose Signaleur stays away still gets a turn each time the other team has played, so the other team waits 60 seconds between two of its turns until the game ends.
 - The grace period is the same for every lobby and is not configurable: the tests move the clock, not a setting.
-- Spectators and the countdowns of increment 2 will need a deadline in the view (or a spectator count); neither exists yet, and nothing in this increment prepares for them.
+- The deadline now exists in the view (`turnPassesIn`), so spectators ([#29](https://github.com/Didelo-lilian/semaphore/issues/29)) get it like the players; the spectator count does not exist yet.
+- The delays are constants of `Room` (`TURN_GRACE`, `SIGNALER_LIMIT`), not settings: the tests move the clock. The front says nothing about the 5 minutes beyond a Signaleur who leaves, and a game ended that way shows its winner like any other.

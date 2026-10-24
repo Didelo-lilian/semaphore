@@ -6,6 +6,7 @@
     "version": 3,
     "phase": "LOBBY",
     "turn": null,
+    "turnPassesIn": null,
     "signal": null,
     "revealsLeft": 0,
     "flags": {

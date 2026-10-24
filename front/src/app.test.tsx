@@ -142,7 +142,7 @@ describe("the game in the browser", () => {
       token: seat.token,
       room: lookout.room,
     });
-    expect(socket.sent).toEqual([{ type: "rejoin", id: "1", ...seat }]);
+    expect(socket.sent).toEqual([{ type: "rejoin", ...seat }]);
     expect(
       await screen.findByText("Le Signaleur de Tribord prépare son signal."),
     ).toBeInTheDocument();
@@ -176,7 +176,7 @@ describe("the game in the browser", () => {
       await screen.findByRole("button", { name: board[0]?.word }),
     );
     await waitFor(() =>
-      expect(socket.sent).toContainEqual({ type: "reveal", id: "2", index: 0 }),
+      expect(socket.sent).toContainEqual({ type: "reveal", id: "1", index: 0 }),
     );
     socket.answer(
       view(13, {
@@ -195,7 +195,7 @@ describe("the game in the browser", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Passer" }));
     await waitFor(() =>
-      expect(socket.sent).toContainEqual({ type: "pass", id: "3" }),
+      expect(socket.sent).toContainEqual({ type: "pass", id: "2" }),
     );
     socket.answer(view(14, { phase: "SIGNAL", turn: "TRIBORD", signal: null }));
 
@@ -246,7 +246,7 @@ describe("the game in the browser", () => {
     await waitFor(() =>
       expect(socket.sent).toContainEqual({
         type: "signal",
-        id: "2",
+        id: "1",
         word: "voyage",
         number: 2,
       }),
@@ -288,7 +288,7 @@ describe("the game in the browser", () => {
       }),
     );
     await waitFor(() =>
-      expect(socket.sent).toContainEqual({ type: "reveal", id: "2", index: 0 }),
+      expect(socket.sent).toContainEqual({ type: "reveal", id: "1", index: 0 }),
     );
     socket.answer({
       type: "error",

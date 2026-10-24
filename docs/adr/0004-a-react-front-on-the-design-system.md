@@ -19,6 +19,6 @@ The server holds every room and every rule ([ADR 0003](0003-rooms-the-state-mach
 ## Consequences
 
 - The pull request checked it in two browser tabs: create, invitation link, teams, start, reload, a room that does not exist.
-- The front and the backend are deployed separately, so each must cope with the other being one version behind. A server from before the ids ignores the `id` it is sent and echoes none: until a server has shown on a connection that it echoes ids, `GameClient` settles the oldest command with an answer that has none, as it did before. A `rejoin` carries an id so that its `joined` shows it. That fallback is in `GameClient.take`, marked `compat`, and goes once every server echoes.
+- The front and the backend are deployed separately, so while the request ids were introduced each had to cope with the other being one version behind: until a server had shown that it echoes ids, `GameClient` settled the oldest command with an answer that had none. That fallback is gone now that both are deployed (v0.2.0): a command is settled only by the answer that carries its id, so the front needs a backend that echoes ids.
 - The bundle is 720 kB (220 kB gzipped), mostly MUI. Code splitting comes if it matters.
 - This version shows the started game (grid, key for the Signaleurs only, flags); playing the turns is in [ADR 0005](0005-the-table-by-role-and-phase.md).

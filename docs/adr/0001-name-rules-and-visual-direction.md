@@ -18,7 +18,7 @@ The genre is the family of word-association party games. The mechanics below are
 
 - **Grid**: 24 words, 6 columns by 4 rows, drawn at random from a French word list.
 - **Two teams**, **Bâbord** and **Tribord** (port and starboard). Each has 8 words on the grid. The 8 others are 6 **calm waters** (neutral) and 2 **reefs**.
-- **Roles**: each team has one **Signaleur**, who sees which word is which, and **Veilleurs** (lookouts), who do not. The Signaleur is not chosen: it is the next member of the team, in the order they joined the room, each time the team plays a turn.
+- **Roles**: each team has one **Signaleur**, who sees which word is which, and **Veilleurs** (lookouts), who do not. The Signaleur is not chosen: it is the first member of the team in the order they joined the room, for the whole grid.
 - **A turn**: the Signaleur sends a **signal**: one word and a number *n* from 1 to 4. The Veilleurs then reveal words one at a time, at most *n* + 1.
   - Their own team's word: they may continue, or pass.
   - Calm waters: the turn ends.
@@ -27,7 +27,7 @@ The genre is the family of word-association party games. The mechanics below are
 - **End of the game**: a team wins when all its words are revealed, or when the other team has lost both its flags.
 - **What the server refuses**: a signal that is, contains or shares its first four letters with a word on the grid; a number outside 1 to 4; any message from a player whose role or turn it is not. The client never decides.
 
-What differs from the games it resembles: a reef costs a flag instead of ending the game, a team can lose on flags without having missed all its words, the signal is checked by the server against the grid, and each turn a team plays rotates its Signaleur.
+What differs from the games it resembles: a reef costs a flag instead of ending the game, a team can lose on flags without having missed all its words, the signal is checked by the server against the grid, and the Signaleur is fixed for a grid, since someone who has seen the key cannot be a lookout on it.
 
 ### Visual direction
 

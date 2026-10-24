@@ -47,9 +47,10 @@ flowchart LR
 
 | Kind | Where | What it proves |
 |---|---|---|
-| Rules | `RoomTest` | every legal and illegal move in each state, signal validation, both ways to win, the Signaleur rotation, the key never in a lookout's view |
+| Rules | `RoomTest` | every legal and illegal move in each state, signal validation, both ways to win, the Signaleur fixed for the grid, leaving the lobby, the key never in a lookout's view |
 | Registry, words | `RoomRegistryTest`, `WordListTest` | codes, sweep of abandoned rooms, a clean word list with no two words too close |
-| WebSocket | `WebSocketIT` | the application on a random port, driven by the JDK's WebSocket client: create, join, rejoin with a token, errors, a started game, refused origin |
+| WebSocket | `WebSocketIT` | the application on a random port, driven by the JDK's WebSocket client: create, join, leaving the lobby, rejoin with a token, a new connection replacing the old, errors and missing fields, a started game, refused origin |
+| Handler | `GameSocketHandlerTest` | a broken connection does not stop the others, a room that could not be entered is not kept, one room per connection |
 
 `./gradlew check` runs them with the formatting check. The pull request runs it on JDK 25, builds the image, lints the workflows, scans for secrets and runs CodeQL.
 

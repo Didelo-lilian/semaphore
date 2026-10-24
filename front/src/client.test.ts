@@ -101,7 +101,7 @@ describe("GameClient", () => {
     client.start();
     last().accept();
     expect(last().sent).toEqual([
-      { type: "rejoin", id: expect.any(String), code: "ABCDE", token: "t" },
+      { type: "rejoin", code: "ABCDE", token: "t" },
     ]);
   });
 
@@ -136,7 +136,7 @@ describe("GameClient", () => {
     expect(FakeSocket.all).toHaveLength(3);
     last().accept();
     expect(last().sent).toEqual([
-      { type: "rejoin", id: expect.any(String), code: "ABCDE", token: "t" },
+      { type: "rejoin", code: "ABCDE", token: "t" },
     ]);
     expect(client.getSnapshot().connection).toBe("open");
   });
@@ -215,16 +215,24 @@ describe("GameClient", () => {
     expect(settled).toBe(true);
   });
 
-  it("settles the oldest command with an answer without id while the server echoes none", async () => {
+  it("settles nothing with an answer without id, even before any answer carried one", async () => {
     const client = connect(memoryStore());
-    const created = client.request({ type: "createRoom", name: "Ana" });
-    const started = client.request({ type: "start" });
+    let settled = false;
+    const created = client
+      .request({ type: "createRoom", name: "Ana" })
+      .then(() => {
+        settled = true;
+      });
     last().accept();
     const { id, ...withoutId } = joined;
     last().receive(withoutId);
-    await expect(created).resolves.toMatchObject({ code: joined.room.code });
-    last().receive(withVersion(5));
-    await expect(started).resolves.toMatchObject({ version: 5 });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+    expect(room()?.code).toBe(joined.room.code);
+
+    last().answer(joined);
+    await created;
+    expect(settled).toBe(true);
   });
 
   it("rejects a command the server refuses, and only that one", async () => {

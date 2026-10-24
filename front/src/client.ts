@@ -44,8 +44,6 @@ export class GameClient {
   private pending: ClientMessage[] = [];
   private waiting: Waiting[] = [];
   private lastId = 0;
-  // compat: whether the server of this connection has shown that it echoes ids.
-  private echoes = false;
   private awaitingRejoin = false;
   private attempts = 0;
   private retry: ReturnType<typeof setTimeout> | undefined;
@@ -123,7 +121,6 @@ export class GameClient {
   private connect(connection: Connection) {
     clearTimeout(this.retry);
     this.update({ connection });
-    this.echoes = false;
     const socket = this.open(this.url);
     this.socket = socket;
     socket.onopen = () => {
@@ -132,9 +129,7 @@ export class GameClient {
       const session = this.store.load();
       if (session !== null && this.pending.length === 0) {
         this.awaitingRejoin = true;
-        // Its id lets the answer show whether the server echoes ids.
-        const id = String(++this.lastId);
-        socket.send(JSON.stringify({ type: "rejoin", id, ...session }));
+        socket.send(JSON.stringify({ type: "rejoin", ...session }));
       }
       for (const message of this.pending.splice(0)) {
         socket.send(JSON.stringify(message));
@@ -210,17 +205,9 @@ export class GameClient {
     }
   }
 
-  /**
-   * The command an answer is for. compat: a server from before request ids echoes none, so until
-   * one has shown that it does, an answer without id is for the oldest command; remove it once
-   * every server echoes.
-   */
+  /** The command an answer is for: the one whose id it carries, none for what someone else caused. */
   private take(id: string | undefined) {
-    this.echoes ||= id !== undefined;
-    let index = this.waiting.findIndex((waiting) => waiting.id === id);
-    if (id === undefined && !this.echoes) {
-      index = 0;
-    }
+    const index = this.waiting.findIndex((waiting) => waiting.id === id);
     return index < 0 ? undefined : this.waiting.splice(index, 1)[0];
   }
 

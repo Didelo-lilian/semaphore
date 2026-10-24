@@ -26,6 +26,27 @@ npm run check   # lint, types, tests, production build
 
 Start the backend with `SEMAPHORE_ALLOWED_ORIGINS=http://localhost:5173` (a port taken by another server makes Vite refuse to start with `--strictPort`, and the origin must match the port actually used).
 
+## Run the end-to-end test
+
+One game, four players in four browser contexts, against the real backend and the built front ([ADR 0007](docs/adr/0007-an-end-to-end-test-of-a-whole-game.md)).
+
+```bash
+(cd backend && ./gradlew bootJar)                          # needs a JDK 25, builds build/libs/semaphore.jar
+(cd front && npm ci && npm run build)
+cd e2e && npm ci && npx playwright install chromium
+npm test    # starts the jar on :8080 and `vite preview` on :4173, then plays the game in a few seconds
+```
+
+Without a JDK 25 on the machine, build the jar and run it in containers, from the repository root, then start `npm test` in `e2e/`: outside CI Playwright reuses a backend that already listens on :8080, which must allow `http://localhost:4173` as below (the front is always started by the test).
+
+```bash
+docker run --rm -v "$PWD/backend:/app" -v semaphore-gradle:/gradle-home -e GRADLE_USER_HOME=/gradle-home -w /app gradle:9.8.2-jdk25-alpine ./gradlew bootJar
+docker run -d --rm --name semaphore-e2e-backend -p 8080:8080 -e SEMAPHORE_ALLOWED_ORIGINS=http://localhost:4173 -v "$PWD/backend/build/libs/semaphore.jar:/app/semaphore.jar:ro" eclipse-temurin:25-jre-alpine java -jar /app/semaphore.jar
+docker rm -f semaphore-e2e-backend   # when you are done
+```
+
+A failed run leaves a trace of the four pages: `npx playwright show-trace test-results/*/trace.zip`. In CI it is the `e2e-traces` artifact of the run.
+
 ## Architecture
 
 The diagram is updated in the same pull request as any change it shows.
@@ -93,14 +114,15 @@ sequenceDiagram
 | Protocol | `protocol.test.ts` | the Zod schemas read messages captured from the real backend (lobby join and answered update with their id, Signaleur's view, lookout's view without one, error with its id) and refuse anything else |
 | Client | `client.test.ts` | the connection with a fake WebSocket: queued messages, seat remembered, late views dropped, rejoin after a reload, `leave` sent before closing, retries with growing delays, no fight between two tabs, each command settled by the answer that carries its id (two in flight, an update caused by someone else or an answer without id settles nothing) |
 | Screens | `app.test.tsx`, `screens.test.tsx` | create a room and land in its lobby, invitation link, refusal shown where it was asked, room link without a seat, seat back after a reload, team choice, start rules, the key only for Signaleurs, the table for each role and phase (signal form, words to touch, waiting lines, winner and whole key), presence (online count, offline players dimmed, the start held while someone is away, the line naming the Signaleur or the lookouts the game waits for), a whole game played as a lookout through the router and a fake socket |
+| End to end | `e2e/full-game.spec.ts` | the real front and the real backend together, in four browser contexts: Alice creates a room and invites the others with its link, everybody picks a team, the Signaleurs are the first of their team to have arrived, only they see the key, the server refuses a signal that is a word of the grid and the front says why, the Signaleurs signal and the lookouts touch their words and pass until a team has found all of its words, the winner is announced to the four players and each goes back home |
 
-`./gradlew check` runs the backend ones with the formatting check, `npm run check` the front ones with lint, types and the build. The pull request runs both (JDK 25, Node 24), builds the two images, lints the workflows, scans for secrets and runs CodeQL.
+`./gradlew check` runs the backend ones with the formatting check, `npm run check` the front ones with lint, types and the build. The pull request runs both (JDK 25, Node 24), plays the end-to-end game, builds the two images, lints the workflows, scans for secrets and runs CodeQL.
 
 ## Delivery
 
 ```mermaid
 flowchart LR
-  dev["Branch<br/>signed commits"] --> pr["Pull request<br/>backend and front checks, image builds,<br/>actionlint, gitleaks, CodeQL, title"]
+  dev["Branch<br/>signed commits"] --> pr["Pull request<br/>backend and front checks, end-to-end game,<br/>image builds, actionlint, gitleaks, CodeQL, title"]
   pr -->|"squash merge"| main["main"]
   main --> image["Image workflow"]
   image --> ghcr[("GHCR<br/>semaphore:main<br/>semaphore-front:main")]

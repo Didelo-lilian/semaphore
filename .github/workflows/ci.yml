@@ -40,6 +40,42 @@ jobs:
       # Lint, types, tests and the production build.
       - run: npm run check
 
+  # A whole game with four players in four browsers, against the real backend and the built front.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: front/.nvmrc
+          cache: npm
+          cache-dependency-path: |
+            front/package-lock.json
+            e2e/package-lock.json
+      - run: ./gradlew bootJar
+        working-directory: backend
+      - run: npm ci && npm run build
+        working-directory: front
+      - run: npm ci && npx playwright install --with-deps chromium
+        working-directory: e2e
+      - run: npm run typecheck
+        working-directory: e2e
+      - run: npx playwright test
+        working-directory: e2e
+      # The trace of the four players' pages, to open with `npx playwright show-trace`.
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-traces
+          path: e2e/test-results
+          if-no-files-found: ignore
+
   image:
     runs-on: ubuntu-latest
     steps:

@@ -1,6 +1,6 @@
 # 1. Name, rules and visual direction
 
-Date: 2026-10-24 · Status: accepted
+Date: 2026-10-24 · Status: accepted, amended by [ADR 0003](0003-rooms-the-state-machine-and-the-protocol.md)
 
 ## Context
 
@@ -18,7 +18,7 @@ The genre is the family of word-association party games. The mechanics below are
 
 - **Grid**: 24 words, 6 columns by 4 rows, drawn at random from a French word list.
 - **Two teams**, **Bâbord** and **Tribord** (port and starboard). Each has 8 words on the grid. The 8 others are 6 **calm waters** (neutral) and 2 **reefs**.
-- **Roles**: each team has one **Signaleur**, who sees which word is which, and **Veilleurs** (lookouts), who do not. The Signaleur is chosen in the lobby and rotates each round.
+- **Roles**: each team has one **Signaleur**, who sees which word is which, and **Veilleurs** (lookouts), who do not. The Signaleur is not chosen: it is the next member of the team, in the order they joined the room, each time the team plays a turn.
 - **A turn**: the Signaleur sends a **signal**: one word and a number *n* from 1 to 4. The Veilleurs then reveal words one at a time, at most *n* + 1.
   - Their own team's word: they may continue, or pass.
   - Calm waters: the turn ends.
@@ -27,7 +27,7 @@ The genre is the family of word-association party games. The mechanics below are
 - **End of the game**: a team wins when all its words are revealed, or when the other team has lost both its flags.
 - **What the server refuses**: a signal that is, contains or shares its first four letters with a word on the grid; a number outside 1 to 4; any message from a player whose role or turn it is not. The client never decides.
 
-What differs from the games it resembles: a reef costs a flag instead of ending the game, a team can lose on flags without having missed all its words, the signal is checked by the server against the grid, and a round rotates the Signaleur.
+What differs from the games it resembles: a reef costs a flag instead of ending the game, a team can lose on flags without having missed all its words, the signal is checked by the server against the grid, and each turn a team plays rotates its Signaleur.
 
 ### Visual direction
 
@@ -57,7 +57,7 @@ Nothing new for v0.1: the game uses its Button, TextField, Card, Chip, Dialog an
 
 ## Consequences
 
-- The rules fit a 6×4 grid, a state machine with five states (lobby, signal, guess, round end, game end) and one message type per legal action, which is what [#3](https://github.com/Didelo-lilian/semaphore/issues/3) builds.
+- The rules fit a 6×4 grid, a state machine with four states (lobby, signal, guess, ended: a turn ends at once, there is no state between two turns) and one message type per legal action, which is what [#3](https://github.com/Didelo-lilian/semaphore/issues/3) builds.
 - A French word list with a licence that allows redistribution must be chosen before the grid can be drawn; the first version uses a short curated list.
 - The palette passes WCAG AA for text; the shape rule is what makes the teams distinguishable, so every screen must keep it, and the visual-regression and accessibility checks of the front will cover it.
 - Changing the rules later is cheap while the state machine is the only place that knows them.

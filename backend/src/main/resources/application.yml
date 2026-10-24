@@ -10,5 +10,7 @@ management:
         include: health
 
 semaphore:
+  # A team needs a Signaleur and at least one lookout.
+  min-team-size: 2
   # Browsers send the page's origin on a WebSocket handshake, and the server refuses the others.
   allowed-origins: https://play.didelo.fr

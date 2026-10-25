@@ -32,8 +32,8 @@ if (/didelo\.fr/i.test(WS_URL)) {
 }
 
 // Valid whatever the random grid: none of the 160 words of words.txt is contained in it, contains it or shares its
-// first four letters (same word as the end-to-end test). A word added to the list that is too close to it makes
-// every signal refused, and the test fails.
+// first four letters (same word as the end-to-end test). A word added to the list that is too close to it is refused
+// on the grids that draw it, and the test fails.
 const SIGNAL = "voyage";
 // The highest number a signal can carry (MAX_NUMBER in Room.java).
 const MAX_NUMBER = 4;
@@ -58,7 +58,7 @@ export const options = {
     games_finished: ["rate==1"],
     command_duration: [`p(95)<${P95_MS}`],
   },
-  summaryTrendStats: ["avg", "med", "p(90)", "p(95)", "p(99)", "max"],
+  summaryTrendStats: ["count", "med", "p(90)", "p(95)", "p(99)", "max"],
 };
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -69,11 +69,11 @@ const ANSWERS = { createRoom: "joined", joinRoom: "joined" };
 
 /** One connection, with the latest view of the room it got. */
 class Seat {
-  constructor(table, name) {
-    this.table = table;
+  constructor(name) {
     this.name = name;
     this.view = null;
     this.viewAt = 0;
+    this.sentAt = 0;
     this.lastId = 0;
     this.pending = new Map();
     this.waiters = new Set();
@@ -95,6 +95,10 @@ class Seat {
       this.socket.onopen = () => {
         clearTimeout(timer);
         resolve();
+        // A game that failed while this connection was opening is over: nobody will close it.
+        if (this.closing) {
+          this.socket.close();
+        }
       };
       this.socket.onmessage = (event) => this.receive(JSON.parse(event.data));
       this.socket.onerror = (event) => giveUp(`connection failed: ${event.error}`);
@@ -118,9 +122,8 @@ class Seat {
         () => this.fail(new Error(`${this.name}: no answer to ${type} in ${TIMEOUT_MS} ms`)),
         TIMEOUT_MS,
       );
-      const sentAt = Date.now();
-      this.pending.set(id, { type, sentAt, resolve, reject, timer });
-      this.table.sentAt = sentAt;
+      this.sentAt = Date.now();
+      this.pending.set(id, { type, sentAt: this.sentAt, resolve, reject, timer });
       this.socket.send(JSON.stringify({ type, id, ...fields }));
     });
   }
@@ -206,10 +209,11 @@ class Seat {
   leave() {
     this.closing = true;
     this.settle(new Error(`${this.name} left`));
+    // Closing a connection that is still opening never lets k6 end the iteration: onopen closes it.
     if (this.socket?.readyState === 1) {
       this.socket.send(JSON.stringify({ type: "leave" }));
+      this.socket.close();
     }
-    this.socket?.close();
   }
 }
 
@@ -217,11 +221,8 @@ class Seat {
 // and Bob are the Signaleurs, in the order they arrived. The team that starts is drawn and finds its eight words in
 // three turns of the two teams, 27 commands in all.
 async function playTable() {
-  const table = { sentAt: 0 };
-  const [alice, bob, carol, dave, spectator] = ["Alice", "Bob", "Carol", "Dave", "Spectator"].map(
-    (name) => new Seat(table, name),
-  );
-  const seats = [alice, bob, carol, dave, spectator];
+  const seats = ["Alice", "Bob", "Carol", "Dave", "Spectator"].map((name) => new Seat(name));
+  const [alice, bob, carol, dave, spectator] = seats;
   const crews = {
     BABORD: { signaler: alice, lookout: carol },
     TRIBORD: { signaler: bob, lookout: dave },
@@ -250,7 +251,7 @@ async function playTable() {
         .slice(0, MAX_NUMBER);
       await signaler.send("signal", { word: SIGNAL, number: words.length });
       const seenAt = await lookout.waitFor((view) => view.phase === "GUESS" && view.turn === team, "the signal");
-      propagationDuration.add(seenAt - table.sentAt);
+      propagationDuration.add(seenAt - signaler.sentAt);
       for (const index of words) {
         await lookout.send("reveal", { index });
       }
@@ -279,8 +280,9 @@ async function playTable() {
 
 export default playTable;
 
+// k6 reports a Trend that has a threshold even without a sample, with every value at 0.
 const trend = (metric) =>
-  metric
+  metric?.values.count
     ? ["med", "p(90)", "p(95)", "p(99)", "max"]
         .map((stat) => `${stat.replace(/[()]/g, "")} ${Math.round(metric.values[stat])}`)
         .join(" · ")

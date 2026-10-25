@@ -3,7 +3,6 @@
 #   docker compose -f load/compose.yaml up --build --exit-code-from k6
 #
 # Variables, all optional: REPLICAS (backend containers, 1), PROFILE (short or long), ROOMS, DURATION, THINK_MS, P95_MS.
-# Never point it at play.didelo.fr: the edge allows 24 connections per address and a table needs five.
 name: semaphore-load
 
 services:
@@ -64,7 +63,7 @@ services:
     environment:
       - WS_URL=ws://lb:8080/ws
       - ORIGIN=http://load.test
-      - REPLICAS=${REPLICAS:-1}
+      - REPLICAS
       - RESULTS_DIR=/results
       - PROFILE
       - ROOMS

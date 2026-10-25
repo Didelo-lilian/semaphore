@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 
 /** Events inside one process: the listeners are called at once, in the thread that publishes. */
 @Component
+@WithoutRedis
 public class InMemoryRoomEvents implements RoomEvents {
 
   private final List<Consumer<RoomEvent>> listeners = new CopyOnWriteArrayList<>();

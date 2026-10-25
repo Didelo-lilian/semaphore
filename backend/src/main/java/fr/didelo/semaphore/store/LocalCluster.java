@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 
 /** A cluster of one: this replica is always alive and always takes the lock. */
 @Component
+@WithoutRedis
 public class LocalCluster implements Cluster {
 
   private final String id = UUID.randomUUID().toString();

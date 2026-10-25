@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 
 /** The rooms of one process: development, the unit tests and an instance without Redis. */
 @Component
+@WithoutRedis
 public class InMemoryRoomStore implements RoomStore {
 
   private final ConcurrentMap<String, RoomState> rooms = new ConcurrentHashMap<>();

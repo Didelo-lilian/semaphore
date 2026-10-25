@@ -319,8 +319,17 @@ h2 {
     color 0s linear calc(var(--sem-duration-turn) / 2);
 }
 
+/* A lookout has no mark before the reveal: the new one waits for the half of the turn, as the colours do. */
 .sem-word[data-motion="enter"] .sem-word-mark {
-  transition: color 0s linear calc(var(--sem-duration-turn) / 2);
+  transition:
+    color 0s linear calc(var(--sem-duration-turn) / 2),
+    opacity 0s linear calc(var(--sem-duration-turn) / 2);
+}
+
+@starting-style {
+  .sem-word[data-motion="enter"] .sem-word-mark {
+    opacity: 0;
+  }
 }
 
 @media (max-width: 520px) {

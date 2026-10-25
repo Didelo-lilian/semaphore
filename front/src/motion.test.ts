@@ -10,7 +10,7 @@ const css = readFileSync(join(process.cwd(), "src/game.css"), "utf8").replace(
 );
 const { duration, easing } = theme.transitions;
 
-const reduced = (() => {
+const reducedBlock = (() => {
   const start = css.indexOf("@media (prefers-reduced-motion: reduce)");
   let depth = 0;
   for (let end = css.indexOf("{", start); end < css.length; end++) {
@@ -21,6 +21,13 @@ const reduced = (() => {
   }
   throw new Error("no reduced-motion block in game.css");
 })();
+
+const rules = (source: string) =>
+  [...source.matchAll(/([^{}]+)\{([^{}]*)\}/g)].flatMap(([, selectors, body]) =>
+    (selectors ?? "")
+      .split(",")
+      .map((selector) => ({ selector: selector.trim(), body: body ?? "" })),
+  );
 
 describe("the motion of game.css", () => {
   it("takes its durations and easings from the theme of the design system", () => {
@@ -37,14 +44,23 @@ describe("the motion of game.css", () => {
   });
 
   it("turns every animation and transition off under prefers-reduced-motion", () => {
-    const outside = css.slice(0, css.indexOf("@media (prefers-reduced-motion"));
-    const moving = [...outside.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-      .filter(([, , body]) => /\b(animation|transition)\s*:/.test(body ?? ""))
-      .flatMap(([, selectors]) => (selectors ?? "").split(","))
-      .map((selector) => selector.trim());
+    const off = rules(reducedBlock);
+    const moving = rules(css.replace(reducedBlock, "")).filter(({ body }) =>
+      /\b(animation|transition)\s*:/.test(body),
+    );
     expect(moving.length).toBeGreaterThan(0);
-    for (const selector of moving) {
-      expect(reduced, selector).toContain(selector);
+    for (const { selector, body } of moving) {
+      const property = /\banimation\s*:/.test(body)
+        ? "animation"
+        : "transition";
+      expect(
+        off.some(
+          (rule) =>
+            rule.selector === selector &&
+            new RegExp(`${property}:\\s*none|display:\\s*none`).test(rule.body),
+        ),
+        `${selector} (${property})`,
+      ).toBe(true);
     }
   });
 });

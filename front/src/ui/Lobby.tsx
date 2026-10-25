@@ -58,6 +58,8 @@ export const Lobby = ({ room, error, onJoinTeam, onStart, onLeave }: Props) => {
     (player) => player.id,
   );
   const onTheDock = room.players.filter((player) => player.team === null);
+  // The dock follows `shown`, so a row fading out of it keeps its section until the fade ends and is never left behind.
+  const dock = shown.filter((player) => player.team === null);
   const away = room.players.filter((player) => !player.connected);
   const teamsReady =
     onTheDock.length === 0 &&
@@ -133,12 +135,10 @@ export const Lobby = ({ room, error, onJoinTeam, onStart, onLeave }: Props) => {
         })}
       </div>
 
-      {onTheDock.length > 0 && (
+      {dock.length > 0 && (
         <section aria-label="Sans équipe">
           <h2 className="sem-dock-title">Sur le quai</h2>
-          <ul className="sem-players">
-            {chips(shown.filter((player) => player.team === null))}
-          </ul>
+          <ul className="sem-players">{chips(dock)}</ul>
         </section>
       )}
 

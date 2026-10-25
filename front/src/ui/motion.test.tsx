@@ -136,6 +136,32 @@ describe("a player coming and going in the lobby", () => {
     expect(screen.queryByText(/^c/)).toBeNull();
   });
 
+  it("does not play the arrival again when a player who has settled picks a team", () => {
+    allowMotion();
+    const onTheDock = player("b", null);
+    const { rerender } = render(lobby([a]));
+    rerender(lobby([a, onTheDock]));
+    endAnimation(row("b") as HTMLElement);
+
+    rerender(lobby([a, { ...onTheDock, team: "TRIBORD" }]));
+    expect(row("b")).not.toHaveAttribute("data-motion");
+    expect(document.querySelector("[data-motion]")).toBeNull();
+  });
+
+  it("keeps the dock for the fade of its last player and leaves nothing behind", () => {
+    allowMotion();
+    const { rerender } = render(lobby([a, player("b", null)]));
+    rerender(lobby([a]));
+    expect(ghost()).toHaveTextContent("b");
+    expect(screen.getByText("Sur le quai")).toBeInTheDocument();
+
+    endAnimation(ghost() as Element);
+    expect(screen.queryByText("Sur le quai")).toBeNull();
+    rerender(lobby([a, player("c", null)]));
+    expect(ghost()).toBeNull();
+    expect(row("c")).toHaveAttribute("data-motion", "enter");
+  });
+
   it("takes the row back when the player returns before the fade ends", () => {
     allowMotion();
     const { rerender } = render(lobby([a, b, c]));

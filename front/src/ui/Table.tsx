@@ -1,5 +1,6 @@
 import { Alert, Button, Dialog } from "@didelo/design-system";
 import { useEffect, useState } from "react";
+import { useListMotion } from "../motion.ts";
 import type { Card, RoomView, Team } from "../protocol.ts";
 import { explain } from "../reasons.ts";
 import { Presence } from "./Presence.tsx";
@@ -20,7 +21,8 @@ const describe = (card: Card) => {
 /**
  * The grid as one player sees it: only a Signaleur sees the kind of a hidden word. With `onReveal`, a hidden word
  * is a button: the lookouts of the team in play pick their words there. While `busy` the buttons are `aria-disabled`
- * rather than `disabled`, so the focus of a keyboard user stays where it is.
+ * rather than `disabled`, so the focus of a keyboard user stays where it is. A card turns over when a view reveals
+ * it, never when it is already revealed as the board first shows.
  */
 export const Board = ({
   board,
@@ -30,37 +32,46 @@ export const Board = ({
   board: Card[];
   busy?: boolean;
   onReveal?: (index: number) => void;
-}) => (
-  <ol className="sem-board" aria-label="Grille">
-    {board.map((card, index) => (
-      <li
-        key={card.word}
-        className="sem-word"
-        data-kind={card.kind ?? "hidden"}
-        data-revealed={card.revealed}
-        aria-label={describe(card)}
-      >
-        {card.kind !== null && (
-          <span className="sem-word-mark">
-            <TeamMark kind={card.kind} size={14} />
-          </span>
-        )}
-        {onReveal !== undefined && !card.revealed ? (
-          <button
-            type="button"
-            className="sem-word-button"
-            aria-disabled={busy}
-            onClick={busy ? undefined : () => onReveal(index)}
-          >
-            {card.word}
-          </button>
-        ) : (
-          <span>{card.word}</span>
-        )}
-      </li>
-    ))}
-  </ol>
-);
+}) => {
+  const { motionOf, settle } = useListMotion(
+    board,
+    (card) => card.word,
+    (card) => card.revealed,
+  );
+  return (
+    <ol className="sem-board" aria-label="Grille">
+      {board.map((card, index) => (
+        <li
+          key={card.word}
+          className="sem-word"
+          data-kind={card.kind ?? "hidden"}
+          data-revealed={card.revealed}
+          data-motion={motionOf(card.word)}
+          onAnimationEnd={() => settle(card.word)}
+          aria-label={describe(card)}
+        >
+          {card.kind !== null && (
+            <span className="sem-word-mark">
+              <TeamMark kind={card.kind} size={14} />
+            </span>
+          )}
+          {onReveal !== undefined && !card.revealed ? (
+            <button
+              type="button"
+              className="sem-word-button"
+              aria-disabled={busy}
+              onClick={busy ? undefined : () => onReveal(index)}
+            >
+              {card.word}
+            </button>
+          ) : (
+            <span>{card.word}</span>
+          )}
+        </li>
+      ))}
+    </ol>
+  );
+};
 
 /**
  * Counts down from what the server said when it built the view, so the browser's clock only measures the time since:

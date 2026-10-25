@@ -7,6 +7,16 @@
   --sem-tribord: #0f7480;
   --sem-sand: #d9c9a3;
   --sem-reef: #1b1f2a;
+
+  /* The design system has no motion tokens (1.0.0): these are the transitions of the MUI theme it exports, and
+     motion.test.ts keeps them equal. A card turns for "complex", a row comes in for "enteringScreen" and goes out for
+     "leavingScreen". */
+  --sem-duration-turn: 375ms;
+  --sem-duration-enter: 225ms;
+  --sem-duration-leave: 195ms;
+  --sem-ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --sem-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --sem-ease-in: cubic-bezier(0.4, 0, 1, 1);
 }
 
 body {
@@ -171,9 +181,24 @@ h2 {
 }
 
 /* The words "hors ligne" say it; the dimming only helps the eye (0.7 keeps the text above 4.5:1). */
+[data-online] {
+  transition: opacity var(--sem-duration-leave) var(--sem-ease-in-out);
+}
+
 [data-online="false"] {
   opacity: 0.7;
   font-style: italic;
+}
+
+/* A player who comes in fades in and slides down a few pixels; the transform moves nothing around it. */
+.sem-players > li[data-motion="enter"] {
+  animation: sem-enter var(--sem-duration-enter) var(--sem-ease-out);
+}
+
+/* One who left stays for the fade, out of the way of the pointer and of assistive technology (aria-hidden). */
+.sem-players > li[data-motion="leave"] {
+  animation: sem-leave var(--sem-duration-leave) var(--sem-ease-in) forwards;
+  pointer-events: none;
 }
 
 .sem-players,
@@ -213,7 +238,6 @@ h2 {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: var(--ds-space-2);
-  perspective: 800px;
 }
 
 .sem-word {
@@ -253,7 +277,6 @@ h2 {
 
 .sem-word[data-revealed="true"] {
   color: var(--sem-paper);
-  animation: sem-flip 280ms ease-out;
 }
 
 .sem-word[data-revealed="true"] .sem-word-mark {
@@ -279,6 +302,34 @@ h2 {
     transparent 0 6px,
     rgb(255 255 255 / 12%) 6px 8px
   );
+}
+
+/*
+ * A card that a view just revealed turns edge-on, shows its colour and turns back. The colours are final in the
+ * stylesheet and swap at the half of the turn, through a transition that waits for it: a transition only runs when
+ * the colour changes, and the marker only comes from a change, so a card revealed when the page opens never turns.
+ */
+.sem-word[data-motion="enter"] {
+  /* Each card turns in its own perspective: one for the whole board would throw the cards at its edges out of their row. */
+  --sem-perspective: 600px;
+  animation: sem-flip var(--sem-duration-turn);
+  transition:
+    background-color 0s linear calc(var(--sem-duration-turn) / 2),
+    background-image 0s linear calc(var(--sem-duration-turn) / 2) allow-discrete,
+    color 0s linear calc(var(--sem-duration-turn) / 2);
+}
+
+/* A lookout has no mark before the reveal: the new one waits for the half of the turn, as the colours do. */
+.sem-word[data-motion="enter"] .sem-word-mark {
+  transition:
+    color 0s linear calc(var(--sem-duration-turn) / 2),
+    opacity 0s linear calc(var(--sem-duration-turn) / 2);
+}
+
+@starting-style {
+  .sem-word[data-motion="enter"] .sem-word-mark {
+    opacity: 0;
+  }
 }
 
 @media (max-width: 520px) {
@@ -381,11 +432,34 @@ h2 {
 
 @keyframes sem-flip {
   from {
-    transform: rotateY(90deg);
+    transform: perspective(var(--sem-perspective)) rotateY(0);
+    animation-timing-function: var(--sem-ease-in);
+  }
+
+  49.99% {
+    transform: perspective(var(--sem-perspective)) rotateY(90deg);
+  }
+
+  50% {
+    transform: perspective(var(--sem-perspective)) rotateY(-90deg);
+    animation-timing-function: var(--sem-ease-out);
   }
 
   to {
-    transform: rotateY(0);
+    transform: perspective(var(--sem-perspective)) rotateY(0);
+  }
+}
+
+@keyframes sem-enter {
+  from {
+    transform: translateY(calc(var(--ds-space-1) * -1));
+    opacity: 0;
+  }
+}
+
+@keyframes sem-leave {
+  to {
+    opacity: 0;
   }
 }
 
@@ -401,10 +475,22 @@ h2 {
   }
 }
 
+/* Reduced motion: the colour and the text change at once, nothing moves. */
 @media (prefers-reduced-motion: reduce) {
   .sem-pennant,
-  .sem-word[data-revealed="true"] {
+  .sem-word[data-motion="enter"],
+  .sem-players > li[data-motion="enter"] {
     animation: none;
+  }
+
+  .sem-word[data-motion="enter"],
+  .sem-word[data-motion="enter"] .sem-word-mark,
+  [data-online] {
+    transition: none;
+  }
+
+  .sem-players > li[data-motion="leave"] {
+    display: none;
   }
 }
 

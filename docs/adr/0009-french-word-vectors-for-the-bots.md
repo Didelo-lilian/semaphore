@@ -14,14 +14,14 @@ The vectors have to:
 
 ## Options
 
-Two sources were looked at. The numbers of the first come from the file itself, the second from its documentation (not downloaded).
+Two sources were looked at. The numbers of the first come from the file itself; those of the second are the sizes of its published files, which were not downloaded.
 
 | | frWac, `skip`, 200 dimensions, cut 100 | fastText `cc.fr.300` |
 |---|---|---|
 | Author | Jean-Philippe Fauconnier | Facebook AI Research |
 | Licence | **CC BY 3.0**, attribution only | **CC BY-SA 3.0**, share-alike |
 | Trained on | frWaC, a web corpus of 1.6 billion French words | Common Crawl and Wikipedia |
-| Size | 120 MB, 155 562 words, 200 dimensions, ordered by frequency | 300 dimensions, about two million words, several GB |
+| Size | 120 MB, 155 562 words, 200 dimensions, ordered by frequency | 300 dimensions, 1.3 GB as gzipped text or 4.5 GB as gzipped binary |
 | Source of the licence | the author's page, read as raw HTML | the fastText page |
 
 ## Decision
@@ -33,11 +33,11 @@ flowchart LR
   replica --> bots["clue-giver and guesser"]
 ```
 
-- **The source is frWac** (`frWac_non_lem_no_postag_no_phrase_200_skip_cut100.bin`, MD5 `6b8605bb1fc726f44a895bff26057bae`). Its licence asks for the author's name with a link to his page and nothing else. The fastText licence would make the file we ship, which is an adaptation (words cut, vectors normalised and quantised), subject to share-alike: it would have to be published under CC BY-SA 3.0, with that notice next to a repository and an image that are otherwise MIT. That is workable, but it buys nothing here: frWac already holds far more words than the bots use, and the neighbours of `chat`, `avion` and `roi` are sensible.
+- **The source is frWac** (`frWac_non_lem_no_postag_no_phrase_200_skip_cut100.bin`, MD5 `6b8605bb1fc726f44a895bff26057bae`). Its licence asks for the author's name with a link to the author's page and nothing else. The fastText licence would make the file we ship, which is an adaptation (words cut, vectors normalised and quantised), subject to share-alike: it would have to be published under CC BY-SA 3.0, with that notice next to a repository and an image that are otherwise MIT. That is workable, but it buys nothing here: frWac already holds far more words than the bots use, and the neighbours of `chat`, `avion` and `roi` are sensible.
 - **The reduction** keeps the tokens made only of lowercase French letters, three letters or more (this drops punctuation, digits, elisions like `l'`, hyphenated compounds and the one- and two-letter words), the first 50 000 in the source's order, and any word of `words.txt` that falls outside them (one does today, `rateau`, at rank 52 886; a test checks that every word of the game is in the file). The order is the frequency order, so a word's rank is its index and a bot can skip the function words at the top or the rare words at the bottom. Each vector is normalised to unit length, then quantised to a byte with one global scale (the 99.99th percentile of the absolute values maps to 127).
 - **The file** is a big-endian header (`FRV1`, version, number of words, dimensions, scale as a float), then the words (one length byte and the UTF-8 bytes), then `words × dimensions` signed bytes. The backend reads it with `DataInputStream`: no library.
 - **It lives in git** under `backend/src/main/resources/bot/`, 10.5 MB, with a `NOTICE`. The build, the tests and the image then need no network and no third-party host. `tools/vectors/build.py` (run with `uv run`, numpy only) regenerates it from the pinned source URL and checksum; it is run again only if the rule above changes, and each regeneration adds about 10 MB to the history. Rejected: a release asset downloaded during the build (one more moving part, and the tests fail offline) and the 126 MB source downloaded on every build (from a personal page that may go away).
-- **The attribution** is a `NOTICE` next to the file (the author's name, the link, the BibTeX entry from his page, the licence, and the sentence "adapted: words cut, vectors normalised and quantised"), copied into the jar, and a credits line in the README. A line in the front's footer is possible and left to Lilian.
+- **The attribution** is a `NOTICE` next to the file (the author's name, the link, the BibTeX entry from the author's page, the licence, and the sentence "adapted: words cut, vectors normalised and quantised"), copied into the jar, and a credits line in the README. A line in the front's footer is possible and left to Lilian.
 
 ## Measured
 

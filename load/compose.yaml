@@ -1,8 +1,8 @@
 # The backend behind a load balancer, and k6 playing whole games against it (README, "Run the load test").
 #
-#   docker compose -f load/compose.yaml up --build --abort-on-container-exit --exit-code-from k6
+#   docker compose -f load/compose.yaml up --build --exit-code-from k6
 #
-# Variables, all optional: REPLICAS (backend containers, 1), PROFILE (short or long), ROOMS, DURATION, THINK_MS.
+# Variables, all optional: REPLICAS (backend containers, 1), PROFILE (short or long), ROOMS, DURATION, THINK_MS, P95_MS.
 # Never point it at play.didelo.fr: the edge allows 24 connections per address and a table needs five.
 name: semaphore-load
 
@@ -59,7 +59,7 @@ services:
   k6:
     image: grafana/k6:2.2.0
     command: run /load/game.js
-    # The results folder belongs to whoever runs compose, the image's own user could not write in it.
+    # Docker creates the results folder as root when it is missing: the image's own user could not write in it.
     user: root
     environment:
       - WS_URL=ws://lb:8080/ws
@@ -70,6 +70,7 @@ services:
       - ROOMS
       - DURATION
       - THINK_MS
+      - P95_MS
     volumes:
       - ./game.js:/load/game.js:ro
       - ./results:/results

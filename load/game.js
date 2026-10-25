@@ -5,9 +5,10 @@
 import { WebSocket } from "k6/websockets";
 import { Counter, Rate, Trend } from "k6/metrics";
 
+// The p95 of a command is ten times the worst one measured on a CI runner with these rooms (README, "Thresholds").
 const PROFILES = {
-  short: { rooms: 10, duration: "30s" },
-  long: { rooms: 60, duration: "5m" },
+  short: { rooms: 50, duration: "30s", p95: 50 },
+  long: { rooms: 100, duration: "5m", p95: 150 },
 };
 const PROFILE = __ENV.PROFILE || "short";
 if (!PROFILES[PROFILE]) {
@@ -15,6 +16,7 @@ if (!PROFILES[PROFILE]) {
 }
 const ROOMS = Number(__ENV.ROOMS || PROFILES[PROFILE].rooms);
 const DURATION = __ENV.DURATION || PROFILES[PROFILE].duration;
+const P95_MS = Number(__ENV.P95_MS || PROFILES[PROFILE].p95);
 // The pause before each command, 0.5 to 1.5 times this: a player reads the table before acting.
 const THINK_MS = Number(__ENV.THINK_MS || 100);
 const WS_URL = __ENV.WS_URL || "ws://localhost:8080/ws";
@@ -54,12 +56,13 @@ export const options = {
   thresholds: {
     protocol_errors: ["count==0"],
     games_finished: ["rate==1"],
-    command_duration: ["p(95)<1000"],
+    command_duration: [`p(95)<${P95_MS}`],
   },
   summaryTrendStats: ["avg", "med", "p(90)", "p(95)", "p(99)", "max"],
 };
 
-const think = () => new Promise((resolve) => setTimeout(resolve, THINK_MS * (0.5 + Math.random())));
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const think = () => pause(THINK_MS * (0.5 + Math.random()));
 
 // What answers a command, by the id it carries: a `joined` for getting into a room, a `roomUpdated` for the rest.
 const ANSWERS = { createRoom: "joined", joinRoom: "joined" };
@@ -111,10 +114,10 @@ class Seat {
         return reject(this.error);
       }
       const id = String(++this.lastId);
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`${this.name}: no answer to ${type} in ${TIMEOUT_MS} ms`));
-      }, TIMEOUT_MS);
+      const timer = setTimeout(
+        () => this.fail(new Error(`${this.name}: no answer to ${type} in ${TIMEOUT_MS} ms`)),
+        TIMEOUT_MS,
+      );
       const sentAt = Date.now();
       this.pending.set(id, { type, sentAt, resolve, reject, timer });
       this.table.sentAt = sentAt;
@@ -122,18 +125,17 @@ class Seat {
     });
   }
 
-  /** Resolves once the view satisfies the condition: what a command changed has reached this player. */
+  /** Resolves, with the time the view arrived, once it satisfies the condition: what a command changed has reached this player. */
   waitFor(condition, what) {
     return new Promise((resolve, reject) => {
       if (this.error) {
         return reject(this.error);
       }
-      const waiter = { condition, resolve, reject };
-      waiter.timer = setTimeout(() => {
-        this.waiters.delete(waiter);
-        reject(new Error(`${this.name}: ${what} not seen in ${TIMEOUT_MS} ms`));
-      }, TIMEOUT_MS);
-      this.waiters.add(waiter);
+      const timer = setTimeout(
+        () => this.fail(new Error(`${this.name}: ${what} not seen in ${TIMEOUT_MS} ms`)),
+        TIMEOUT_MS,
+      );
+      this.waiters.add({ condition, resolve, reject, timer });
       this.settleWaiters();
     });
   }
@@ -147,39 +149,47 @@ class Seat {
       this.viewAt = Date.now();
     }
     const request = this.pending.get(message.id);
-    if (request) {
+    if (message.type === "error") {
+      this.fail(
+        new Error(
+          request
+            ? `${this.name}: ${request.type} refused: ${message.reason}`
+            : `${this.name}: error nobody asked for: ${message.reason}`,
+        ),
+      );
+    } else if (request && message.type !== (ANSWERS[request.type] || "roomUpdated")) {
+      this.fail(new Error(`${this.name}: ${message.type} answers ${request.type}`));
+    } else if (request) {
       this.pending.delete(message.id);
       clearTimeout(request.timer);
-      if (message.type === "error") {
-        request.reject(new Error(`${this.name}: ${request.type} refused: ${message.reason}`));
-      } else if (message.type !== (ANSWERS[request.type] || "roomUpdated")) {
-        request.reject(new Error(`${this.name}: ${message.type} answers ${request.type}`));
-      } else {
-        commandDuration.add(Date.now() - request.sentAt);
-        request.resolve(message);
-      }
-    } else if (message.type === "error") {
-      this.fail(new Error(`${this.name}: error nobody asked for: ${message.reason}`));
+      commandDuration.add(Date.now() - request.sentAt);
+      request.resolve(message);
     }
     this.settleWaiters();
   }
 
   settleWaiters() {
     for (const waiter of this.waiters) {
-      if (this.view && waiter.condition(this.view)) {
+      if (waiter.condition(this.view)) {
         this.waiters.delete(waiter);
         clearTimeout(waiter.timer);
-        // Only a view that arrived after the last command can be what it changed.
-        if (this.viewAt >= this.table.sentAt) {
-          propagationDuration.add(this.viewAt - this.table.sentAt);
-        }
-        waiter.resolve();
+        waiter.resolve(this.viewAt);
       }
     }
   }
 
+  /** The server broke the protocol with this connection: counted and said once, whatever was waiting is rejected. */
   fail(error) {
-    this.error = this.error || error;
+    if (!this.error) {
+      this.error = error;
+      protocolErrors.add(1);
+      console.error(error.message);
+    }
+    this.settle(this.error);
+  }
+
+  /** Rejects what is still waiting and clears its timers, which would keep the iteration alive. */
+  settle(error) {
     for (const request of this.pending.values()) {
       clearTimeout(request.timer);
       request.reject(error);
@@ -195,12 +205,11 @@ class Seat {
   /** Goes home as the front does: `leave`, then the connection closes. */
   leave() {
     this.closing = true;
-    if (this.socket && this.socket.readyState === 1) {
+    this.settle(new Error(`${this.name} left`));
+    if (this.socket?.readyState === 1) {
       this.socket.send(JSON.stringify({ type: "leave" }));
     }
-    if (this.socket) {
-      this.socket.close();
-    }
+    this.socket?.close();
   }
 }
 
@@ -240,7 +249,8 @@ async function playTable() {
         .flatMap((card, index) => (card.kind === team && !card.revealed ? [index] : []))
         .slice(0, MAX_NUMBER);
       await signaler.send("signal", { word: SIGNAL, number: words.length });
-      await lookout.waitFor((view) => view.phase === "GUESS" && view.turn === team, "the signal");
+      const seenAt = await lookout.waitFor((view) => view.phase === "GUESS" && view.turn === team, "the signal");
+      propagationDuration.add(seenAt - table.sentAt);
       for (const index of words) {
         await lookout.send("reveal", { index });
       }
@@ -255,9 +265,13 @@ async function playTable() {
     );
     gamesFinished.add(true);
   } catch (error) {
-    protocolErrors.add(1);
     gamesFinished.add(false);
-    console.error(error.message);
+    // A connection that failed has counted the error and said why: anything else is the script's own.
+    if (!seats.some((seat) => seat.error === error)) {
+      console.error(error.stack);
+    }
+    // A table starts again a second later, as the front reconnects, instead of hammering a backend that refuses it.
+    await pause(1000);
   } finally {
     seats.forEach((seat) => seat.leave());
   }
@@ -266,9 +280,13 @@ async function playTable() {
 export default playTable;
 
 const trend = (metric) =>
-  ["med", "p(90)", "p(95)", "p(99)", "max"].map((stat) => `${stat.replace(/[()]/g, "")} ${metric.values[stat]}`).join(" · ");
+  metric
+    ? ["med", "p(90)", "p(95)", "p(99)", "max"]
+        .map((stat) => `${stat.replace(/[()]/g, "")} ${Math.round(metric.values[stat])}`)
+        .join(" · ")
+    : "no sample";
 
-function report(data) {
+export function handleSummary(data) {
   const { metrics } = data;
   const games = metrics.games_finished.values;
   const lines = [
@@ -278,9 +296,8 @@ function report(data) {
     "|---|---|",
     `| Games finished | ${games.passes} of ${games.passes + games.fails} |`,
     `| Protocol errors | ${metrics.protocol_errors.values.count} |`,
-    `| Connections | ${metrics.ws_sessions.values.count} |`,
     `| Command round trip, ms | ${trend(metrics.command_duration)} |`,
-    `| Update reaching the next player, ms | ${trend(metrics.propagation_duration)} |`,
+    `| Signal reaching the lookouts, ms | ${trend(metrics.propagation_duration)} |`,
     "",
     "| Threshold | | |",
     "|---|---|---|",
@@ -290,11 +307,7 @@ function report(data) {
       lines.push(`| ${name} | ${expression} | ${ok ? "held" : "**broken**"} |`);
     }
   }
-  return `${lines.join("\n")}\n`;
-}
-
-export function handleSummary(data) {
-  const markdown = report(data);
+  const markdown = `${lines.join("\n")}\n`;
   return {
     stdout: `\n${markdown}`,
     ...(RESULTS_DIR && {

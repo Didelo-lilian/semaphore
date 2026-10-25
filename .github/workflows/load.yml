@@ -3,7 +3,7 @@ name: Load
 # Not a required check: it measures a shared runner, and a slow one is a reason to look, not to block a merge.
 on:
   pull_request:
-    paths: ["backend/**", "load/**"]
+    paths: ["backend/**", "load/**", ".github/workflows/load.yml"]
   workflow_dispatch:
     inputs:
       profile:
@@ -28,8 +28,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # The backend is built from backend/ with the production Dockerfile and k6 plays whole games against it through
-      # nginx, on this runner: it never goes near play.didelo.fr. A threshold that fails fails the step.
-      - run: docker compose -f load/compose.yaml up --build --abort-on-container-exit --exit-code-from k6
+      # nginx, on this runner: it never goes near play.didelo.fr. A threshold that fails fails the step, and the logs
+      # of the backend and nginx are in it.
+      - run: docker compose -f load/compose.yaml up --build --exit-code-from k6
       - if: ${{ !cancelled() && hashFiles('load/results/summary.md') != '' }}
         run: cat load/results/summary.md >> "$GITHUB_STEP_SUMMARY"
       - if: ${{ !cancelled() }}
@@ -38,5 +39,3 @@ jobs:
           name: load-results
           path: load/results
           if-no-files-found: ignore
-      - if: failure()
-        run: docker compose -f load/compose.yaml logs backend lb

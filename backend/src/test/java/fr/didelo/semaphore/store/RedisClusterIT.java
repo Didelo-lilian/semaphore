@@ -39,6 +39,24 @@ class RedisClusterIT {
   }
 
   @Test
+  void aStartedReplicaKeepsBeatingUntilItStops() {
+    var cluster = new RedisCluster(link, Duration.ofSeconds(3));
+
+    cluster.start();
+    try {
+      await().atMost(Duration.ofSeconds(5)).until(() -> cluster.alive().contains(cluster.id()));
+      await()
+          .during(Duration.ofSeconds(5))
+          .atMost(Duration.ofSeconds(8))
+          .until(() -> cluster.alive().contains(cluster.id()));
+    } finally {
+      cluster.stop();
+    }
+
+    await().atMost(Duration.ofSeconds(8)).until(() -> !cluster.alive().contains(cluster.id()));
+  }
+
+  @Test
   void aLockIsTakenByOneReplicaUntilItRunsOut() {
     var first = new RedisCluster(link, Duration.ofSeconds(15));
     var second = new RedisCluster(link, Duration.ofSeconds(15));

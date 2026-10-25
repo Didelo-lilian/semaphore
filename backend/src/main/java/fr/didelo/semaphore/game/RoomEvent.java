@@ -15,6 +15,8 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 })
 public sealed interface RoomEvent {
 
+  String code();
+
   String replica();
 
   /** The room is now at {@code version}: whoever holds a connection of it sends the views. */

@@ -3,17 +3,25 @@ package fr.didelo.semaphore.store;
 import fr.didelo.semaphore.game.Cluster;
 import fr.didelo.semaphore.game.Unavailable;
 import io.lettuce.core.ScriptOutputType;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import java.time.Duration;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * Each replica renews a key {@code replica:{id}} that lives 15 seconds, every 5 seconds: a replica
- * is alive as long as its key is there. A lock is a key set only if absent, with a lifetime.
+ * Each replica renews a key {@code replica:{id}} that lives 15 seconds, every 5 seconds, from a
+ * thread of its own: the sweeps wait on Redis and on slow connections, and a heartbeat behind them
+ * would make the replica look dead. A replica is alive as long as its key is there. A lock is a key
+ * set only if absent, with a lifetime.
  */
+@Slf4j
 @Component
 @WithRedis
 class RedisCluster implements Cluster {
@@ -37,6 +45,9 @@ class RedisCluster implements Cluster {
   private final String id = UUID.randomUUID().toString();
   private final RedisLink link;
   private final Duration heartbeatLife;
+  private final ScheduledExecutorService heartbeat =
+      Executors.newSingleThreadScheduledExecutor(
+          task -> Thread.ofPlatform().name("semaphore-heartbeat").daemon().unstarted(task));
 
   RedisCluster(RedisLink link, @Value("${semaphore.heartbeat-life:15s}") Duration heartbeatLife) {
     this.link = link;
@@ -67,7 +78,17 @@ class RedisCluster implements Cluster {
     return taken != null;
   }
 
-  @Scheduled(fixedDelay = 5_000)
+  @PostConstruct
+  void start() {
+    var every = heartbeatLife.dividedBy(3).toMillis();
+    heartbeat.scheduleWithFixedDelay(this::beat, 0, every, TimeUnit.MILLISECONDS);
+  }
+
+  @PreDestroy
+  void stop() {
+    heartbeat.shutdownNow();
+  }
+
   void beat() {
     try {
       link.run(
@@ -79,6 +100,9 @@ class RedisCluster implements Cluster {
                   String.valueOf(heartbeatLife.toMillis())));
     } catch (Unavailable e) {
       // Redis may start after this replica: the next beat tries again.
+    } catch (Throwable e) {
+      // Whatever is thrown ends the schedule for good: the replica would look dead while it lives.
+      log.warn("The heartbeat failed", e);
     }
   }
 }

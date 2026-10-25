@@ -142,6 +142,55 @@ describe("GameClient", () => {
     expect(client.getSnapshot().connection).toBe("open");
   });
 
+  it("keeps backing off while the server accepts the socket and closes it before the seat is back", () => {
+    const client = connect(memoryStore({ code: "ABCDE", token: "t" }));
+    client.start();
+    for (const delay of [500, 1_000, 2_000, 4_000, 8_000, 8_000]) {
+      last().accept();
+      last().drop("the server is busy, try again");
+      const sockets = FakeSocket.all.length;
+      vi.advanceTimersByTime(delay - 1);
+      expect(FakeSocket.all).toHaveLength(sockets);
+      vi.advanceTimersByTime(1);
+      expect(FakeSocket.all).toHaveLength(sockets + 1);
+    }
+  });
+
+  it("starts again from the shortest delay once the seat is back", () => {
+    const client = connect(memoryStore({ code: "ABCDE", token: "t" }));
+    client.start();
+    for (const delay of [500, 1_000]) {
+      last().accept();
+      last().drop("the server is busy, try again");
+      vi.advanceTimersByTime(delay);
+    }
+    last().accept();
+    last().receive(joined);
+
+    last().drop();
+    vi.advanceTimersByTime(499);
+    const sockets = FakeSocket.all.length;
+    vi.advanceTimersByTime(1);
+
+    expect(FakeSocket.all).toHaveLength(sockets + 1);
+  });
+
+  it("does not take the refusal of a command for a lost seat after a rejoin that was cut off", () => {
+    const store = memoryStore({ code: "ABCDE", token: "t" });
+    const client = connect(store);
+    client.start();
+    last().accept();
+    last().drop("the server is busy, try again");
+    vi.advanceTimersByTime(500);
+    client.send({ type: "joinTeam", team: "BABORD" });
+    last().accept();
+
+    last().receive({ type: "error", reason: "join a room first" });
+
+    expect(store.load()).toEqual({ code: "ABCDE", token: "t" });
+    expect(client.getSnapshot().connection).toBe("open");
+  });
+
   it("does not fight another tab for the seat", () => {
     const client = connect(memoryStore({ code: "ABCDE", token: "t" }));
     client.start();

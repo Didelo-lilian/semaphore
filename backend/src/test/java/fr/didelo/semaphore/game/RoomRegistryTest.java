@@ -11,7 +11,10 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class RoomRegistryTest {
 
@@ -158,8 +161,9 @@ class RoomRegistryTest {
     assertThat(registry.find(left.room().code())).isEmpty();
   }
 
-  @Test
-  void aRoomThatCannotBeReadDoesNotStopTheSweepOfTheOthers() {
+  @ParameterizedTest
+  @MethodSource("aRoomThatFails")
+  void aRoomThatCannotBeReadDoesNotStopTheSweepOfTheOthers(RuntimeException failure) {
     var unreadable = registry.create("ana", REPLICA);
     var left = registry.create("bob", REPLICA);
     registry.change(left.room().code(), room -> room.disconnect(left.result().getId(), REPLICA));
@@ -167,12 +171,16 @@ class RoomRegistryTest {
         unreadable.room().code(), room -> room.disconnect(unreadable.result().getId(), REPLICA));
     clock.advance(Duration.ofMinutes(31));
     doReturn(List.of(unreadable.room().code(), left.room().code())).when(store).codes();
-    doThrow(new Unavailable("the server is busy, try again"))
-        .when(store)
-        .find(unreadable.room().code());
+    doThrow(failure).when(store).find(unreadable.room().code());
 
     registry.dropAbandoned();
 
     assertThat(registry.find(left.room().code())).isEmpty();
+  }
+
+  static Stream<RuntimeException> aRoomThatFails() {
+    return Stream.of(
+        new Unavailable("the server is busy, try again"),
+        new NullPointerException("a field this version needs is missing"));
   }
 }

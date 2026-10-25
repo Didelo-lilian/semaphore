@@ -7,6 +7,7 @@ import fr.didelo.semaphore.Valkey;
 import fr.didelo.semaphore.game.RoomState;
 import fr.didelo.semaphore.game.Unavailable;
 import io.lettuce.core.RedisClient;
+import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -49,6 +50,25 @@ class RedisRoomStoreIT extends RoomStoreContract {
     }
 
     assertThat(store.find(room.code())).contains(room.state());
+  }
+
+  @Test
+  void aRoomThatAnotherVersionWroteWithoutACollectionIsStillRead() {
+    var room = lobby(newCode());
+    store.create(room.state());
+    try (var connection = admin.connect()) {
+      var written =
+          (tools.jackson.databind.node.ObjectNode)
+              JSON.readTree(connection.sync().hget("room:" + room.code(), "state"));
+      written.remove(List.of("flags", "board", "spectators"));
+      connection.sync().hset("room:" + room.code(), "state", JSON.writeValueAsString(written));
+    }
+
+    var found = store.find(room.code()).orElseThrow();
+
+    assertThat(found.players()).isEqualTo(room.state().players());
+    assertThat(found.board()).isEmpty();
+    assertThat(found.spectators()).isEmpty();
   }
 
   @Test

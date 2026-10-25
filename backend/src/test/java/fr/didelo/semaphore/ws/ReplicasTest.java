@@ -1,6 +1,7 @@
 package fr.didelo.semaphore.ws;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.doAnswer;
@@ -27,10 +28,14 @@ import fr.didelo.semaphore.store.InMemoryRoomEvents;
 import fr.didelo.semaphore.store.InMemoryRoomStore;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -560,8 +565,9 @@ class ReplicasTest {
     assertThat(last(again).path("reason").asString()).isEqualTo("no such room");
   }
 
-  @Test
-  void aRoomThatCannotBeReadDoesNotStopTheSweepOfTheOthers() {
+  @ParameterizedTest
+  @MethodSource("aRoomThatFails")
+  void aRoomThatCannotBeReadDoesNotStopTheSweepOfTheOthers(RuntimeException failure) {
     var host = connect(first, "host");
     var unreadable = createRoom(first, host);
     var other = connect(first, "other");
@@ -571,11 +577,104 @@ class ReplicasTest {
     second.afterConnectionClosed(guest, CloseStatus.NORMAL);
     clock.advance(Room.LOBBY_GRACE.plusSeconds(1));
     doReturn(List.of(unreadable, code)).when(store).codes();
-    doThrow(new Unavailable("the server is busy, try again")).when(store).find(unreadable);
+    doThrow(failure).when(store).find(unreadable);
     shared.tick();
 
     sweeper1.dropAbsent();
 
     assertThat(last(other).path("room").path("players")).hasSize(1);
+  }
+
+  static Stream<RuntimeException> aRoomThatFails() {
+    return Stream.of(
+        new Unavailable("the server is busy, try again"),
+        new NullPointerException("a field this version needs is missing"));
+  }
+
+  @Test
+  void aRoomThatBreaksTheCheckDoesNotStopTheCheckOfTheOthers() {
+    var hostA = connect(first, "host-a");
+    var a = createRoom(first, hostA);
+    var guestA = connect(second, "guest-a");
+    join(second, guestA, a, "p1");
+    var hostB = connect(first, "host-b");
+    var b = createRoom(first, hostB);
+    var guestB = connect(second, "guest-b");
+    join(second, guestB, b, "p1");
+    channel.losing = true;
+    receive(first, hostA, "{\"type\":\"joinTeam\",\"team\":\"BABORD\"}");
+    receive(first, hostB, "{\"type\":\"joinTeam\",\"team\":\"BABORD\"}");
+
+    // The rooms come in no set order: whichever breaks first, the other must be set right.
+    doThrow(new NullPointerException("poisoned")).when(store).find(a);
+    second.checkVersions();
+    assertThat(last(guestB).path("room").path("players").path(0).path("team").asString())
+        .isEqualTo("BABORD");
+    doCallRealMethod().when(store).find(a);
+    doThrow(new NullPointerException("poisoned")).when(store).find(b);
+    second.checkVersions();
+    assertThat(last(guestA).path("room").path("players").path(0).path("team").asString())
+        .isEqualTo("BABORD");
+  }
+
+  @Test
+  void aSpectatorWhoLeavesWhileTheCountIsBeingSetBackIsTakenOffAgain() {
+    var sessions = startedGame();
+    var code = last(sessions.get(0)).path("room").path("code").asString();
+    var leaving = connect(first, "w1");
+    receive(first, leaving, "{\"type\":\"watch\",\"code\":\"" + code + "\"}");
+    var staying = connect(first, "w2");
+    receive(first, staying, "{\"type\":\"watch\",\"code\":\"" + code + "\"}");
+    channel.losing = true;
+    shared.alive.remove("replica-1");
+    sweeper2.deadReplicas();
+    shared.alive.add("replica-1");
+    var closing = new AtomicBoolean(true);
+    doAnswer(
+            call -> {
+              if (closing.getAndSet(false)) {
+                first.afterConnectionClosed(leaving, CloseStatus.NORMAL);
+              }
+              return call.callRealMethod();
+            })
+        .when(store)
+        .replace(any(), anyInt());
+
+    first.checkVersions();
+
+    assertThat(registry.find(code).orElseThrow().state().spectators())
+        .containsExactly(Map.entry("replica-1", 1));
+  }
+
+  @Test
+  void aRoomThatBreaksWhenAnEventArrivesOrAConnectionClosesDoesNotThrowIntoTheContainer() {
+    var host = connect(first, "host");
+    var code = createRoom(first, host);
+    doThrow(new NullPointerException("poisoned")).when(store).find(code);
+
+    assertThatCode(() -> channel.inner.publish(new RoomEvent.Changed(code, 99, "replica-2")))
+        .doesNotThrowAnyException();
+    assertThatCode(() -> first.afterConnectionClosed(host, CloseStatus.NORMAL))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  void theSpectatorsAReplicaHoldsAreCountedAgainOnceItIsSetRight() {
+    var sessions = startedGame();
+    var code = last(sessions.get(0)).path("room").path("code").asString();
+    for (var name : List.of("w1", "w2")) {
+      var watcher = connect(first, name);
+      receive(first, watcher, "{\"type\":\"watch\",\"code\":\"" + code + "\"}");
+    }
+    channel.losing = true;
+    shared.alive.remove("replica-1");
+    sweeper2.deadReplicas();
+    assertThat(registry.find(code).orElseThrow().state().spectators()).isEmpty();
+    shared.alive.add("replica-1");
+
+    first.checkVersions();
+
+    assertThat(registry.find(code).orElseThrow().state().spectators())
+        .containsExactly(Map.entry("replica-1", 2));
   }
 }

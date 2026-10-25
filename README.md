@@ -49,6 +49,16 @@ docker run -d --rm --name semaphore-postgres -p 5432:5432 -e POSTGRES_PASSWORD=s
 SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/semaphore SPRING_DATASOURCE_USERNAME=postgres SPRING_DATASOURCE_PASSWORD=secret ./gradlew bootRun
 ```
 
+### Guests
+
+A browser can be someone outside any room: `PUT /api/me {"name": "ana"}` makes it a guest, `GET /api/me` says who it is (`anonymous` or `guest`, with its `id` and `name`) and `DELETE /api/me` forgets it. The pseudo follows the rule of a name in a room (1 to 20 characters). The guest is a session kept in Valkey, so both replicas know it and a deploy signs nobody out; without `SEMAPHORE_REDIS_URL` it is in the memory of the process. The cookie is `__Host-session` (`HttpOnly`, `Secure`, `SameSite=Lax`, 30 days since the last use) and the HTTP endpoints are protected against CSRF: the page sends the value of the `__Host-XSRF-TOKEN` cookie, which `GET /api/me` hands out, in `X-XSRF-TOKEN`. The choices are in [ADR 0010](docs/adr/0010-guest-sessions-in-valkey.md).
+
+```bash
+curl -si localhost:8080/api/me   # {"kind":"anonymous"} and the token cookie
+```
+
+A `Secure` cookie is accepted over plain HTTP on `localhost` by Chromium; a browser that refuses it just does not keep the guest. In production Traefik sends only `/ws` to the backend until the router for `/api` is in [infra](https://github.com/Didelo-lilian/infra).
+
 ## Run the front
 
 ```bash
@@ -179,16 +189,19 @@ flowchart LR
       sweeper["RoomSweeper<br/>turn every second, lobby presence every 5 s,<br/>dead replicas every 5 s, idle rooms every minute,<br/>each under a Redis lock"]
       registry["RoomRegistry<br/>load, apply, save if the version is unchanged<br/>(5 tries), 5-character codes"]
       room["Room<br/>the only place that knows the rules"]
+      me["MeController<br/>/api/me: the guest of a browser,<br/>CSRF token, session cookie"]
       words[("words.txt<br/>160 French nouns")]
     end
     other["Replica 2<br/>the same image, its own connections"]
-    redis[("Redis (Valkey)<br/>room:{code}: version + state<br/>channel rooms: changed (code, version),<br/>seat taken (code, player)<br/>replica:{id}: heartbeat 15 s<br/>lock:{name}")]
+    redis[("Redis (Valkey)<br/>room:{code}: version + state<br/>channel rooms: changed (code, version),<br/>seat taken (code, player)<br/>replica:{id}: heartbeat 15 s<br/>lock:{name}<br/>session:sessions:{id}: a guest, 30 days")]
   end
 
   player -->|"HTTPS, WSS"| traefik
   traefik -->|"/"| front
   traefik -->|"/ws"| handler
   traefik -->|"/ws"| other
+  traefik -->|"/api (router to add in infra)"| me
+  me <-->|"session: guest.id, guest.name"| redis
   handler -->|"create, find, change"| registry
   sweeper --> registry
   registry -->|"builds a grid from"| words

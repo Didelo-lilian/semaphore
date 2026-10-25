@@ -100,6 +100,15 @@ class SessionsInValkeyIT {
       var creating = visitor.put("{\"name\":\"bea\"}");
       assertThat(creating.statusCode()).isEqualTo(503);
       assertThat(body(creating).get("error").asString()).isEqualTo("the server is busy, try again");
+      // A WebSocket handshake that carries the cookie must not fail on a session it cannot read.
+      var handshake =
+          HttpClient.newHttpClient()
+              .send(
+                  HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/ws"))
+                      .header("Cookie", "__Host-session=" + browser.cookie("__Host-session"))
+                      .build(),
+                  HttpResponse.BodyHandlers.ofString());
+      assertThat(handshake.statusCode()).isLessThan(500);
       var health =
           HttpClient.newHttpClient()
               .send(

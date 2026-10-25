@@ -49,7 +49,7 @@ A failed run leaves a trace of the four pages: `npx playwright show-trace test-r
 
 ## Architecture
 
-The diagram is updated in the same pull request as any change it shows.
+The diagram is updated in the same pull request as any change it shows. It shows one backend with its rooms in memory, as it runs today; the rooms move to Redis, shared by two replicas, in [ADR 0008](docs/adr/0008-rooms-in-redis-shared-by-replicas.md).
 
 ```mermaid
 flowchart LR

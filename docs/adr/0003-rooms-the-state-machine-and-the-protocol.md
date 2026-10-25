@@ -113,7 +113,7 @@ Changes happen under the room's lock but the messages go out after it is release
 
 - Messages are sent outside the room's lock, so two updates can reach a client out of order: the front keeps the view with the highest `version`.
 - A Signaleur who disconnects no longer blocks the turn for good: the table says who the game is waiting for and for how long, the turn passes after 60 seconds, and the team loses after 5 minutes ([ADR 0006](0006-presence-and-disconnections.md)). The one who comes back keeps the key, since nobody replaced them.
-- A restart of the server loses every room. With several replicas a room lives in one of them: sticky sessions and Redis pub/sub come with the scaling step ([ADR 0002](0002-spring-boot-gradle-and-a-plain-websocket.md)), and `Room` does not change for it.
+- A restart of the server loses every room. For several replicas the rooms move to Redis, shared by all of them, and `Room` keeps the rules ([ADR 0008](0008-rooms-in-redis-shared-by-replicas.md)).
 - The records of `ClientMessage`, `ServerMessage` and `RoomView` are the contract the front validates with Zod ([#4](https://github.com/Didelo-lilian/semaphore/issues/4)).
 - A command that the server never answers is not timed out: only a lost connection rejects it.
 - Twelve players, two per team at least and 160 words are constants or configuration, not rules: they can move without touching the state machine.

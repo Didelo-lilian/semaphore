@@ -1,6 +1,6 @@
 # 6. Presence and disconnections
 
-Date: 2026-10-24 · Status: accepted (the three increments are built; the defaults of the product choices are Lilian's to change)
+Date: 2026-10-24 · Status: accepted (the four increments are built; the defaults of the product choices are Lilian's to change)
 
 ## Context
 
@@ -14,13 +14,14 @@ Those are three decisions of different sizes, so this ADR cuts the work in incre
 
 ## Decision
 
-### Three increments
+### Four increments
 
 | # | Increment | What it adds |
 |---|---|---|
 | 1 | **Who is online** (built with this ADR) | A lobby keeps an absent player for a grace period, a `leave` message for leaving on purpose, everyone's presence shown in the lobby and at the table, the start refused while someone is offline, the table saying who the game waits for |
 | 2 | **A missing Signaleur or host** ([#28](https://github.com/Didelo-lilian/semaphore/issues/28)) (built) | A delay after which the turn passes, the turn passing at once for someone who left on purpose, and the end of a game that nobody can play |
 | 3 | **Spectators** ([#29](https://github.com/Didelo-lilian/semaphore/issues/29)) (built) | Watch a game in progress without a seat, read only |
+| 4 | **A limit on guessed codes** ([#35](https://github.com/Didelo-lilian/semaphore/issues/35)) (built) | A connection that asks for 5 room codes that do not exist is closed |
 
 ### Defaults of the product choices
 
@@ -39,6 +40,8 @@ Those are three decisions of different sizes, so this ADR cuts the work in incre
 | A spectator's seat (3) | none: no token, reloading the page goes through the link again | There is nothing to restore, and spectators do not keep a room alive |
 | Watching a lobby (3) | refused: whoever comes to a lobby joins as a player | A lobby has no game to watch, and its visitors are the players it waits for |
 | Where one asks to watch (3) | a button on the invitation page, no name asked | The link is what a late friend has; only the link offers it, not the code typed by hand |
+| Unknown codes one connection may try (4) | 5, then the server closes it | A friend mistypes a code once or twice; five on one connection is someone scanning the codes, and `watch` made a guessed code worth more: a game in progress shows its table to whoever finds it. A constant of the handler, not a setting |
+| What counts as a miss (4) | a `joinRoom`, a `watch` or a `rejoin` whose code finds no room; a success does not reset the count | The count is a budget for the connection, not a streak: a client could otherwise interleave a lookup it knows with every guess. A room swept between the lookup and the entry is not a miss |
 
 ### Increment 1
 
@@ -106,6 +109,24 @@ stateDiagram-v2
   Spectator --> Visitor: leave, closed connection or reload<br/>(no token to come back with)
 ```
 
+### Increment 4
+
+- **The handler counts, per connection.** `GameSocketHandler` keeps the misses of each connection in a map beside its seat, cleaned in `afterConnectionClosed`: nothing global and nothing per address, since the edge already caps the open WebSockets per address at 24 and rate-limits the requests ([infra ADR 0015](https://github.com/Didelo-lilian/infra/blob/main/docs/adr/0015-the-game-behind-the-edge.md)). What a per-connection count cannot see is a client that reconnects; the edge's limits bound how fast it can.
+- **The fifth miss closes the connection** with `CloseStatus.POLICY_VIOLATION` (1008) and the reason `too many unknown rooms`, and sends nothing else: the refusal that would follow reaches nobody, so the front learns of the limit from the close, not from a fifth "no such room".
+- **`rejoin` counts too.** It tells a code that exists ("unknown player") from one that does not ("no such room"), and `watch` needs no token, so left out it would let a client look for codes without limit and then watch the ones it found. A `rejoin` that finds its room is not a miss and is never blocked by earlier ones. A legitimate client costs one miss at most: the front sends `rejoin` on every opening while a seat is stored, a room that was swept answers "no such room" once, and the front then forgets the seat and closes the connection.
+- **The front says why and does not retry the command.** The close reason rejects the command in flight and is shown in French. Without a seat the connection stays closed, and the next command the visitor sends opens a new one; a player who is seated reconnects and rejoins as after any lost connection, which costs nothing when the room is still there.
+- **A closed connection may keep sending.** The container reads the frames already on their way until the client answers the close, so the handler ignores a message whose connection it has already forgotten, instead of letting it create a room nobody can reach.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Open: connects, no misses
+  Open --> Open: a code finds no room,<br/>fewer than 5 so far
+  note right of Open: a code that finds a room<br/>does not reset the count
+  Open --> Closed: the 5th code that finds no room<br/>(1008, too many unknown rooms)
+  Open --> Closed: the connection ends
+  Closed --> [*]: the count goes with it
+```
+
 ## Consequences
 
 - A player who drops from the lobby stays on the list as "hors ligne" for 30 to 35 seconds and gets their seat, team and host seat back if they return in time. The front's automatic reconnection now covers the lobby too.
@@ -116,3 +137,4 @@ stateDiagram-v2
 - The delays are constants of `Room` (`TURN_GRACE`, `SIGNALER_LIMIT`), not settings: the tests move the clock. The front says nothing about the 5 minutes beyond a Signaleur who leaves, and a game ended that way shows its winner like any other.
 - A spectator whose connection drops, or who reloads, has to go through the link again: nothing is kept for them, and a lost connection (not a reload) is said on the invitation page. A room swept while spectators watch stops for them without a word; nothing could change in it anymore, since the sweep only drops a room whose players have all been away for 30 minutes.
 - Watching is offered by the invitation link only: someone who types a code by hand joins as a player. A lobby visitor who asks to watch is told the game has not started, and a late friend who tries to join a game in progress is told it has started, with the button to watch next to it.
+- A visitor who mistypes a code five times is cut off and told so; trying again opens a connection with a count of zero, so the limit turns a scan into one handshake per five codes rather than stopping it: how fast a client can reconnect is the edge's to bound.

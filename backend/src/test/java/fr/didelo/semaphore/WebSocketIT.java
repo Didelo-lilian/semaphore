@@ -701,7 +701,7 @@ class WebSocketIT {
   @Test
   void whatAClosedConnectionKeepsSendingIsIgnored() throws Exception {
     var client = new Client(ALLOWED_ORIGIN);
-    var roomsBefore = rooms.all().size();
+    var roomsBefore = rooms.codes().size();
     missRooms(client, 4);
 
     // The server may keep reading frames until the client answers its close: none of them must act.
@@ -716,7 +716,7 @@ class WebSocketIT {
     eventually(() -> client.closeCode != null);
     Thread.sleep(300);
 
-    assertThat(rooms.all()).hasSize(roomsBefore);
+    assertThat(rooms.codes()).hasSize(roomsBefore);
   }
 
   @Test

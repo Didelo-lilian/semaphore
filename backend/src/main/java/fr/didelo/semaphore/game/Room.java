@@ -20,7 +20,8 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * One game, from the lobby to the end. It is the only place that knows the rules (ADR 0001). It is
- * not thread safe: whoever shares it synchronizes on it.
+ * not thread safe and is not shared: it is restored from a {@link RoomState}, changed by one
+ * command and saved back as a new state (ADR 0008).
  */
 @RequiredArgsConstructor
 public final class Room {
@@ -59,13 +60,72 @@ public final class Room {
   private Team winner;
   // Grows with every change, so a client can drop a view that arrives after a newer one.
   private int version;
-  // Set by the first sweep when nobody ever acted: a room is built to be joined right away.
   private Instant lastActivity;
   // The last command or pass of the turn: the wait for someone away starts again after each one.
   private Instant lastMove;
 
+  /** The room as {@code state} left it, with the settings of this application. */
+  public static Room restore(
+      RoomState state,
+      Clock clock,
+      RandomGenerator random,
+      int minTeamSize,
+      List<String> wordPool) {
+    var room = new Room(state.code(), clock, random, minTeamSize, wordPool);
+    for (var p : state.players()) {
+      var player = new Player(p.id(), p.token(), p.name());
+      player.setTeam(p.team());
+      player.setAbsentSince(p.absentSince());
+      player.setLeft(p.left());
+      room.players.put(p.id(), player);
+    }
+    room.flags.putAll(state.flags());
+    room.board = state.board();
+    room.phase = state.phase();
+    room.spectators = state.spectators();
+    room.turn = state.turn();
+    room.signal = state.signal();
+    room.revealsLeft = state.revealsLeft();
+    room.winner = state.winner();
+    room.version = state.version();
+    room.lastActivity = state.lastActivity();
+    room.lastMove = state.lastMove();
+    return room;
+  }
+
+  public RoomState state() {
+    return new RoomState(
+        code,
+        version,
+        phase,
+        turn,
+        signal,
+        revealsLeft,
+        winner,
+        Map.copyOf(flags),
+        board,
+        players.values().stream()
+            .map(
+                p ->
+                    new RoomState.PlayerState(
+                        p.getId(),
+                        p.getToken(),
+                        p.getName(),
+                        p.getTeam(),
+                        p.getAbsentSince(),
+                        p.isLeft()))
+            .toList(),
+        spectators,
+        lastActivity,
+        lastMove);
+  }
+
   public String code() {
     return code;
+  }
+
+  public int version() {
+    return version;
   }
 
   public Phase phase() {
@@ -77,9 +137,6 @@ public final class Room {
   }
 
   public boolean abandonedFor(Duration duration) {
-    if (lastActivity == null) {
-      lastActivity = clock.instant();
-    }
     return players.values().stream().noneMatch(Player::isConnected)
         && Duration.between(lastActivity, clock.instant()).compareTo(duration) > 0;
   }

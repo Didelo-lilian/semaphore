@@ -912,4 +912,25 @@ class RoomTest {
     assertThat(game.players)
         .allMatch(p -> game.room.viewFor(p.getId()).version() == game.view().version());
   }
+
+  @Test
+  void aRoomRestoredFromItsStatePlaysAndLooksLikeTheOriginal() {
+    var clock = new MutableClock();
+    var game = new Game(POOL, clock);
+    game.room.disconnect(game.signalerOf(game.turn().other()).getId());
+    game.signal("voyage", 2);
+    game.reveal(game.indexOf(game.turn().kind(), 0));
+    game.room.watch();
+
+    var copy = Room.restore(game.room.state(), clock, new Random(7), 2, POOL);
+
+    assertThat(copy.state()).isEqualTo(game.room.state());
+    assertThat(game.players)
+        .allSatisfy(
+            p -> assertThat(copy.viewFor(p.getId())).isEqualTo(game.room.viewFor(p.getId())));
+    assertThat(copy.spectatorView()).isEqualTo(game.room.spectatorView());
+    copy.apply(game.lookout().getId(), new Command.Pass());
+    assertThat(copy.version()).isGreaterThan(game.room.version());
+    assertThat(game.view().turn()).isNotEqualTo(copy.viewFor(game.players.get(0).getId()).turn());
+  }
 }

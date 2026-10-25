@@ -6,8 +6,6 @@ import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -15,6 +13,7 @@ import fr.didelo.semaphore.game.MutableClock;
 import fr.didelo.semaphore.game.Room;
 import fr.didelo.semaphore.game.RoomRegistry;
 import fr.didelo.semaphore.game.WordList;
+import fr.didelo.semaphore.store.InMemoryRoomStore;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -30,7 +29,8 @@ class GameSocketHandlerTest {
 
   private final JsonMapper json = JsonMapper.builder().build();
   private final MutableClock clock = new MutableClock();
-  private final RoomRegistry registry = spy(new RoomRegistry(clock, new WordList(), 2));
+  private final RoomRegistry registry =
+      new RoomRegistry(new InMemoryRoomStore(), clock, new WordList(), 2);
   private final GameSocketHandler handler = new GameSocketHandler(json, registry);
 
   private WebSocketSession connect(String id) throws Exception {
@@ -102,7 +102,7 @@ class GameSocketHandlerTest {
     assertThat(lastPayload(session))
         .contains("\"error\"")
         .contains("a name has 1 to 20 characters");
-    verify(registry).drop(any());
+    assertThat(registry.codes()).isEmpty();
   }
 
   @Test
@@ -113,7 +113,7 @@ class GameSocketHandlerTest {
     receive(session, "{\"type\":\"createRoom\",\"name\":\"Ana\"}");
 
     assertThat(lastPayload(session)).contains("you are already in a room");
-    verify(registry, times(1)).drop(any());
+    assertThat(registry.codes()).hasSize(1);
   }
 
   @Test
@@ -161,7 +161,7 @@ class GameSocketHandlerTest {
     receive(session, "{\"type\":\"createRoom\",\"name\":\"Ana\"}");
     receive(session, "{\"type\":\"watch\",\"code\":\"00000\"}");
 
-    assertThat(registry.all()).isEmpty();
+    assertThat(registry.codes()).isEmpty();
     verify(session, never()).sendMessage(any());
   }
 

@@ -22,10 +22,16 @@ public record RoomState(
     Map<Team, Integer> flags,
     List<Card> board,
     List<PlayerState> players,
-    int spectators,
+    Map<String, Integer> spectators,
     Instant lastActivity,
     Instant lastMove) {
 
   public record PlayerState(
-      String id, String token, String name, Team team, Instant absentSince, boolean left) {}
+      String id,
+      String token,
+      String name,
+      Team team,
+      Instant absentSince,
+      boolean left,
+      String replica) {}
 }

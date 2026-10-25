@@ -9,7 +9,6 @@ import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
@@ -47,15 +46,18 @@ public class RoomRegistry {
     this.minTeamSize = minTeamSize;
   }
 
-  /** A new room with its first player, who is its host: a bad name leaves nothing behind. */
-  public Saved<Player> create(String name) {
+  /**
+   * A new room with its first player, who is its host and whose connection {@code replica} holds: a
+   * bad name leaves nothing behind.
+   */
+  public Saved<Player> create(String name, String replica) {
     while (true) {
       var code = new StringBuilder();
       for (var i = 0; i < CODE_LENGTH; i++) {
         code.append(ALPHABET.charAt(random.nextInt(ALPHABET.length())));
       }
       var room = new Room(code.toString(), clock, random, minTeamSize, wordList.words());
-      var host = room.join(name);
+      var host = room.join(name, replica);
       if (store.create(room.state())) {
         return new Saved<>(room, host, true);
       }
@@ -63,7 +65,9 @@ public class RoomRegistry {
   }
 
   public Optional<Room> find(String code) {
-    return store.find(code.strip().toUpperCase(Locale.ROOT)).map(this::restore);
+    return store
+        .find(code.strip().toUpperCase(Locale.ROOT))
+        .map(state -> Room.restore(state, clock, random, minTeamSize, wordList.words()));
   }
 
   public List<String> codes() {
@@ -96,16 +100,15 @@ public class RoomRegistry {
         });
   }
 
-  @Scheduled(fixedDelay = 60_000)
   public void dropAbandoned() {
     for (var code : store.codes()) {
-      find(code)
-          .filter(room -> room.abandonedFor(ABANDONED_AFTER))
-          .ifPresent(room -> store.drop(code, room.version()));
+      try {
+        find(code)
+            .filter(room -> room.abandonedFor(ABANDONED_AFTER))
+            .ifPresent(room -> store.drop(code, room.version()));
+      } catch (Unavailable e) {
+        // This room cannot be read now: the next sweep tries again, and the others go on.
+      }
     }
-  }
-
-  private Room restore(RoomState state) {
-    return Room.restore(state, clock, random, minTeamSize, wordList.words());
   }
 }

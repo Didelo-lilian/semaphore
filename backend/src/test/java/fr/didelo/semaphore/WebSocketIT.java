@@ -12,6 +12,7 @@ import java.net.http.HttpResponse;
 import java.net.http.WebSocket;
 import java.net.http.WebSocketHandshakeException;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
@@ -76,7 +77,11 @@ class WebSocketIT {
                         if (type.equals("joined")) {
                           joined = message;
                         }
-                        if (type.equals("joined") || type.equals("roomUpdated")) {
+                        // Like the front: a view that arrives after a newer one is dropped.
+                        if ((type.equals("joined") || type.equals("roomUpdated"))
+                            && (room == null
+                                || message.path("room").path("version").asInt()
+                                    >= room.path("version").asInt())) {
                           room = message.path("room");
                         }
                         history.add(message);
@@ -554,7 +559,9 @@ class WebSocketIT {
             .isEqualTo(ended || card.path("revealed").asBoolean());
       }
     }
-    assertThat(views.get(views.size() - 1).path("phase").asString()).isEqualTo("ENDED");
+    // The views go out after the save, from the thread that saved: two can cross on the way.
+    var latest = views.stream().max(Comparator.comparingInt(view -> view.path("version").asInt()));
+    assertThat(latest.orElseThrow().path("phase").asString()).isEqualTo("ENDED");
   }
 
   @Test

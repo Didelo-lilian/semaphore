@@ -13,7 +13,9 @@ import fr.didelo.semaphore.game.MutableClock;
 import fr.didelo.semaphore.game.Room;
 import fr.didelo.semaphore.game.RoomRegistry;
 import fr.didelo.semaphore.game.WordList;
+import fr.didelo.semaphore.store.InMemoryRoomEvents;
 import fr.didelo.semaphore.store.InMemoryRoomStore;
+import fr.didelo.semaphore.store.LocalCluster;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,7 +33,10 @@ class GameSocketHandlerTest {
   private final MutableClock clock = new MutableClock();
   private final RoomRegistry registry =
       new RoomRegistry(new InMemoryRoomStore(), clock, new WordList(), 2);
-  private final GameSocketHandler handler = new GameSocketHandler(json, registry);
+  private final LocalCluster cluster = new LocalCluster();
+  private final GameSocketHandler handler =
+      new GameSocketHandler(json, registry, new InMemoryRoomEvents(), cluster);
+  private final RoomSweeper sweeper = new RoomSweeper(registry, cluster, handler);
 
   private WebSocketSession connect(String id) throws Exception {
     var session = mock(WebSocketSession.class);
@@ -126,11 +131,11 @@ class GameSocketHandlerTest {
     handler.afterConnectionClosed(bob, CloseStatus.GOING_AWAY);
 
     clock.advance(Room.LOBBY_GRACE);
-    handler.dropAbsent();
+    sweeper.dropAbsent();
     assertThat(json.readTree(lastPayload(host)).path("room").path("players")).hasSize(2);
 
     clock.advance(Duration.ofSeconds(1));
-    handler.dropAbsent();
+    sweeper.dropAbsent();
     assertThat(json.readTree(lastPayload(host)).path("room").path("players")).hasSize(1);
   }
 
@@ -186,12 +191,12 @@ class GameSocketHandlerTest {
         .isEqualTo(60);
 
     clock.advance(Room.TURN_GRACE.minusSeconds(1));
-    handler.expire();
+    sweeper.expire();
     assertThat(json.readTree(lastPayload(lookout)).path("room").path("turn").asString())
         .isEqualTo(turn);
 
     clock.advance(Duration.ofSeconds(1));
-    handler.expire();
+    sweeper.expire();
     var room = json.readTree(lastPayload(lookout)).path("room");
     assertThat(room.path("turn").asString()).isNotEqualTo(turn);
     assertThat(room.path("turnPassesIn").isNull()).isTrue();

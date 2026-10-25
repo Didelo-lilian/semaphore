@@ -18,6 +18,9 @@ public final class Player {
   @Setter private Instant absentSince;
   // Absent on purpose (`leave`): the game does not wait for them.
   @Setter private boolean left;
+  // The replica that holds the connection, null while absent: the sweep marks absent whoever's
+  // replica has stopped beating.
+  @Setter private String replica;
 
   public boolean isConnected() {
     return absentSince == null;

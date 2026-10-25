@@ -2,30 +2,38 @@ package fr.didelo.semaphore.game;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.spy;
 
 import fr.didelo.semaphore.store.InMemoryRoomStore;
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 
 class RoomRegistryTest {
 
+  private static final String REPLICA = "replica-1";
+
   private final MutableClock clock = new MutableClock();
-  private final RoomRegistry registry =
-      new RoomRegistry(new InMemoryRoomStore(), clock, new WordList(), 2);
+  private final InMemoryRoomStore store = spy(new InMemoryRoomStore());
+  private final RoomRegistry registry = new RoomRegistry(store, clock, new WordList(), 2);
 
   @Test
   void aCodeHasFiveCharactersWithoutLookAlikes() {
     var codes =
-        IntStream.range(0, 200).mapToObj(i -> registry.create("ana").room().code()).toList();
+        IntStream.range(0, 200)
+            .mapToObj(i -> registry.create("ana", REPLICA).room().code())
+            .toList();
 
     assertThat(codes).doesNotHaveDuplicates().allMatch(c -> c.matches("[A-HJKMN-Z2-9]{5}"));
   }
 
   @Test
   void aRoomIsFoundWhateverTheCaseOrTheSpaces() {
-    var code = registry.create("ana").room().code();
+    var code = registry.create("ana", REPLICA).room().code();
 
     assertThat(registry.find(" " + code.toLowerCase() + " ")).isPresent();
     assertThat(registry.find("00000")).isEmpty();
@@ -33,14 +41,14 @@ class RoomRegistryTest {
 
   @Test
   void aRoomWithABadNameIsNotCreated() {
-    assertThatThrownBy(() -> registry.create("   ")).isInstanceOf(IllegalMove.class);
+    assertThatThrownBy(() -> registry.create("   ", REPLICA)).isInstanceOf(IllegalMove.class);
 
     assertThat(registry.codes()).isEmpty();
   }
 
   @Test
   void theHostIsTheFirstPlayerOfANewRoom() {
-    var created = registry.create("ana");
+    var created = registry.create("ana", REPLICA);
 
     assertThat(created.room().viewFor(created.result().getId()).players())
         .singleElement()
@@ -49,9 +57,9 @@ class RoomRegistryTest {
 
   @Test
   void aChangeIsSavedAndFoundAgain() {
-    var code = registry.create("ana").room().code();
+    var code = registry.create("ana", REPLICA).room().code();
 
-    var joined = registry.update(code, room -> room.join("bob"));
+    var joined = registry.update(code, room -> room.join("bob", REPLICA));
 
     assertThat(joined.changed()).isTrue();
     assertThat(registry.find(code).orElseThrow().byToken(joined.result().getToken())).isPresent();
@@ -60,7 +68,7 @@ class RoomRegistryTest {
 
   @Test
   void aChangeThatDoesNothingSavesNothing() {
-    var code = registry.create("ana").room().code();
+    var code = registry.create("ana", REPLICA).room().code();
     var version = registry.find(code).orElseThrow().version();
 
     var saved = registry.change(code, room -> {});
@@ -71,14 +79,14 @@ class RoomRegistryTest {
 
   @Test
   void aChangeTheRulesRefuseSavesNothing() {
-    var code = registry.create("ana").room().code();
+    var code = registry.create("ana", REPLICA).room().code();
 
     assertThatThrownBy(
             () ->
                 registry.change(
                     code,
                     room -> {
-                      room.join("bob");
+                      room.join("bob", REPLICA);
                       throw new IllegalMove("no");
                     }))
         .isInstanceOf(IllegalMove.class);
@@ -96,16 +104,16 @@ class RoomRegistryTest {
 
   @Test
   void aConflictIsReplayedOnTheNewerRoomSoNoChangeIsLost() {
-    var code = registry.create("ana").room().code();
+    var code = registry.create("ana", REPLICA).room().code();
     var attempts = new AtomicInteger();
 
     registry.change(
         code,
         room -> {
-          room.join("bob");
+          room.join("bob", REPLICA);
           // Someone else saves a change after this room was loaded and before it is saved.
           if (attempts.incrementAndGet() == 1) {
-            registry.change(code, other -> other.join("cleo"));
+            registry.change(code, other -> other.join("cleo", REPLICA));
           }
         });
 
@@ -118,7 +126,7 @@ class RoomRegistryTest {
 
   @Test
   void aRoomThatKeepsChangingUnderACommandAnswersTryAgain() {
-    var code = registry.create("ana").room().code();
+    var code = registry.create("ana", REPLICA).room().code();
     var attempts = new AtomicInteger();
 
     assertThatThrownBy(
@@ -126,9 +134,9 @@ class RoomRegistryTest {
                 registry.change(
                     code,
                     room -> {
-                      room.join("bob");
+                      room.join("bob", REPLICA);
                       attempts.incrementAndGet();
-                      registry.change(code, other -> other.join("cleo"));
+                      registry.change(code, other -> other.join("cleo", REPLICA));
                     }))
         .isInstanceOf(Unavailable.class)
         .hasMessage("the server is busy, try again");
@@ -137,9 +145,9 @@ class RoomRegistryTest {
 
   @Test
   void theSweepDropsTheRoomsNobodyIsConnectedToAfterThirtyMinutes() {
-    var kept = registry.create("ana");
-    var left = registry.create("bob");
-    registry.change(left.room().code(), room -> room.disconnect(left.result().getId()));
+    var kept = registry.create("ana", REPLICA);
+    var left = registry.create("bob", REPLICA);
+    registry.change(left.room().code(), room -> room.disconnect(left.result().getId(), REPLICA));
 
     registry.dropAbandoned();
     assertThat(registry.codes()).hasSize(2);
@@ -147,6 +155,24 @@ class RoomRegistryTest {
     registry.dropAbandoned();
 
     assertThat(registry.find(kept.room().code())).isPresent();
+    assertThat(registry.find(left.room().code())).isEmpty();
+  }
+
+  @Test
+  void aRoomThatCannotBeReadDoesNotStopTheSweepOfTheOthers() {
+    var unreadable = registry.create("ana", REPLICA);
+    var left = registry.create("bob", REPLICA);
+    registry.change(left.room().code(), room -> room.disconnect(left.result().getId(), REPLICA));
+    registry.change(
+        unreadable.room().code(), room -> room.disconnect(unreadable.result().getId(), REPLICA));
+    clock.advance(Duration.ofMinutes(31));
+    doReturn(List.of(unreadable.room().code(), left.room().code())).when(store).codes();
+    doThrow(new Unavailable("the server is busy, try again"))
+        .when(store)
+        .find(unreadable.room().code());
+
+    registry.dropAbandoned();
+
     assertThat(registry.find(left.room().code())).isEmpty();
   }
 }

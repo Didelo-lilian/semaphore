@@ -32,7 +32,7 @@ abstract class RoomStoreContract {
 
   static Room lobby(String code) {
     var room = new Room(code, new MutableClock(), new Random(1), 2, POOL);
-    room.join("ana");
+    room.join("ana", "replica-1");
     return room;
   }
 
@@ -40,15 +40,15 @@ abstract class RoomStoreContract {
   void aRoomComesBackAsItWasSaved() {
     var room = new Room(newCode(), new MutableClock(), new Random(1), 2, POOL);
     for (var name : List.of("ana", "bob", "cleo", "dan")) {
-      room.join(name);
+      room.join(name, "replica-1");
     }
     var ids = room.state().players().stream().map(RoomState.PlayerState::id).toList();
     for (var i = 0; i < ids.size(); i++) {
       room.apply(ids.get(i), new Command.JoinTeam(i < 2 ? Team.BABORD : Team.TRIBORD));
     }
     room.apply(ids.get(0), new Command.Start());
-    room.disconnect(ids.get(3));
-    room.watch();
+    room.disconnect(ids.get(3), "replica-1");
+    room.watch("replica-1");
 
     assertThat(store().create(room.state())).isTrue();
 
@@ -70,7 +70,7 @@ abstract class RoomStoreContract {
             Map.of(),
             List.of(),
             List.of(),
-            0,
+            Map.of(),
             Instant.parse("2026-10-25T10:00:00.123456789Z"),
             null);
 
@@ -89,7 +89,7 @@ abstract class RoomStoreContract {
     var first = lobby(newCode());
     store().create(first.state());
     var second = new Room(first.code(), new MutableClock(), new Random(2), 2, POOL);
-    second.join("bob");
+    second.join("bob", "replica-1");
 
     assertThat(store().create(second.state())).isFalse();
 
@@ -101,10 +101,10 @@ abstract class RoomStoreContract {
     var room = lobby(newCode());
     store().create(room.state());
     var loaded = room.version();
-    room.join("bob");
+    room.join("bob", "replica-1");
 
     assertThat(store().replace(room.state(), loaded)).isTrue();
-    room.join("cleo");
+    room.join("cleo", "replica-1");
     assertThat(store().replace(room.state(), loaded)).isFalse();
 
     assertThat(store().find(room.code()).orElseThrow().players()).hasSize(2);
@@ -114,7 +114,7 @@ abstract class RoomStoreContract {
   void aRoomThatWasDroppedIsNotReplaced() {
     var room = lobby(newCode());
     var loaded = room.version();
-    room.join("bob");
+    room.join("bob", "replica-1");
 
     assertThat(store().replace(room.state(), loaded)).isFalse();
 
@@ -126,7 +126,7 @@ abstract class RoomStoreContract {
     var room = lobby(newCode());
     store().create(room.state());
     var seen = room.version();
-    room.join("bob");
+    room.join("bob", "replica-1");
     store().replace(room.state(), seen);
 
     assertThat(store().drop(room.code(), seen)).isFalse();

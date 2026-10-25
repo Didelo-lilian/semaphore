@@ -9,11 +9,14 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 class RoomTest {
+
+  private static final String REPLICA = "replica-1";
 
   // Distinct first letters: no word of the pool is too close to another one.
   private static final List<String> POOL =
@@ -36,7 +39,8 @@ class RoomTest {
 
     Game(List<String> pool, Clock clock, int teamSize) {
       room = new Room("ABCDE", clock, new Random(7), 2, pool);
-      players = IntStream.range(0, 2 * teamSize).mapToObj(i -> room.join("p" + i)).toList();
+      players =
+          IntStream.range(0, 2 * teamSize).mapToObj(i -> room.join("p" + i, REPLICA)).toList();
       players.forEach(
           p ->
               room.apply(
@@ -110,25 +114,25 @@ class RoomTest {
   void lobbyAcceptsPlayersWithValidNamesOnly() {
     var room = new Room("ABCDE", Clock.systemUTC(), new Random(1), 2, POOL);
 
-    assertThat(room.join("  Ana ").getName()).isEqualTo("Ana");
-    refuses(() -> room.join("   "), "name");
-    refuses(() -> room.join("x".repeat(21)), "name");
+    assertThat(room.join("  Ana ", REPLICA).getName()).isEqualTo("Ana");
+    refuses(() -> room.join("   ", REPLICA), "name");
+    refuses(() -> room.join("x".repeat(21), REPLICA), "name");
   }
 
   @Test
   void aRoomHoldsAtMostTwelvePlayers() {
     var room = new Room("ABCDE", Clock.systemUTC(), new Random(1), 2, POOL);
-    IntStream.range(0, Room.MAX_PLAYERS).forEach(i -> room.join("p" + i));
+    IntStream.range(0, Room.MAX_PLAYERS).forEach(i -> room.join("p" + i, REPLICA));
 
-    refuses(() -> room.join("one too many"), "full");
+    refuses(() -> room.join("one too many", REPLICA), "full");
   }
 
   @Test
   void onlyTheHostStartsAndEveryoneNeedsATeamOfEnoughPlayers() {
     var room = new Room("ABCDE", Clock.systemUTC(), new Random(1), 2, POOL);
-    var host = room.join("host");
-    var other = room.join("other");
-    var third = room.join("third");
+    var host = room.join("host", REPLICA);
+    var other = room.join("other", REPLICA);
+    var third = room.join("third", REPLICA);
 
     refuses(() -> room.apply(other.getId(), new Command.Start()), "host");
     refuses(() -> room.apply(host.getId(), new Command.Start()), "pick a team");
@@ -141,7 +145,7 @@ class RoomTest {
 
   @Test
   void nobodyJoinsOnceTheGameHasStarted() {
-    refuses(() -> new Game().room.join("late"), "started");
+    refuses(() -> new Game().room.join("late", REPLICA), "started");
   }
 
   @Test
@@ -412,12 +416,12 @@ class RoomTest {
     var clock = new MutableClock();
     var game = new Game(POOL, clock);
 
-    game.players.forEach(p -> game.room.disconnect(p.getId()));
+    game.players.forEach(p -> game.room.disconnect(p.getId(), REPLICA));
     assertThat(game.room.abandonedFor(Duration.ofMinutes(30))).isFalse();
     clock.advance(Duration.ofMinutes(31));
     assertThat(game.room.abandonedFor(Duration.ofMinutes(30))).isTrue();
 
-    game.room.reconnect(game.players.get(1).getId());
+    game.room.reconnect(game.players.get(1).getId(), REPLICA);
     clock.advance(Duration.ofMinutes(31));
     assertThat(game.room.abandonedFor(Duration.ofMinutes(30))).isFalse();
   }
@@ -425,7 +429,7 @@ class RoomTest {
   @Test
   void aSpectatorSeesWhatALookoutSeesFromNoSeat() {
     var game = new Game();
-    game.room.watch();
+    game.room.watch(REPLICA);
     var lookout = game.room.viewFor(game.lookout().getId());
 
     assertThat(game.room.spectatorView())
@@ -446,7 +450,7 @@ class RoomTest {
   @Test
   void theKeyNeverReachesASpectatorBeforeTheEnd() {
     var game = new Game();
-    game.room.watch();
+    game.room.watch(REPLICA);
     var team = game.turn();
     var views = new ArrayList<RoomView>();
     views.add(game.room.spectatorView());
@@ -481,22 +485,22 @@ class RoomTest {
   @Test
   void aLobbyHasNothingToWatch() {
     var room = new Room("ABCDE", Clock.systemUTC(), new Random(1), 2, POOL);
-    room.join("host");
+    room.join("host", REPLICA);
 
-    refuses(room::watch, "not started");
+    refuses(() -> room.watch(REPLICA), "not started");
   }
 
   @Test
   void aRoomHoldsTwentySpectatorsOnTopOfItsPlayersAndEveryoneSeesTheCount() {
     var game = new Game();
-    IntStream.range(0, Room.MAX_SPECTATORS).forEach(i -> game.room.watch());
+    IntStream.range(0, Room.MAX_SPECTATORS).forEach(i -> game.room.watch(REPLICA));
 
-    refuses(game.room::watch, "too many");
+    refuses(() -> game.room.watch(REPLICA), "too many");
     assertThat(game.view().spectators()).isEqualTo(Room.MAX_SPECTATORS);
 
-    game.room.unwatch();
-    game.room.watch();
-    game.room.unwatch();
+    game.room.unwatch(REPLICA);
+    game.room.watch(REPLICA);
+    game.room.unwatch(REPLICA);
     assertThat(game.view().spectators()).isEqualTo(Room.MAX_SPECTATORS - 1);
   }
 
@@ -505,9 +509,9 @@ class RoomTest {
     var game = new Game();
     var before = game.view().version();
 
-    game.room.watch();
+    game.room.watch(REPLICA);
     var watching = game.view().version();
-    game.room.unwatch();
+    game.room.unwatch(REPLICA);
 
     assertThat(watching).isGreaterThan(before);
     assertThat(game.view().version()).isGreaterThan(watching);
@@ -517,22 +521,22 @@ class RoomTest {
   void spectatorsDoNotKeepARoomAlive() {
     var clock = new MutableClock();
     var game = new Game(POOL, clock);
-    game.players.forEach(p -> game.room.disconnect(p.getId()));
+    game.players.forEach(p -> game.room.disconnect(p.getId(), REPLICA));
 
     clock.advance(Duration.ofMinutes(29));
-    game.room.watch();
+    game.room.watch(REPLICA);
     clock.advance(Duration.ofMinutes(2));
     assertThat(game.room.abandonedFor(Duration.ofMinutes(30))).isTrue();
 
-    game.room.unwatch();
+    game.room.unwatch(REPLICA);
     assertThat(game.room.abandonedFor(Duration.ofMinutes(30))).isTrue();
   }
 
   @Test
   void aPlayerWhoLeavesTheLobbyIsGoneAtOnceAndTheHostSeatMovesOn() {
     var room = new Room("ABCDE", Clock.systemUTC(), new Random(1), 2, POOL);
-    var host = room.join("host");
-    var other = room.join("other");
+    var host = room.join("host", REPLICA);
+    var other = room.join("other", REPLICA);
 
     room.leave(host.getId());
 
@@ -546,11 +550,11 @@ class RoomTest {
   void aPlayerWhoDropsFromTheLobbyIsKeptOfflineForTheGracePeriodAndComesBackWithTheirTeam() {
     var clock = new MutableClock();
     var room = new Room("ABCDE", clock, new Random(1), 2, POOL);
-    var host = room.join("host");
-    var other = room.join("other");
+    var host = room.join("host", REPLICA);
+    var other = room.join("other", REPLICA);
     room.apply(host.getId(), new Command.JoinTeam(Team.BABORD));
 
-    room.disconnect(host.getId());
+    room.disconnect(host.getId(), REPLICA);
     clock.advance(Room.LOBBY_GRACE);
 
     assertThat(room.dropAbsent()).isFalse();
@@ -559,7 +563,7 @@ class RoomTest {
     assertThat(view.players().get(0).connected()).isFalse();
     assertThat(view.players().get(0).host()).isTrue();
 
-    room.reconnect(host.getId());
+    room.reconnect(host.getId(), REPLICA);
     clock.advance(Room.LOBBY_GRACE.plusSeconds(1));
 
     assertThat(room.dropAbsent()).isFalse();
@@ -570,9 +574,9 @@ class RoomTest {
   void aLobbyDropsThePlayersAbsentForLongerThanTheGracePeriodAndTheHostSeatMovesOn() {
     var clock = new MutableClock();
     var room = new Room("ABCDE", clock, new Random(1), 2, POOL);
-    var host = room.join("host");
-    var other = room.join("other");
-    room.disconnect(host.getId());
+    var host = room.join("host", REPLICA);
+    var other = room.join("other", REPLICA);
+    room.disconnect(host.getId(), REPLICA);
     var before = room.viewFor(other.getId()).version();
 
     clock.advance(Room.LOBBY_GRACE.plusSeconds(1));
@@ -589,13 +593,18 @@ class RoomTest {
   @Test
   void aPlayerWhoLeavesTheLobbyWithoutATeamDoesNotBlockTheStart() {
     var room = new Room("ABCDE", Clock.systemUTC(), new Random(1), 2, POOL);
-    var players = List.of(room.join("a1"), room.join("a2"), room.join("b1"), room.join("b2"));
+    var players =
+        List.of(
+            room.join("a1", REPLICA),
+            room.join("a2", REPLICA),
+            room.join("b1", REPLICA),
+            room.join("b2", REPLICA));
     players.forEach(
         p ->
             room.apply(
                 p.getId(),
                 new Command.JoinTeam(players.indexOf(p) < 2 ? Team.BABORD : Team.TRIBORD)));
-    var ghost = room.join("ghost");
+    var ghost = room.join("ghost", REPLICA);
     refuses(() -> room.apply(players.get(0).getId(), new Command.Start()), "pick a team");
 
     room.leave(ghost.getId());
@@ -607,17 +616,22 @@ class RoomTest {
   @Test
   void theGameDoesNotStartWhileSomeoneIsOffline() {
     var room = new Room("ABCDE", Clock.systemUTC(), new Random(1), 2, POOL);
-    var players = List.of(room.join("a1"), room.join("a2"), room.join("b1"), room.join("b2"));
+    var players =
+        List.of(
+            room.join("a1", REPLICA),
+            room.join("a2", REPLICA),
+            room.join("b1", REPLICA),
+            room.join("b2", REPLICA));
     players.forEach(
         p ->
             room.apply(
                 p.getId(),
                 new Command.JoinTeam(players.indexOf(p) < 2 ? Team.BABORD : Team.TRIBORD)));
 
-    room.disconnect(players.get(3).getId());
+    room.disconnect(players.get(3).getId(), REPLICA);
     refuses(() -> room.apply(players.get(0).getId(), new Command.Start()), "online");
 
-    room.reconnect(players.get(3).getId());
+    room.reconnect(players.get(3).getId(), REPLICA);
     room.apply(players.get(0).getId(), new Command.Start());
 
     assertThat(room.phase()).isEqualTo(Phase.SIGNAL);
@@ -628,9 +642,9 @@ class RoomTest {
     var game = new Game();
     var player = game.players.get(1);
 
-    game.room.disconnect(player.getId());
+    game.room.disconnect(player.getId(), REPLICA);
     assertThat(game.view().players().get(1).connected()).isFalse();
-    game.room.reconnect(player.getId());
+    game.room.reconnect(player.getId(), REPLICA);
 
     assertThat(game.view().players().get(1).connected()).isTrue();
     assertThat(game.room.byToken(player.getToken())).contains(player);
@@ -655,7 +669,7 @@ class RoomTest {
     var clock = new MutableClock();
     var game = new Game(POOL, clock);
     var team = game.turn();
-    game.room.disconnect(game.signaler().getId());
+    game.room.disconnect(game.signaler().getId(), REPLICA);
 
     clock.advance(Room.TURN_GRACE.minusSeconds(1));
     assertThat(game.room.expire()).isFalse();
@@ -681,10 +695,10 @@ class RoomTest {
     var game = new Game(POOL, clock);
     var team = game.turn();
     var signaler = game.signaler();
-    game.room.disconnect(signaler.getId());
+    game.room.disconnect(signaler.getId(), REPLICA);
 
     clock.advance(Room.TURN_GRACE.minusSeconds(1));
-    game.room.reconnect(signaler.getId());
+    game.room.reconnect(signaler.getId(), REPLICA);
     clock.advance(Room.TURN_GRACE.multipliedBy(2));
 
     assertThat(game.room.expire()).isFalse();
@@ -700,12 +714,12 @@ class RoomTest {
     var team = game.turn();
     var lookouts = game.lookouts();
     // Nobody waits for the Signaleur once the signal is given.
-    game.room.disconnect(game.signaler().getId());
-    game.room.disconnect(lookouts.get(0).getId());
+    game.room.disconnect(game.signaler().getId(), REPLICA);
+    game.room.disconnect(lookouts.get(0).getId(), REPLICA);
 
     clock.advance(Room.TURN_GRACE);
     assertThat(game.room.expire()).isFalse();
-    game.room.disconnect(lookouts.get(1).getId());
+    game.room.disconnect(lookouts.get(1).getId(), REPLICA);
     clock.advance(Room.TURN_GRACE.minusSeconds(1));
     assertThat(game.room.expire()).isFalse();
     clock.advance(Duration.ofSeconds(1));
@@ -722,7 +736,7 @@ class RoomTest {
     var game = new Game(POOL, clock);
     assertThat(game.view().turnPassesIn()).isNull();
 
-    game.room.disconnect(game.signaler().getId());
+    game.room.disconnect(game.signaler().getId(), REPLICA);
     assertThat(game.view().turnPassesIn()).isEqualTo(60);
     clock.advance(Duration.ofMillis(1500));
     assertThat(game.view().turnPassesIn()).isEqualTo(59);
@@ -769,7 +783,7 @@ class RoomTest {
     var lookouts = game.lookouts();
 
     game.room.leave(lookouts.get(0).getId());
-    game.room.disconnect(lookouts.get(1).getId());
+    game.room.disconnect(lookouts.get(1).getId(), REPLICA);
 
     assertThat(game.turn()).isEqualTo(team);
     assertThat(game.view().turnPassesIn()).isEqualTo(60);
@@ -784,8 +798,8 @@ class RoomTest {
     var team = game.turn();
     var signaler = game.signaler();
     game.room.leave(signaler.getId());
-    game.room.reconnect(signaler.getId());
-    game.room.disconnect(signaler.getId());
+    game.room.reconnect(signaler.getId(), REPLICA);
+    game.room.disconnect(signaler.getId(), REPLICA);
 
     game.signal("voyage", 1);
     game.pass();
@@ -799,7 +813,7 @@ class RoomTest {
     var clock = new MutableClock();
     var game = new Game(POOL, clock);
     var team = game.turn();
-    game.room.disconnect(game.signaler().getId());
+    game.room.disconnect(game.signaler().getId(), REPLICA);
     clock.advance(Room.TURN_GRACE.minusSeconds(1));
 
     refuses(
@@ -816,7 +830,7 @@ class RoomTest {
     var clock = new MutableClock();
     var game = new Game(POOL, clock);
     var team = game.turn();
-    game.room.disconnect(game.signaler().getId());
+    game.room.disconnect(game.signaler().getId(), REPLICA);
     game.room.leave(game.signalerOf(team.other()).getId());
     assertThat(game.turn()).isEqualTo(team);
 
@@ -850,7 +864,7 @@ class RoomTest {
     var clock = new MutableClock();
     var game = new Game(POOL, clock);
     var team = game.turn();
-    game.room.disconnect(game.signalerOf(team.other()).getId());
+    game.room.disconnect(game.signalerOf(team.other()).getId(), REPLICA);
 
     clock.advance(Room.SIGNALER_LIMIT.minusSeconds(1));
     assertThat(game.room.expire()).isFalse();
@@ -870,9 +884,9 @@ class RoomTest {
     var clock = new MutableClock();
     var game = new Game(POOL, clock);
     var team = game.turn();
-    game.room.disconnect(game.signalerOf(team.other()).getId());
+    game.room.disconnect(game.signalerOf(team.other()).getId(), REPLICA);
     clock.advance(Duration.ofMinutes(1));
-    game.room.disconnect(game.signaler().getId());
+    game.room.disconnect(game.signaler().getId(), REPLICA);
     clock.advance(Room.SIGNALER_LIMIT);
 
     assertThat(game.room.expire()).isTrue();
@@ -887,7 +901,7 @@ class RoomTest {
     var team = game.turn();
     var signaler = game.signaler();
     var lookouts = game.lookouts();
-    game.room.disconnect(signaler.getId());
+    game.room.disconnect(signaler.getId(), REPLICA);
     clock.advance(Room.TURN_GRACE);
     game.room.expire();
     game.signal("voyage", 1);
@@ -917,10 +931,10 @@ class RoomTest {
   void aRoomRestoredFromItsStatePlaysAndLooksLikeTheOriginal() {
     var clock = new MutableClock();
     var game = new Game(POOL, clock);
-    game.room.disconnect(game.signalerOf(game.turn().other()).getId());
+    game.room.disconnect(game.signalerOf(game.turn().other()).getId(), REPLICA);
     game.signal("voyage", 2);
     game.reveal(game.indexOf(game.turn().kind(), 0));
-    game.room.watch();
+    game.room.watch(REPLICA);
 
     var copy = Room.restore(game.room.state(), clock, new Random(7), 2, POOL);
 
@@ -932,5 +946,128 @@ class RoomTest {
     copy.apply(game.lookout().getId(), new Command.Pass());
     assertThat(copy.version()).isGreaterThan(game.room.version());
     assertThat(game.view().turn()).isNotEqualTo(copy.viewFor(game.players.get(0).getId()).turn());
+  }
+
+  @Test
+  void aConnectionThatClosesAfterTheSeatWasTakenBackOnAnotherReplicaChangesNothing() {
+    var game = new Game();
+    var player = game.players.get(1);
+    game.room.disconnect(player.getId(), REPLICA);
+    game.room.reconnect(player.getId(), "replica-2");
+    var version = game.room.version();
+
+    game.room.disconnect(player.getId(), REPLICA);
+
+    assertThat(game.room.version()).isEqualTo(version);
+    assertThat(game.view().players())
+        .filteredOn(p -> p.id().equals(player.getId()))
+        .singleElement()
+        .satisfies(p -> assertThat(p.connected()).isTrue());
+  }
+
+  @Test
+  void aConnectionThatClosesAfterItsPlayerWasSweptAwayChangesNothing() {
+    var game = new Game();
+    var version = game.room.version();
+
+    game.room.disconnect("nobody", REPLICA);
+
+    assertThat(game.room.version()).isEqualTo(version);
+  }
+
+  @Test
+  void aReplicaThatStoppedBeatingLosesItsPlayersAndItsSpectators() {
+    var game = new Game();
+    var back = game.players.get(1);
+    game.room.disconnect(back.getId(), REPLICA);
+    game.room.reconnect(back.getId(), "replica-2");
+    game.room.watch(REPLICA);
+    game.room.watch("replica-2");
+
+    assertThat(game.room.dropReplicasNotIn(Set.of("replica-2"))).isTrue();
+
+    assertThat(game.view().players())
+        .allSatisfy(p -> assertThat(p.connected()).isEqualTo(p.id().equals(back.getId())));
+    assertThat(game.view().spectators()).isEqualTo(1);
+    var version = game.room.version();
+    assertThat(game.room.dropReplicasNotIn(Set.of("replica-2"))).isFalse();
+    assertThat(game.room.version()).isEqualTo(version);
+  }
+
+  @Test
+  void theGracesStartWhenTheReplicaIsJudgedDead() {
+    var clock = new MutableClock();
+    var game = new Game(POOL, clock);
+    var team = game.turn();
+    clock.advance(Duration.ofSeconds(10));
+    game.room.dropReplicasNotIn(Set.of());
+    clock.advance(Room.TURN_GRACE.minusSeconds(1));
+    assertThat(game.room.expire()).isFalse();
+
+    clock.advance(Duration.ofSeconds(1));
+
+    assertThat(game.room.expire()).isTrue();
+    assertThat(game.turn()).isNotEqualTo(team);
+  }
+
+  @Test
+  void spectatorsAreCountedPerReplicaAndEveryReplicaCountsForTheLimit() {
+    var game = new Game();
+    game.room.watch(REPLICA);
+    game.room.watch(REPLICA);
+    game.room.watch("replica-2");
+    assertThat(game.view().spectators()).isEqualTo(3);
+
+    game.room.unwatch(REPLICA);
+    assertThat(game.view().spectators()).isEqualTo(2);
+
+    IntStream.range(0, Room.MAX_SPECTATORS - 2).forEach(i -> game.room.watch("replica-" + i % 2));
+    refuses(() -> game.room.watch("replica-3"), "too many");
+  }
+
+  @Test
+  void aSpectatorOfAReplicaThatWasSweptLeavesNoNegativeCount() {
+    var game = new Game();
+    game.room.watch(REPLICA);
+    game.room.dropReplicasNotIn(Set.of());
+
+    game.room.unwatch(REPLICA);
+
+    assertThat(game.view().spectators()).isZero();
+  }
+
+  @Test
+  void aPlayerIsReclaimedOnlyWhileTheRoomCountsThemAbsentAndTheyHaveNotLeft() {
+    var game = new Game();
+    var absent = game.players.get(0).getId();
+    var gone = game.players.get(1).getId();
+    var elsewhere = game.players.get(2).getId();
+    game.room.disconnect(absent, REPLICA);
+    game.room.leave(gone);
+    game.room.disconnect(elsewhere, REPLICA);
+    game.room.reconnect(elsewhere, "replica-2");
+
+    game.room.reclaim(absent, REPLICA);
+    var version = game.room.version();
+    game.room.reclaim(gone, REPLICA);
+    game.room.reclaim(elsewhere, REPLICA);
+    game.room.reclaim("nobody", REPLICA);
+
+    assertThat(game.room.state().players().get(0).replica()).isEqualTo(REPLICA);
+    assertThat(game.room.state().players().get(1).replica()).isNull();
+    assertThat(game.room.state().players().get(2).replica()).isEqualTo("replica-2");
+    assertThat(game.room.version()).isEqualTo(version);
+  }
+
+  @Test
+  void aPlayerWhoIsGoneCanNeitherPlayNorBeMarkedPresent() {
+    var game = new Game();
+    var version = game.room.version();
+
+    refuses(() -> game.room.apply("nobody", new Command.Pass()), "unknown player");
+    refuses(() -> game.room.reconnect("nobody", REPLICA), "unknown player");
+    refuses(() -> game.room.leave("nobody"), "unknown player");
+
+    assertThat(game.room.version()).isEqualTo(version);
   }
 }

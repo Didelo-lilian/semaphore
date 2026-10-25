@@ -1,6 +1,6 @@
 # 6. Presence and disconnections
 
-Date: 2026-10-24 · Status: accepted (the four increments are built; the defaults of the product choices are Lilian's to change)
+Date: 2026-10-24 · Status: accepted, amended by [ADR 0008](0008-rooms-in-redis-shared-by-replicas.md) (the four increments are built; the defaults of the product choices are Lilian's to change)
 
 ## Context
 
@@ -36,7 +36,7 @@ Those are three decisions of different sizes, so this ADR cuts the work in incre
 | Replacing a missing Signaleur (2) | no | A lookout who became Signaleur would see the key, and the first Signaleur would return as a lookout who knows it: the reason the Signaleur is fixed for a grid ([ADR 0003](0003-rooms-the-state-machine-and-the-protocol.md)) |
 | Spectators (3) | yes | A game with friends is worth watching, and it costs no rule |
 | What a spectator sees (3) | what a lookout sees: the key only once the game has ended | With the key they could whisper it to a lookout |
-| Spectator limit (3) | 20 per room, on top of the twelve players | Every change sends one message per connection, and builds a view per player under the room's lock |
+| Spectator limit (3) | 20 per room, on top of the twelve players | Every change sends one message per connection, and builds a view per player from the saved room |
 | A spectator's seat (3) | none: no token, reloading the page goes through the link again | There is nothing to restore, and spectators do not keep a room alive |
 | Watching a lobby (3) | refused: whoever comes to a lobby joins as a player | A lobby has no game to watch, and its visitors are the players it waits for |
 | Where one asks to watch (3) | a button on the invitation page, no name asked | The link is what a late friend has; only the link offers it, not the code typed by hand |
@@ -45,7 +45,7 @@ Those are three decisions of different sizes, so this ADR cuts the work in incre
 
 ### Increment 1
 
-- **The lobby keeps an absent player.** `Room.disconnect` marks the player absent with the time, in the lobby as in a game, instead of removing them. `Room.dropAbsent` removes the lobby players absent for more than 30 seconds, and `GameSocketHandler` runs it every 5 seconds on every room and sends the new views, so the others see the host seat or the team count move. A `rejoin` within the grace period gives the seat back, as in a game.
+- **The lobby keeps an absent player.** `Room.disconnect` marks the player absent with the time, in the lobby as in a game, instead of removing them. `Room.dropAbsent` removes the lobby players absent for more than 30 seconds, and `RoomSweeper` runs it every 5 seconds on every room and `GameSocketHandler` sends the new views, so the others see the host seat or the team count move. A `rejoin` within the grace period gives the seat back, as in a game.
 - **Leaving on purpose** is a message of its own, `leave`, with no answer: in the lobby the player is removed at once, in a game they are marked absent like a closed connection. The client sends it, then closes. Without it, "Quitter" would leave a ghost for 30 seconds in everyone's lobby.
 - **Starting needs everyone online**: the room refuses `start` with "everyone must be online". The refusal is the room's rule, the front only disables the button and says why.
 - **The wire does not change** beyond `leave`: `connected` was already in every view.
@@ -63,7 +63,7 @@ stateDiagram-v2
 
 ### Increment 2
 
-- **The room decides, the handler sweeps.** `Room.expire` ends the game or passes the turn once the wait is over, and says whether the room changed; `GameSocketHandler` runs it every second on every room and sends the new views. The room also calls it after every command and when a player leaves, so a turn that reaches a team whose Signaleur left passes again at once, without waiting for the sweep.
+- **The room decides, the handler sweeps.** `Room.expire` ends the game or passes the turn once the wait is over, and says whether the room changed; `RoomSweeper` runs it every second on every room and `GameSocketHandler` sends the new views. The room also calls it after every command and when a player leaves, so a turn that reaches a team whose Signaleur left passes again at once, without waiting for the sweep.
 - **Who the game waits for**: the Signaleur of the team in play during `SIGNAL`, the lookouts of that team during `GUESS`. A Signaleur is not waited for once the signal is given, nor while the other team plays.
 - **The turn passes after 60 seconds** when everyone the game waits for is away. The wait is counted from the later of the last move (a command or a pass) and the moment the last of them left, so it starts again on every turn of that team: a Signaleur who is still away when their turn comes back has 60 seconds again instead of losing the turn at once. Someone who comes back in time cancels it.
 - **Someone who left on purpose is not waited for.** The room marks the player as `left` (a `rejoin` with the token clears the mark), and the turn passes at once when everyone it waits for has left. One exception: when the other team's Signaleur has left too, the turn would bounce for good between two teams that nobody can play for, so the 60 seconds apply.
@@ -93,7 +93,7 @@ stateDiagram-v2
 
 - **`watch {code}`** is a client message answered by a `roomUpdated` that carries its `id` and a view with no player of one's own (`you` null). There is no `joined`, since a spectator has neither a player id nor a token, and the connection remembers nothing: the front stores no seat, so a reload goes back to the invitation page, and a lost connection too, saying that the connection was lost.
 - **The room counts, the handler seats.** `Room.watch` and `Room.unwatch` change a counter; the room refuses `watch` in the lobby ("the game has not started") and beyond 20 ("too many spectators"). `GameSocketHandler` keeps the connection as a seat without a player and refuses every command from it ("spectators cannot play"). `Room.viewFor` stays the view of a player; `Room.spectatorView` is the view of a lookout from no seat, the same for everyone who watches.
-- **One view for all spectators.** Every change builds one view per player and a single one for all the spectators, under the room's lock as before, so 20 spectators cost one more view, not twenty. The serialization to JSON happens after the lock, as for the players.
+- **One view for all spectators.** Every change builds one view per player and a single one for all the spectators, from the saved room as before, so 20 spectators cost one more view, not twenty. The serialization to JSON happens after the save, as for the players.
 - **The key never reaches them before the end.** `RoomTest` builds the spectator view after every move of a game and checks that a hidden card has no kind until the game has ended; `WebSocketIT` plays a game to its end with a spectator connected and checks every message that reached them.
 - **They do not keep a room alive.** `watch` and `unwatch` touch neither `lastActivity` nor the players: the sweep of idle rooms ([ADR 0003](0003-rooms-the-state-machine-and-the-protocol.md)) looks at the players only.
 - **Everyone sees the count.** `spectators` is in every view; the table shows "N personnes regardent" next to the online count.
@@ -125,6 +125,24 @@ stateDiagram-v2
   Open --> Closed: the 5th code that finds no room<br/>(1008, too many unknown rooms)
   Open --> Closed: the connection ends
   Closed --> [*]: the count goes with it
+```
+
+### Several replicas
+
+With two replicas behind the edge ([ADR 0008](0008-rooms-in-redis-shared-by-replicas.md)) a connection belongs to one replica, and so does the presence it proves.
+
+- **A player carries the id of their replica**, and each replica renews a heartbeat key (15 seconds of life, renewed every 5). `RoomSweeper.deadReplicas` marks absent every connected player whose replica has no heartbeat, then the grace periods above apply from that moment. It runs only on a replica that sees its own heartbeat.
+- **A spectator count is kept per replica** in the room and dropped with the replica, so a replica that dies does not leave spectators behind.
+- **A connection that closes late changes nothing** when the player has taken their seat on another replica meanwhile: `Room.disconnect` only marks absent a player who still belongs to the replica of that connection.
+- **A replica that stops on purpose** closes its connections with "going away" and writes nobody absent. The front rejoins on the other replica in under a second; whoever does not is marked absent once the heartbeat has run out, 15 to 20 seconds later.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Online: joins, on a replica
+  Online --> Offline: the connection closes on that replica
+  Online --> Offline: the replica's heartbeat has run out,<br/>swept every 5 s
+  Online --> Online: rejoin on another replica,<br/>the seat moves with it
+  Offline --> Online: rejoin with the token, on any replica
 ```
 
 ## Consequences

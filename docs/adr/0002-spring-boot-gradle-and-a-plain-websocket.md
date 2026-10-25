@@ -20,5 +20,5 @@ The backend holds every room and enforces every rule ([ADR 0001](0001-name-rules
 
 - Checked in a container started like in production (read-only file system, no capabilities, 384 MiB): it is healthy, answers an echo over the WebSocket and uses about 125 MiB idle.
 - The `ClientMessage` and `ServerMessage` records are the contract the front validates with Zod ([#4](https://github.com/Didelo-lilian/semaphore/issues/4)).
-- With several replicas a room lives in one of them: sticky sessions and Redis pub/sub come with the scaling step, not before.
+- With several replicas the rooms are kept in Redis, not in the replica that created them ([ADR 0008](0008-rooms-in-redis-shared-by-replicas.md)).
 - Spring Boot 4 uses Jackson 3 (`tools.jackson`); the annotations are still `com.fasterxml.jackson.annotation`.

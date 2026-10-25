@@ -3,6 +3,8 @@
 #   docker compose -f load/compose.yaml up --build --exit-code-from k6
 #
 # Variables, all optional: REPLICAS (backend containers, 1), PROFILE (short or long), ROOMS, DURATION, THINK_MS, P95_MS.
+# The rooms live in the process of each replica unless SEMAPHORE_REDIS_URL is set: more than one replica needs the redis
+# profile, which is how production runs (the command is on the redis service).
 name: semaphore-load
 
 services:
@@ -17,7 +19,7 @@ services:
     environment:
       # The origin k6 sends. Any other, production's included, gets the backend's 403.
       - SEMAPHORE_ALLOWED_ORIGINS=http://load.test
-      # Only passed on when set: a blank value would not be the same as none. The backend does not read it yet.
+      # Only passed on when set: a blank value would not be the same as none.
       - SEMAPHORE_REDIS_URL
     healthcheck:
       test: [CMD, wget, --quiet, --spider, "http://127.0.0.1:8080/actuator/health"]
@@ -30,13 +32,18 @@ services:
         # Off unless the redis profile is.
         required: false
 
-  # Off by default, for when the rooms live in Redis and two replicas share them. To turn it on:
+  # Off by default, for when the rooms live in Valkey and the replicas share them, as in production. To turn it on:
   #   COMPOSE_PROFILES=redis SEMAPHORE_REDIS_URL=redis://redis:6379 REPLICAS=2 docker compose -f load/compose.yaml up ...
   redis:
     profiles: [redis]
-    image: redis:8.8.3-alpine
+    # The image and the options of production (stacks/redis of the infra repository), without the password: nothing
+    # but this rig reaches it. The data is a tmpfs, nothing has to survive the run.
+    image: valkey/valkey:9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
+    command: [valkey-server, --appendonly, "yes", --appendfsync, everysec, --save, "", --maxmemory, 64mb, --maxmemory-policy, noeviction]
+    tmpfs: [/data]
+    mem_limit: 192m
     healthcheck:
-      test: [CMD, redis-cli, ping]
+      test: [CMD, valkey-cli, ping]
       interval: 2s
       timeout: 3s
       retries: 15

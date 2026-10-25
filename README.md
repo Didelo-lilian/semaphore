@@ -87,11 +87,11 @@ flowchart LR
     k6["k6<br/>one virtual user per room:<br/>four players and a spectator,<br/>five WebSockets"]
     lb["lb · nginx<br/>round robin, as Traefik<br/>is in front in production"]
     back["backend × REPLICAS<br/>the production image<br/>and memory limit"]
-    redis[("redis<br/>profile redis, off")]
+    redis[("valkey<br/>the redis profile,<br/>the image of production")]
   end
   k6 -->|"/ws"| lb
   lb -->|"/ws"| back
-  back -.->|"SEMAPHORE_REDIS_URL,<br/>not read yet"| redis
+  back -.->|"SEMAPHORE_REDIS_URL"| redis
 ```
 
 | Variable | Default | What it sets |
@@ -103,7 +103,13 @@ flowchart LR
 | `P95_MS` | by profile | the threshold on the p95 of a command, 50 ms for `short` and 150 ms for `long` |
 | `REPLICAS` | `1` | backend containers behind nginx |
 
-For example `PROFILE=long docker compose -f load/compose.yaml up --build --exit-code-from k6`. `REPLICAS=2` only works once the rooms are shared ([ADR 0008](docs/adr/0008-rooms-in-redis-shared-by-replicas.md)): with them in memory a room lives in one replica, and the five connections of a table spread over two of them get "no such room", which the test reports as protocol errors. nginx does what Traefik does in production, a replica per handshake with nothing sticky. The `redis` profile is there for that day and is off: `COMPOSE_PROFILES=redis SEMAPHORE_REDIS_URL=redis://redis:6379 REPLICAS=2` starts a Redis, makes the replicas wait for it and hands them its address, which the backend does not read yet.
+For example `PROFILE=long docker compose -f load/compose.yaml up --build --exit-code-from k6`. That is one replica with its rooms in memory. Production runs two replicas whose rooms live in Valkey ([ADR 0008](docs/adr/0008-rooms-in-redis-shared-by-replicas.md)), and the `load` workflow plays that shape:
+
+```bash
+COMPOSE_PROFILES=redis SEMAPHORE_REDIS_URL=redis://redis:6379 REPLICAS=2 docker compose -f load/compose.yaml up --build --exit-code-from k6
+```
+
+The `redis` profile starts the Valkey image and options of production (`stacks/redis` of the infra repository, without a password: nothing but this rig reaches it), makes the replicas wait for it and hands them its address. nginx does what Traefik does, a replica per handshake with nothing sticky, so the five connections of a table land on both replicas: a protocol error is a room that one replica could not see. `REPLICAS=2` without the profile shows it, the rooms stay in the process of each replica and the test reports "no such room".
 
 ### Thresholds
 

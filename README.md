@@ -17,7 +17,7 @@ The WebSocket is `/ws`; for local development set `SEMAPHORE_ALLOWED_ORIGINS=htt
 
 ### Rooms in Redis
 
-By default the rooms live in the memory of the process, which is what development, the unit tests and the end-to-end test use. Set `SEMAPHORE_REDIS_URL` (`redis://:password@host:6379`, a Valkey 9 in production; empty means none) to keep them in Redis instead, shared by as many replicas as you start ([ADR 0008](docs/adr/0008-rooms-in-redis-shared-by-replicas.md)). The backend starts before Redis does and finds it later, and its health does not include Redis. To try two replicas on this machine:
+By default the rooms live in the memory of the process, which is what development, the unit tests and the end-to-end test use. Set `SEMAPHORE_REDIS_URL` (`redis://:password@host:6379`, a Valkey 9 in production; empty means none) to keep them in Redis instead, shared by as many replicas as you start ([ADR 0008](docs/adr/0008-rooms-in-redis-shared-by-replicas.md)). The backend starts before Redis does and finds it later, and its health does not include Redis. It logs one line at startup, `rooms: memory` or `rooms: redis host:port` (never the password), so a replica started without the URL does not pass for one that has it. To try two replicas on this machine:
 
 ```bash
 docker run -d --rm --name semaphore-redis -p 6379:6379 valkey/valkey:9.1.2-alpine valkey-server --requirepass secret --maxmemory 64mb --maxmemory-policy noeviction

@@ -26,6 +26,14 @@ public record RoomState(
     Instant lastActivity,
     Instant lastMove) {
 
+  /** A room saved before a collection existed has none of it in its JSON: it reads as empty. */
+  public RoomState {
+    flags = flags == null ? Map.of() : flags;
+    board = board == null ? List.of() : board;
+    players = players == null ? List.of() : players;
+    spectators = spectators == null ? Map.of() : spectators;
+  }
+
   public record PlayerState(
       String id,
       String token,

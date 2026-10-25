@@ -178,6 +178,17 @@ public final class Room {
     version++;
   }
 
+  /**
+   * Sets what {@code replica} counts of the spectators, if it still counts {@code seen}: it lost
+   * its count when it was judged dead while its connections were fine.
+   */
+  public void recountSpectators(String replica, int seen, int count) {
+    if (spectators.getOrDefault(replica, 0) == seen) {
+      spectators.put(replica, count);
+      version++;
+    }
+  }
+
   public void unwatch(String replica) {
     // A replica judged dead has lost its count already: no entry is left to decrement.
     spectators.computeIfPresent(replica, (r, count) -> count > 1 ? count - 1 : null);

@@ -4,7 +4,7 @@ spring:
   task:
     scheduling:
       pool:
-        # The heartbeat must not wait behind a slow sweep.
+        # The sweeps and the check of versions wait on Redis: one slow one must not hold up the rest.
         size: 3
 
 management:

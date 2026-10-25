@@ -11,13 +11,13 @@ import org.springframework.boot.health.contributor.Status;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /** The game goes on, and stays in the load balancer, while Postgres is down (ADR 0008). */
 @SpringBootTest
 class DatabaseDownIT {
 
-  private static final org.testcontainers.postgresql.PostgreSQLContainer POSTGRES =
-      Postgres.container();
+  private static final PostgreSQLContainer POSTGRES = Postgres.container();
 
   @DynamicPropertySource
   static void postgres(DynamicPropertyRegistry registry) {

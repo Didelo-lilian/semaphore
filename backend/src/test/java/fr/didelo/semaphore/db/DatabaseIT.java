@@ -2,6 +2,7 @@ package fr.didelo.semaphore.db;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.zaxxer.hikari.HikariDataSource;
 import fr.didelo.semaphore.Postgres;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
@@ -24,10 +25,17 @@ class DatabaseIT {
 
   @Autowired Flyway flyway;
   @Autowired JdbcClient jdbc;
+  @Autowired HikariDataSource pool;
 
   @Test
   void migratesAtStartAndQueries() {
     assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("1");
     assertThat(jdbc.sql("SELECT count(*) FROM game").query(Long.class).single()).isZero();
+  }
+
+  @Test
+  void thePoolIsTheOneOfTheSettings() {
+    assertThat(pool.getMaximumPoolSize()).isEqualTo(4);
+    assertThat(pool.getConnectionTimeout()).isEqualTo(2_000);
   }
 }

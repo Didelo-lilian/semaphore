@@ -10,6 +10,7 @@ import fr.didelo.semaphore.game.GameResult.Participant;
 import fr.didelo.semaphore.game.GameResult.Role;
 import fr.didelo.semaphore.game.Team;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -67,7 +68,7 @@ class GameHistoryIT {
             .query(
                 (rs, row) ->
                     List.of(
-                        rs.getObject("ended_at", java.time.OffsetDateTime.class).toInstant(),
+                        rs.getObject("ended_at", OffsetDateTime.class).toInstant(),
                         rs.getString("winner"),
                         rs.getString("end_reason")))
             .single();

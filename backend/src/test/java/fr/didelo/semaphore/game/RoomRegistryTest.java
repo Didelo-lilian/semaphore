@@ -228,4 +228,27 @@ class RoomRegistryTest {
     assertThat(registry.find(code)).isEmpty();
     assertThat(ended).isEmpty();
   }
+
+  @Test
+  void aListenerThatFailsDoesNotUndoTheEndOfTheGame() {
+    var told = new ArrayList<RoomState>();
+    var registry =
+        new RoomRegistry(
+            store,
+            clock,
+            new WordList(),
+            2,
+            List.of(
+                state -> {
+                  throw new IllegalStateException("the history is broken");
+                },
+                told::add));
+    var code = Moves.startedGame(registry, null);
+
+    var saved = registry.change(code, room -> Moves.win(room, Team.BABORD));
+
+    assertThat(saved.changed()).isTrue();
+    assertThat(registry.find(code).orElseThrow().phase()).isEqualTo(Phase.ENDED);
+    assertThat(told).hasSize(1);
+  }
 }

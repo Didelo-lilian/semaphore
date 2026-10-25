@@ -12,6 +12,8 @@ import fr.didelo.semaphore.game.Moves;
 import fr.didelo.semaphore.game.RoomState;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.mockito.verification.VerificationMode;
 import org.springframework.dao.DataAccessResourceFailureException;
 
 class GameRecorderTest {
@@ -76,7 +78,7 @@ class GameRecorderTest {
     verify(history, timeout(2_000).times(2)).record(any());
   }
 
-  private static org.mockito.verification.VerificationMode after() {
-    return org.mockito.Mockito.after(300).never();
+  private static VerificationMode after() {
+    return Mockito.after(300).never();
   }
 }

@@ -130,6 +130,13 @@ public class RoomRegistry {
 
   private void announce(Room room) {
     var state = room.state();
-    listeners.forEach(listener -> listener.ended(state));
+    for (var listener : listeners) {
+      try {
+        listener.ended(state);
+      } catch (RuntimeException e) {
+        // The room is saved and the game is over: what the listeners do must never undo that.
+        RoomFailures.log(room.code(), "announced as ended", e);
+      }
+    }
   }
 }

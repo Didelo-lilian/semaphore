@@ -1,6 +1,18 @@
+server:
+  # Behind Traefik: Tomcat reads X-Forwarded-Proto and X-Forwarded-Host from the proxy, so the request is https on the
+  # public host (ADR 0010).
+  forward-headers-strategy: native
+
 spring:
   application:
     name: semaphore
+  autoconfigure:
+    # The only login is the guest's session and, later, GitHub and Google: no user store, so no generated password.
+    exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
+  mvc:
+    # Nobody listens to ServletRequestHandledEvent, and publishing it reads the session once more: with Valkey out of
+    # reach that read would turn a clean 503 into a 500 (ADR 0010).
+    publish-request-handled-events: false
   task:
     scheduling:
       pool:
@@ -19,3 +31,6 @@ semaphore:
   min-team-size: 2
   # Browsers send the page's origin on a WebSocket handshake, and the server refuses the others.
   allowed-origins: https://play.didelo.fr
+  session:
+    # A guest who does not come back for this long is forgotten (ADR 0010).
+    lifetime: 30d

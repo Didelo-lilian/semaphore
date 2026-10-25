@@ -5,7 +5,7 @@
 import { WebSocket } from "k6/websockets";
 import { Counter, Rate, Trend } from "k6/metrics";
 
-// The p95 of a command is ten times the worst one measured on a CI runner with these rooms (README, "Thresholds").
+// The p95 threshold of a command is ten times the worst p95 measured on a CI runner with these rooms (README, "Thresholds").
 const PROFILES = {
   short: { rooms: 50, duration: "30s", p95: 50 },
   long: { rooms: 100, duration: "5m", p95: 150 },
@@ -62,7 +62,6 @@ export const options = {
 };
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const think = () => pause(THINK_MS * (0.5 + Math.random()));
 
 // What answers a command, by the id it carries: a `joined` for getting into a room, a `roomUpdated` for the rest.
 const ANSWERS = { createRoom: "joined", joinRoom: "joined" };
@@ -86,6 +85,10 @@ class Seat {
       // Rejects while connecting, and fails what is waiting once the connection is open.
       const giveUp = (reason) => {
         clearTimeout(timer);
+        // The game is over and this connection was closed on purpose: nothing it says counts.
+        if (this.closing) {
+          return;
+        }
         const error = new Error(`${this.name}: ${reason}`);
         reject(error);
         this.fail(error);
@@ -102,17 +105,13 @@ class Seat {
       };
       this.socket.onmessage = (event) => this.receive(JSON.parse(event.data));
       this.socket.onerror = (event) => giveUp(`connection failed: ${event.error}`);
-      this.socket.onclose = () => {
-        if (!this.closing) {
-          giveUp("connection closed by the server");
-        }
-      };
+      this.socket.onclose = () => giveUp("connection closed by the server");
     });
   }
 
   /** Sends a command and resolves with the answer that carries its id. */
   async send(type, fields = {}) {
-    await think();
+    await pause(THINK_MS * (0.5 + Math.random()));
     return new Promise((resolve, reject) => {
       if (this.error) {
         return reject(this.error);

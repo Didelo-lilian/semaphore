@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import fr.didelo.semaphore.game.Room;
+import fr.didelo.semaphore.game.RoomRegistry;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -12,6 +13,7 @@ import java.net.http.WebSocket;
 import java.net.http.WebSocketHandshakeException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -37,6 +39,8 @@ class WebSocketIT {
   // The application's own mapper, so the test reads the messages as the server writes them.
   @Autowired JsonMapper json;
 
+  @Autowired RoomRegistry rooms;
+
   private final HttpClient http = HttpClient.newHttpClient();
   private final List<Client> clients = new ArrayList<>();
 
@@ -48,6 +52,8 @@ class WebSocketIT {
     private final WebSocket socket;
     private volatile JsonNode joined;
     private volatile JsonNode room;
+    private volatile Integer closeCode;
+    private volatile String closeReason;
 
     Client(String origin) {
       socket =
@@ -77,6 +83,13 @@ class WebSocketIT {
                         received.add(message);
                       }
                       ws.request(1);
+                      return null;
+                    }
+
+                    @Override
+                    public CompletionStage<?> onClose(WebSocket ws, int code, String reason) {
+                      closeCode = code;
+                      closeReason = reason;
                       return null;
                     }
                   })
@@ -142,6 +155,19 @@ class WebSocketIT {
     client.send("{\"type\":\"joinRoom\",\"code\":\"" + code + "\",\"name\":\"" + name + "\"}");
     client.await("joined");
     return client;
+  }
+
+  /** Asks for a room that does not exist, as a join, a watch and a rejoin in turn. */
+  private static void missRooms(Client client, int times) throws InterruptedException {
+    var asks =
+        List.of(
+            "{\"type\":\"joinRoom\",\"code\":\"00000\",\"name\":\"Ana\"}",
+            "{\"type\":\"watch\",\"code\":\"00000\"}",
+            "{\"type\":\"rejoin\",\"code\":\"00000\",\"token\":\"x\"}");
+    for (var i = 0; i < times; i++) {
+      client.send(asks.get(i % asks.size()));
+      assertThat(client.error()).isEqualTo("no such room");
+    }
   }
 
   private static String rejoin(Client player) {
@@ -596,6 +622,101 @@ class WebSocketIT {
     var code = startedGame().get(0).room.path("code").asString();
     visitor.send("{\"type\":\"joinRoom\",\"code\":\"" + code + "\",\"name\":\"Zoe\"}");
     assertThat(visitor.error()).isEqualTo("the game has started");
+  }
+
+  @Test
+  void theServerClosesAConnectionAtItsFifthUnknownRoom() throws Exception {
+    var client = new Client(ALLOWED_ORIGIN);
+    missRooms(client, 4);
+
+    client.send("{\"type\":\"joinRoom\",\"code\":\"00000\",\"name\":\"Ana\"}");
+    eventually(() -> client.closeCode != null);
+
+    assertThat(client.closeCode).isEqualTo(1008);
+    assertThat(client.closeReason).isEqualTo("too many unknown rooms");
+    assertThat(client.history)
+        .filteredOn(m -> m.path("type").asString().equals("error"))
+        .hasSize(4);
+  }
+
+  @Test
+  void theServerClosesAConnectionThatKeepsTryingToRejoinARoomThatIsGone() throws Exception {
+    var client = new Client(ALLOWED_ORIGIN);
+    var rejoin = "{\"type\":\"rejoin\",\"code\":\"00000\",\"token\":\"x\"}";
+    for (var i = 0; i < 4; i++) {
+      client.send(rejoin);
+      assertThat(client.error()).isEqualTo("no such room");
+    }
+
+    client.send(rejoin);
+    eventually(() -> client.closeCode != null);
+
+    assertThat(client.closeCode).isEqualTo(1008);
+  }
+
+  @Test
+  void aSeatWhoseRoomWasSweptCostsOneMissAndTheConnectionStaysUsable() throws Exception {
+    var client = new Client(ALLOWED_ORIGIN);
+
+    client.send("{\"type\":\"rejoin\",\"code\":\"00000\",\"token\":\"x\"}");
+    assertThat(client.error()).isEqualTo("no such room");
+
+    assertThat(createRoom(client, "Ana")).hasSize(5);
+    assertThat(client.closeCode).isNull();
+  }
+
+  @Test
+  void aConnectionThatFindsItsRoomStaysOpenAndTheSuccessDoesNotResetTheCount() throws Exception {
+    var code = createRoom(new Client(ALLOWED_ORIGIN), "Ana");
+    var client = new Client(ALLOWED_ORIGIN);
+    missRooms(client, 4);
+
+    client.send("{\"type\":\"joinRoom\",\"code\":\"" + code + "\",\"name\":\"Bob\"}");
+    client.await("joined");
+    client.send("{\"type\":\"joinTeam\",\"team\":\"BABORD\"}");
+    client.await(
+        "roomUpdated", m -> m.path("room").path("players").path(1).path("team").isString());
+    assertThat(client.closeCode).isNull();
+
+    client.send("{\"type\":\"watch\",\"code\":\"00000\"}");
+    eventually(() -> client.closeCode != null);
+    assertThat(client.closeCode).isEqualTo(1008);
+  }
+
+  @Test
+  void theCountDoesNotBlockAValidRejoin() throws Exception {
+    var host = new Client(ALLOWED_ORIGIN);
+    var bob = playerIn(createRoom(host, "Ana"), "Bob");
+    bob.socket.abort();
+    var again = new Client(ALLOWED_ORIGIN);
+    missRooms(again, 4);
+
+    again.send(rejoin(bob));
+
+    assertThat(again.await("joined").path("playerId").asString())
+        .isEqualTo(bob.joined.path("playerId").asString());
+    assertThat(again.closeCode).isNull();
+  }
+
+  @Test
+  void whatAClosedConnectionKeepsSendingIsIgnored() throws Exception {
+    var client = new Client(ALLOWED_ORIGIN);
+    var roomsBefore = rooms.all().size();
+    missRooms(client, 4);
+
+    // The server may keep reading frames until the client answers its close: none of them must act.
+    try {
+      client.send("{\"type\":\"watch\",\"code\":\"00000\"}");
+      for (var i = 0; i < 5; i++) {
+        client.send("{\"type\":\"createRoom\",\"name\":\"Ana\"}");
+      }
+    } catch (CompletionException e) {
+      // the connection is already closed on the client's side
+    }
+    eventually(() -> client.closeCode != null);
+    Thread.sleep(300);
+
+    assertThat(rooms.all()).hasSize(roomsBefore);
   }
 
   @Test

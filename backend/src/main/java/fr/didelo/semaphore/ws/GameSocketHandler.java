@@ -37,6 +37,8 @@ public class GameSocketHandler extends TextWebSocketHandler {
 
   private static final int SEND_TIME_LIMIT_MS = 5_000;
   private static final int SEND_BUFFER_LIMIT_BYTES = 64 * 1024;
+  // A friend mistypes a code once or twice; five unknown codes on one connection is a scan.
+  private static final int MAX_MISSES = 5;
 
   /**
    * Where a connection is: the room it joined and the player it speaks for, none for a spectator.
@@ -56,6 +58,7 @@ public class GameSocketHandler extends TextWebSocketHandler {
 
   private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
   private final Map<String, Seat> seats = new ConcurrentHashMap<>();
+  private final Map<String, Integer> misses = new ConcurrentHashMap<>();
 
   @Override
   public void afterConnectionEstablished(WebSocketSession session) {
@@ -68,6 +71,10 @@ public class GameSocketHandler extends TextWebSocketHandler {
   @Override
   protected void handleTextMessage(WebSocketSession raw, TextMessage message) {
     var session = sessions.get(raw.getId());
+    // The connection closed, a limit hit here included, while this message was still arriving.
+    if (session == null) {
+      return;
+    }
     // Stays null for a message too broken to read: there is no id to answer it with.
     String id = null;
     try {
@@ -76,9 +83,10 @@ public class GameSocketHandler extends TextWebSocketHandler {
       deliver(
           switch (incoming) {
             case ClientMessage.CreateRoom create -> create(session, id, create.name());
-            case ClientMessage.JoinRoom join -> enter(session, id, room(join.code()), join.name());
+            case ClientMessage.JoinRoom join ->
+                enter(session, id, lookUp(session, join.code()), join.name());
             case ClientMessage.Rejoin rejoin -> rejoin(session, rejoin);
-            case ClientMessage.Watch watch -> watch(session, id, room(watch.code()));
+            case ClientMessage.Watch watch -> watch(session, id, lookUp(session, watch.code()));
             case ClientMessage.Leave leave -> leave(session);
             case ClientMessage.JoinTeam join ->
                 command(session, id, new Command.JoinTeam(join.team()));
@@ -99,6 +107,7 @@ public class GameSocketHandler extends TextWebSocketHandler {
   @Override
   public void afterConnectionClosed(WebSocketSession raw, CloseStatus status) {
     sessions.remove(raw.getId());
+    misses.remove(raw.getId());
     // A connection replaced by a newer one of the same player has no seat left: nothing to undo.
     var seat = seats.remove(raw.getId());
     if (seat != null) {
@@ -160,7 +169,7 @@ public class GameSocketHandler extends TextWebSocketHandler {
   }
 
   private List<Delivery> rejoin(WebSocketSession session, ClientMessage.Rejoin rejoin) {
-    var room = room(rejoin.code());
+    var room = lookUp(session, rejoin.code());
     var replaced = new ArrayList<WebSocketSession>();
     List<Delivery> deliveries;
     synchronized (room) {
@@ -185,13 +194,7 @@ public class GameSocketHandler extends TextWebSocketHandler {
     replaced.stream()
         .filter(Objects::nonNull)
         .forEach(
-            old -> {
-              try {
-                old.close(CloseStatus.NORMAL.withReason("replaced by a newer connection"));
-              } catch (IOException e) {
-                // already gone
-              }
-            });
+            old -> close(old, CloseStatus.NORMAL.withReason("replaced by a newer connection")));
     return deliveries;
   }
 
@@ -232,8 +235,21 @@ public class GameSocketHandler extends TextWebSocketHandler {
     }
   }
 
-  private Room room(String code) {
-    return rooms.find(code).orElseThrow(() -> new IllegalMove("no such room"));
+  /** Counts the codes that find no room on a connection: the last one closes it. */
+  private Room lookUp(WebSocketSession session, String code) {
+    var room = rooms.find(code);
+    if (room.isEmpty() && misses.merge(session.getId(), 1, Integer::sum) >= MAX_MISSES) {
+      close(session, CloseStatus.POLICY_VIOLATION.withReason("too many unknown rooms"));
+    }
+    return room.orElseThrow(() -> new IllegalMove("no such room"));
+  }
+
+  private void close(WebSocketSession session, CloseStatus status) {
+    try {
+      session.close(status);
+    } catch (IOException e) {
+      // already gone
+    }
   }
 
   /**

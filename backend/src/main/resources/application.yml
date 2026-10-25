@@ -6,8 +6,18 @@ spring:
       pool:
         # The sweeps and the check of versions wait on Redis: one slow one must not hold up the rest.
         size: 3
+  datasource:
+    hikari:
+      # Two replicas share one Postgres, and a game only writes once, when it ends.
+      maximum-pool-size: 4
+      # A database that does not answer must not hold a request for the 30 seconds of the default.
+      connection-timeout: 2000
 
 management:
+  health:
+    db:
+      # The database is not the game: if it is down both replicas must stay in the load balancer (ADR 0008).
+      enabled: false
   endpoints:
     web:
       exposure:

@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -131,6 +132,25 @@ class GameSocketHandlerTest {
     clock.advance(Duration.ofSeconds(1));
     handler.dropAbsent();
     assertThat(json.readTree(lastPayload(host)).path("room").path("players")).hasSize(1);
+  }
+
+  @Test
+  void theCountOfUnknownRoomsGoesWithTheConnection() throws Exception {
+    var unknown = "{\"type\":\"watch\",\"code\":\"00000\"}";
+    var first = connect("s1");
+    for (var i = 0; i < 4; i++) {
+      receive(first, unknown);
+    }
+    handler.afterConnectionClosed(first, CloseStatus.GOING_AWAY);
+
+    var second = connect("s1");
+    for (var i = 0; i < 4; i++) {
+      receive(second, unknown);
+    }
+    verify(second, never()).close(any());
+
+    receive(second, unknown);
+    verify(second).close(CloseStatus.POLICY_VIOLATION.withReason("too many unknown rooms"));
   }
 
   @Test

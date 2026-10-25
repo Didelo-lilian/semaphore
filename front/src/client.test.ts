@@ -330,4 +330,42 @@ describe("GameClient", () => {
     last().drop();
     await expect(lost).rejects.toThrow("connection lost");
   });
+
+  it("does not reconnect when the server closed it for too many unknown rooms, and says why", async () => {
+    const client = connect(memoryStore());
+    const joining = client.request({
+      type: "joinRoom",
+      code: "ABCDE",
+      name: "Ana",
+    });
+    last().accept();
+    last().drop("too many unknown rooms");
+    await expect(joining).rejects.toThrow("too many unknown rooms");
+    expect(client.getSnapshot()).toEqual({
+      connection: "idle",
+      error: "too many unknown rooms",
+    });
+    vi.advanceTimersByTime(60_000);
+    expect(FakeSocket.all).toHaveLength(1);
+
+    const again = client.request({ type: "watch", code: "ABCDE" });
+    expect(FakeSocket.all).toHaveLength(2);
+    expect(client.getSnapshot().error).toBeNull();
+    last().accept();
+    last().answer(spectator);
+    await expect(again).resolves.toMatchObject({ you: null });
+  });
+
+  it("does not rejoin in a loop after that close, even with a seat stored", () => {
+    const client = connect(memoryStore({ code: "ABCDE", token: "t" }));
+    client.start();
+    last().accept();
+    last().drop("too many unknown rooms");
+    vi.advanceTimersByTime(60_000);
+    expect(FakeSocket.all).toHaveLength(1);
+    expect(client.getSnapshot()).toEqual({
+      connection: "idle",
+      error: "too many unknown rooms",
+    });
+  });
 });

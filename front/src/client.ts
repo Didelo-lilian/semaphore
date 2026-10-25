@@ -24,6 +24,8 @@ export const roomKey = ["room"] as const;
 
 // What the backend says when a newer connection of the same player takes the seat.
 const REPLACED = "replaced by a newer connection";
+// What it says when it closes a connection that asked for too many rooms that do not exist.
+const TOO_MANY_MISSES = "too many unknown rooms";
 const RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000];
 
 interface Waiting {
@@ -145,13 +147,18 @@ export class GameClient {
         return;
       }
       this.socket = null;
+      const refused = event.reason === TOO_MANY_MISSES;
       for (const { reject } of this.waiting.splice(0)) {
-        reject(new Error("connection lost"));
+        reject(new Error(refused ? TOO_MANY_MISSES : "connection lost"));
       }
       // Their promises are settled: sending them on the next connection would play them twice.
       this.pending = [];
       if (event.reason === REPLACED) {
         this.update({ connection: "replaced" });
+      } else if (refused) {
+        // Reconnecting would only ask again: the next command opens a fresh connection.
+        this.queryClient.removeQueries({ queryKey: roomKey });
+        this.update({ connection: "idle", error: TOO_MANY_MISSES });
       } else if (this.store.load() !== null) {
         this.update({ connection: "reconnecting" });
         const delay =

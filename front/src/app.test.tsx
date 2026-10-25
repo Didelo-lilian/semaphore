@@ -106,6 +106,20 @@ describe("the game in the browser", () => {
     ]);
   });
 
+  it("tells in French that the server closed the connection for too many unknown rooms", async () => {
+    await mount("/");
+    await userEvent.type(await screen.findByLabelText("Ton nom"), "Ben");
+    await userEvent.type(screen.getByLabelText("Code du salon"), "ABCDE");
+    await userEvent.click(screen.getByRole("button", { name: "Rejoindre" }));
+    await waitFor(() => expect(FakeSocket.all).toHaveLength(1));
+    FakeSocket.last().accept();
+    act(() => FakeSocket.last().drop("too many unknown rooms"));
+    expect(
+      await screen.findByText(/Trop de codes inconnus/),
+    ).toBeInTheDocument();
+    expect(FakeSocket.all).toHaveLength(1);
+  });
+
   it("shows the refusal of the server on the page that asked", async () => {
     await mount("/?room=USQ2H");
     await userEvent.type(await screen.findByLabelText("Ton nom"), "Ben");

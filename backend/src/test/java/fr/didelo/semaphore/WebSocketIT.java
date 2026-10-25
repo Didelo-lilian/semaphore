@@ -48,6 +48,8 @@ class WebSocketIT {
     private final WebSocket socket;
     private volatile JsonNode joined;
     private volatile JsonNode room;
+    private volatile Integer closeCode;
+    private volatile String closeReason;
 
     Client(String origin) {
       socket =
@@ -77,6 +79,13 @@ class WebSocketIT {
                         received.add(message);
                       }
                       ws.request(1);
+                      return null;
+                    }
+
+                    @Override
+                    public CompletionStage<?> onClose(WebSocket ws, int code, String reason) {
+                      closeCode = code;
+                      closeReason = reason;
                       return null;
                     }
                   })
@@ -142,6 +151,17 @@ class WebSocketIT {
     client.send("{\"type\":\"joinRoom\",\"code\":\"" + code + "\",\"name\":\"" + name + "\"}");
     client.await("joined");
     return client;
+  }
+
+  /** Asks for a room that does not exist, as a join and as a watch in turn. */
+  private static void missRooms(Client client, int times) throws InterruptedException {
+    for (var i = 0; i < times; i++) {
+      client.send(
+          i % 2 == 0
+              ? "{\"type\":\"joinRoom\",\"code\":\"00000\",\"name\":\"Ana\"}"
+              : "{\"type\":\"watch\",\"code\":\"00000\"}");
+      assertThat(client.error()).isEqualTo("no such room");
+    }
   }
 
   private static String rejoin(Client player) {
@@ -596,6 +616,54 @@ class WebSocketIT {
     var code = startedGame().get(0).room.path("code").asString();
     visitor.send("{\"type\":\"joinRoom\",\"code\":\"" + code + "\",\"name\":\"Zoe\"}");
     assertThat(visitor.error()).isEqualTo("the game has started");
+  }
+
+  @Test
+  void theServerClosesAConnectionAtItsFifthUnknownRoom() throws Exception {
+    var client = new Client(ALLOWED_ORIGIN);
+    missRooms(client, 4);
+
+    client.send("{\"type\":\"joinRoom\",\"code\":\"00000\",\"name\":\"Ana\"}");
+    eventually(() -> client.closeCode != null);
+
+    assertThat(client.closeCode).isEqualTo(1008);
+    assertThat(client.closeReason).isEqualTo("too many unknown rooms");
+    assertThat(client.history)
+        .filteredOn(m -> m.path("type").asString().equals("error"))
+        .hasSize(4);
+  }
+
+  @Test
+  void aConnectionThatFindsItsRoomStaysOpenAndTheSuccessDoesNotResetTheCount() throws Exception {
+    var code = createRoom(new Client(ALLOWED_ORIGIN), "Ana");
+    var client = new Client(ALLOWED_ORIGIN);
+    missRooms(client, 4);
+
+    client.send("{\"type\":\"joinRoom\",\"code\":\"" + code + "\",\"name\":\"Bob\"}");
+    client.await("joined");
+    client.send("{\"type\":\"joinTeam\",\"team\":\"BABORD\"}");
+    client.await(
+        "roomUpdated", m -> m.path("room").path("players").path(1).path("team").isString());
+    assertThat(client.closeCode).isNull();
+
+    client.send("{\"type\":\"watch\",\"code\":\"00000\"}");
+    eventually(() -> client.closeCode != null);
+    assertThat(client.closeCode).isEqualTo(1008);
+  }
+
+  @Test
+  void theCountDoesNotBlockAValidRejoin() throws Exception {
+    var host = new Client(ALLOWED_ORIGIN);
+    var bob = playerIn(createRoom(host, "Ana"), "Bob");
+    bob.socket.abort();
+    var again = new Client(ALLOWED_ORIGIN);
+    missRooms(again, 4);
+
+    again.send(rejoin(bob));
+
+    assertThat(again.await("joined").path("playerId").asString())
+        .isEqualTo(bob.joined.path("playerId").asString());
+    assertThat(again.closeCode).isNull();
   }
 
   @Test

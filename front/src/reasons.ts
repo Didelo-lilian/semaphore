@@ -5,6 +5,8 @@ const EXACT: Record<string, string> = {
   "the room is full": "Le salon est complet.",
   "the game has not started":
     "La partie n'a pas encore commencé : rejoins le salon pour jouer.",
+  "too many unknown rooms":
+    "Trop de codes inconnus : la connexion a été coupée. Vérifie le code, puis réessaie.",
   "too many spectators": "Trop de monde regarde déjà cette partie.",
   "spectators cannot play": "Un spectateur regarde sans jouer.",
   "a name has 1 to 20 characters": "Un nom fait de 1 à 20 caractères.",

@@ -100,7 +100,7 @@ flowchart LR
 | `ROOMS` | by profile | rooms playing at once: each one is a virtual user, so 5 connections per room |
 | `DURATION` | by profile | how long rooms start new games; a game that has started is played to its end |
 | `THINK_MS` | `100` | the pause before each command, 0.5 to 1.5 times this: a player reads the table before acting |
-| `P95_MS` | by profile | the threshold on the p95 of a command, 50 ms for `short` and 150 ms for `long` |
+| `P95_MS` | by profile | the threshold on the p95 of a command, 1000 ms for `short` and 1450 ms for `long` |
 | `REPLICAS` | `1` | backend containers behind nginx |
 
 For example `PROFILE=long docker compose -f load/compose.yaml up --build --exit-code-from k6`. That is one replica with its rooms in memory. Production runs two replicas whose rooms live in Valkey ([ADR 0008](docs/adr/0008-rooms-in-redis-shared-by-replicas.md)), and the `load` workflow plays that shape:
@@ -119,21 +119,36 @@ k6 exits with 99 when one of the three is broken.
 |---|---|
 | `protocol_errors` is 0 | counted per connection that suffered one: a refusal, an answer of the wrong kind or missing after 10 seconds, an update that never comes, a connection that dropped or was refused |
 | `games_finished` is 100% | every game ended with a winner, seen by the five connections of the table |
-| `command_duration` p95 under 50 ms (`short`) or 150 ms (`long`) | 95% of the commands were answered within that time, from the message to the answer that carries its id |
+| `command_duration` p95 under 1000 ms (`short`) or 1450 ms (`long`) | 95% of the commands were answered within that time, from the message to the answer that carries its id |
 
-The values come from the GitHub runner (`ubuntu-latest`, 4 vCPUs, k6 and nginx on the same machine as the backend, one replica with its production limit of 384 MiB, 100 ms to think), the machine the check runs on. This scenario was run there with several sizes, k6 reading the clock in milliseconds:
+The values come from the GitHub runner (`ubuntu-latest`, 4 vCPUs), the machine the check runs on, with the shape of production: k6, nginx, two replicas of the backend with their limit of 384 MiB each and a Valkey, all on that one machine, 100 ms to think. This scenario was run there several times and with several sizes, k6 reading the clock in milliseconds (a range is the lowest and the highest of the runs):
+
+| Rooms | Duration | Runs | Games | p95 | p99 | max |
+|---|---|---|---|---|---|---|
+| 50 | 30 s | 7 | 450 to 550 | 12 to 99 ms | 46 to 172 ms | 164 to 367 ms |
+| 100 | 30 s | 1 | 600 | 252 ms | 448 ms | 1105 ms |
+| 100 | 5 min | 5 | 6417 to 8161 | 88 to 144 ms | 198 to 343 ms | 2149 to 5571 ms |
+| 150 | 5 min | 1 | 7719 | 198 ms | 447 ms | 3268 ms |
+| 200 | 5 min | 1 | 12663 | 130 ms | 327 ms | 2468 ms |
+
+Every run had no error but one of the five at 100 rooms for 5 minutes, which had two: "the server is busy, try again". Both replicas logged a command to Valkey timing out after 2 seconds within the same second, and Valkey logged nothing at that time, so what stopped was the runner or the JVMs, not Valkey. It is the answer the backend gives when the store does not answer, and the check is not required: a red run of this kind is a reason to run it again and look.
+
+The same runs of one replica with its rooms in memory (`REPLICAS=1`, the compose file without a profile), measured again along with the runs above, and in the first measurements of this test:
 
 | Rooms | Duration | Games | p95 | p99 | max |
 |---|---|---|---|---|---|
-| 50 | 30 s, three runs | 551, 550, 557 | 5, 5, 2 ms | 43, 17, 12 ms | 178, 165, 224 ms |
-| 100 | 30 s | 975 | 43 ms | 154 ms | 1901 ms |
-| 100 | 5 min | 10351 | 13 ms | 61 ms | 1072 ms |
-| 150 | 5 min | 12647 | 70 ms | 170 ms | 2262 ms |
-| 200 | 5 min | 12489 | 169 ms | 291 ms | 1966 ms |
+| 50 | 30 s, two runs | 552, 552 | 3, 3 ms | 50, 34 ms | 148, 196 ms |
+| 100 | 5 min | 10741 | 3 ms | 21 ms | 974 ms |
+| 50 | 30 s, three runs, first measurements | 551, 550, 557 | 5, 5, 2 ms | 43, 17, 12 ms | 178, 165, 224 ms |
+| 100 | 5 min, first measurements | 10351 | 13 ms | 61 ms | 1072 ms |
+| 150 | 5 min, first measurements | 12647 | 70 ms | 170 ms | 2262 ms |
+| 200 | 5 min, first measurements | 12489 | 169 ms | 291 ms | 1966 ms |
 
-No run had an error, so 1000 connections for 5 minutes fit in 384 MiB. Each threshold is **ten times the worst p95 of its profile, rounded up to a multiple of 50 ms**: 5 ms gives 50 for `short`, 13 ms gives 150 for `long`. Identical runs differ by a factor of two or more on a shared runner (2 to 5 ms), and the same scenario with twice the rooms is eight times slower (5 ms at 50 rooms, 43 ms at 100 over the same 30 seconds), so a tighter margin would turn noise into red runs, while a command that waits for others (a lock shared by every room, a slow save) moves the p95 by far more than ten. `long` stays at 100 rooms, where it passes with room to spare; the table is the baseline to compare against when the replicas arrive: `PROFILE=long ROOMS=200 P95_MS=1000` is its last row, nearer the limit of one replica, and is not what the thresholds above are for. On a laptop that runs other containers the same scenario can be ten times slower (30 to 400 ms at 50 rooms), which says nothing about the code: raise `P95_MS` there.
+What the rooms in Valkey and the second replica cost: every command now reads and writes the room in Valkey (a compare-and-set) and the other replica hears of it through a channel, where it used to change an object in the process. The median round trip goes from 1 ms to 1 to 7 ms at 50 rooms and to 5 to 28 ms at 100 rooms, the p95 from 3 ms to 12 to 99 ms at 50 rooms and to 88 to 144 ms at 100, and the games played in 5 minutes by 100 rooms fall from 10741 to 6417 to 8161 (thinking alone takes a game about 3 seconds, the pace of one replica in memory). At 200 rooms the two replicas are no slower than the single one in memory (130 ms against 169 ms): they share the work of two JVMs, or the run was on a faster runner, since runs of the same size differ more than that and no ranking of the sizes among themselves can be read in the table.
 
-The `load` workflow runs the short profile on every pull request that touches `backend/**`, `load/**` or the workflow itself, and the long one on demand (Actions, Load, Run workflow), puts the numbers in the job summary and keeps `load/results/` as the `load-results` artifact. It is not a required check: it measures a shared runner, and a slow run is a reason to look, not to block a merge.
+Each threshold is **ten times the worst p95 of its profile, rounded up to a multiple of 50 ms**: 99 ms gives 1000 for `short` and 144 ms gives 1450 for `long`. They were 50 and 150 with one replica in memory: the cost above is why they rose, and so is the spread, since identical runs of 50 rooms differ by a factor of eight here (12 to 99 ms) where they differed by two or three with one replica. A tighter margin would turn noise into red runs, while a command that waits for others (a lock shared by every room, a slow save) moves the p95 by far more than ten. These thresholds only catch a collapse: what proves that the rooms are shared is `protocol_errors` at 0, since the five connections of a table land on both replicas. On a laptop that runs other containers the same scenario can be ten times slower, which says nothing about the code: raise `P95_MS` there.
+
+The `load` workflow plays the shape of production (two replicas and a Valkey). It runs the short profile on every pull request that touches `backend/**`, `load/**` or the workflow itself, and the long one on demand (Actions, Load, Run workflow), puts the numbers in the job summary and keeps `load/results/` as the `load-results` artifact. It is not a required check: it measures a shared runner, and a slow run is a reason to look, not to block a merge.
 
 ## Architecture
 

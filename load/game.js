@@ -103,7 +103,14 @@ class Seat {
           this.socket.close();
         }
       };
-      this.socket.onmessage = (event) => this.receive(JSON.parse(event.data));
+      this.socket.onmessage = (event) => {
+        // k6 only logs an exception thrown in a callback and ends the iteration: counted, it fails the game instead.
+        try {
+          this.receive(JSON.parse(event.data));
+        } catch (error) {
+          this.fail(error);
+        }
+      };
       this.socket.onerror = (event) => giveUp(`connection failed: ${event.error}`);
       this.socket.onclose = () => giveUp("connection closed by the server");
     });

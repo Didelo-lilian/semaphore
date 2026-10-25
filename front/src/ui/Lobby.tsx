@@ -1,5 +1,6 @@
 import { Alert, Button, Chip } from "@didelo/design-system";
 import { useState } from "react";
+import { type Motion, useListMotion } from "../motion.ts";
 import type { Player, RoomView, Team } from "../protocol.ts";
 import { explain } from "../reasons.ts";
 import { Presence } from "./Presence.tsx";
@@ -16,14 +17,24 @@ interface Props {
   onLeave: () => void;
 }
 
+/** A player who just left stays a moment, faded out and hidden from assistive technology, so the row can leave softly. */
 export const PlayerChip = ({
   player,
   you,
+  motion,
+  onSettle,
 }: {
   player: Player;
   you: boolean;
+  motion?: Motion;
+  onSettle?: () => void;
 }) => (
-  <li data-online={player.connected}>
+  <li
+    data-online={player.connected}
+    data-motion={motion}
+    aria-hidden={motion === "leave" ? true : undefined}
+    onAnimationEnd={onSettle}
+  >
     <Chip
       label={[
         player.name,
@@ -42,6 +53,10 @@ export const Lobby = ({ room, error, onJoinTeam, onStart, onLeave }: Props) => {
   const [copied, setCopied] = useState(false);
   const me = room.players.find((player) => player.id === room.you);
   const link = `${window.location.origin}/?room=${room.code}`;
+  const { shown, motionOf, settle } = useListMotion(
+    room.players,
+    (player) => player.id,
+  );
   const onTheDock = room.players.filter((player) => player.team === null);
   const away = room.players.filter((player) => !player.connected);
   const teamsReady =
@@ -50,6 +65,17 @@ export const Lobby = ({ room, error, onJoinTeam, onStart, onLeave }: Props) => {
       (team) =>
         room.players.filter((p) => p.team === team).length >= MIN_PER_TEAM,
     );
+
+  const chips = (players: Player[]) =>
+    players.map((player) => (
+      <PlayerChip
+        key={player.id}
+        player={player}
+        you={player.id === room.you}
+        motion={motionOf(player.id)}
+        onSettle={() => settle(player.id)}
+      />
+    ));
 
   const copy = async () => {
     await navigator.clipboard?.writeText(link);
@@ -93,13 +119,7 @@ export const Lobby = ({ room, error, onJoinTeam, onStart, onLeave }: Props) => {
                 <span className="sem-count">{members.length}</span>
               </h2>
               <ul className="sem-players">
-                {members.map((player) => (
-                  <PlayerChip
-                    key={player.id}
-                    player={player}
-                    you={player.id === room.you}
-                  />
-                ))}
+                {chips(shown.filter((player) => player.team === team))}
               </ul>
               {me?.team === team ? (
                 <p className="sem-in-team">✓ Tu es dans cette équipe</p>
@@ -117,13 +137,7 @@ export const Lobby = ({ room, error, onJoinTeam, onStart, onLeave }: Props) => {
         <section aria-label="Sans équipe">
           <h2 className="sem-dock-title">Sur le quai</h2>
           <ul className="sem-players">
-            {onTheDock.map((player) => (
-              <PlayerChip
-                key={player.id}
-                player={player}
-                you={player.id === room.you}
-              />
-            ))}
+            {chips(shown.filter((player) => player.team === null))}
           </ul>
         </section>
       )}

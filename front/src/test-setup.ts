@@ -14,3 +14,8 @@ globalThis.ResizeObserver = class {
   unobserve() {}
   disconnect() {}
 };
+
+// jsdom does not implement it. The game reads it to know whether it may animate, and the tests default to "no":
+// the screen is then final at once, with no marker for CSS and no row kept to fade out.
+window.matchMedia = (media: string) =>
+  ({ matches: false, media }) as MediaQueryList;

@@ -1,6 +1,6 @@
 # 10. Guest sessions in Valkey
 
-Date: 2026-10-25 · Status: proposed (the model below is recommended; what becomes of a guest who signs in later is Lilian's call, at the end)
+Date: 2026-10-25 · Status: accepted, the session built; the handshake and the front follow (what becomes of a guest who signs in later is Lilian's call, at the end)
 
 ## Context
 
@@ -64,10 +64,11 @@ This is the decision for Lilian. The code is #54 and #55; this ADR only has to k
 
 - **A rolling deploy signs nobody out.** The sessions are in Valkey and hold only strings.
 - **A guest is a browser.** Clearing cookies makes a new guest and another device is another guest. The cookie is the whole proof: whoever holds it is the guest, which is fine for a pseudo and is not for an account (#54 adds what it needs).
-- **A session is a hash in the same Valkey as the rooms**, under the same `maxmemory` of 64 MB with `noeviction`. A flood of `PUT /api/me` would fill it as a flood of rooms would, answered as "the server is full, try again later". The limits at the edge are the defence, and the implementation measures what a session costs and writes it here.
+- **A session is a hash in the same Valkey as the rooms**, under the same `maxmemory` of 64 MB with `noeviction`. A flood of `PUT /api/me` would fill it as a flood of rooms would, answered as "the server is full, try again later". The limits at the edge are the defence. Measured with the image run as production does (384 MiB, read-only, a Valkey with `maxmemory 64mb`), a guest is about 830 bytes: 1000 guests are 0.8 MB, and 64 MB would hold about 77 000 of them if the rooms took nothing.
 - **Valkey losing its data loses the sessions**: with the append-only file every second, a second at most. A guest then types their pseudo again.
 - **A browser that refuses a `Secure` cookie over plain HTTP** (Safari on `http://localhost`) falls back to naming the player in each room. Chromium accepts it on `localhost`, and so does the end-to-end test.
-- **Memory and start-up** go up with Spring Security and Spring Data Redis; the implementation measures both against the 384 MiB of a replica and writes the numbers here.
+- **Memory and start-up** hardly move with Spring Security and Spring Data Redis: the backend at rest is 162.6 MiB of 384 without them and 163.7 MiB with them, and starts in about as long (2 to 5 seconds, both). After 1000 guests created through the API it is at 186.5 MiB, which is the heap and the classes of the first requests, not something kept.
+- **Valkey out of reach** is a 503 on `/api/me` with "the server is busy, try again", also when the session is saved at the end of a `PUT`; a visitor who has no session is still answered, and `/actuator/health` stays UP. Two details came from testing it, since neither is obvious: Spring MVC reads the session on every request (the flash attributes, and the event it publishes after each request), which would fail a WebSocket handshake that can go on without one, so both are off; and the error surfaces from several places (the controller, the end of the request), so one filter outside the session filter turns it into the 503.
 - **Not covered**: a list of a guest's sessions or "sign out everywhere" (it needs the indexed repository, which is not worth it for a pseudo).
 
 ### Rejected

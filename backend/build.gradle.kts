@@ -21,6 +21,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
     implementation("org.springframework.boot:spring-boot-starter-websocket")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    implementation("org.springframework.boot:spring-boot-starter-security")
+    implementation("org.springframework.session:spring-session-data-redis")
     implementation("io.lettuce:lettuce-core")
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")

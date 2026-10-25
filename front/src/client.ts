@@ -147,18 +147,15 @@ export class GameClient {
         return;
       }
       this.socket = null;
-      const refused = event.reason === TOO_MANY_MISSES;
+      const reason =
+        event.reason === TOO_MANY_MISSES ? TOO_MANY_MISSES : "connection lost";
       for (const { reject } of this.waiting.splice(0)) {
-        reject(new Error(refused ? TOO_MANY_MISSES : "connection lost"));
+        reject(new Error(reason));
       }
       // Their promises are settled: sending them on the next connection would play them twice.
       this.pending = [];
       if (event.reason === REPLACED) {
         this.update({ connection: "replaced" });
-      } else if (refused) {
-        // Reconnecting would only ask again: the next command opens a fresh connection.
-        this.queryClient.removeQueries({ queryKey: roomKey });
-        this.update({ connection: "idle", error: TOO_MANY_MISSES });
       } else if (this.store.load() !== null) {
         this.update({ connection: "reconnecting" });
         const delay =
@@ -168,7 +165,7 @@ export class GameClient {
       } else {
         // Nothing to come back to, like a spectator who has no seat: the link starts again.
         this.queryClient.removeQueries({ queryKey: roomKey });
-        this.update({ connection: "idle", error: "connection lost" });
+        this.update({ connection: "idle", error: reason });
       }
     };
   }

@@ -71,6 +71,10 @@ public class GameSocketHandler extends TextWebSocketHandler {
   @Override
   protected void handleTextMessage(WebSocketSession raw, TextMessage message) {
     var session = sessions.get(raw.getId());
+    // The connection closed, a limit hit here included, while this message was still arriving.
+    if (session == null) {
+      return;
+    }
     // Stays null for a message too broken to read: there is no id to answer it with.
     String id = null;
     try {

@@ -356,16 +356,16 @@ describe("GameClient", () => {
     await expect(again).resolves.toMatchObject({ you: null });
   });
 
-  it("does not rejoin in a loop after that close, even with a seat stored", () => {
+  it("rejoins a stored seat after that close like after any lost connection", () => {
     const client = connect(memoryStore({ code: "ABCDE", token: "t" }));
     client.start();
     last().accept();
     last().drop("too many unknown rooms");
-    vi.advanceTimersByTime(60_000);
-    expect(FakeSocket.all).toHaveLength(1);
-    expect(client.getSnapshot()).toEqual({
-      connection: "idle",
-      error: "too many unknown rooms",
-    });
+    expect(client.getSnapshot().connection).toBe("reconnecting");
+    vi.advanceTimersByTime(500);
+    last().accept();
+    expect(last().sent).toEqual([
+      { type: "rejoin", code: "ABCDE", token: "t" },
+    ]);
   });
 });

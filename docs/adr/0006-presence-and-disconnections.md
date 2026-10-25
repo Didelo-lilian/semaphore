@@ -14,7 +14,7 @@ Those are three decisions of different sizes, so this ADR cuts the work in incre
 
 ## Decision
 
-### Three increments
+### Four increments
 
 | # | Increment | What it adds |
 |---|---|---|
@@ -40,7 +40,7 @@ Those are three decisions of different sizes, so this ADR cuts the work in incre
 | A spectator's seat (3) | none: no token, reloading the page goes through the link again | There is nothing to restore, and spectators do not keep a room alive |
 | Watching a lobby (3) | refused: whoever comes to a lobby joins as a player | A lobby has no game to watch, and its visitors are the players it waits for |
 | Where one asks to watch (3) | a button on the invitation page, no name asked | The link is what a late friend has; only the link offers it, not the code typed by hand |
-| Unknown codes one connection may try (4) | 5, then the server closes it | A friend mistypes a code once or twice; five in a row is someone scanning the codes, and `watch` made a guessed code worth more: a game in progress shows its table to whoever finds it. A constant of the handler, not a setting |
+| Unknown codes one connection may try (4) | 5, then the server closes it | A friend mistypes a code once or twice; five on one connection is someone scanning the codes, and `watch` made a guessed code worth more: a game in progress shows its table to whoever finds it. A constant of the handler, not a setting |
 | What counts as a miss (4) | a `joinRoom` or a `watch` whose code finds no room; a success does not reset the count | The count is a budget for the connection, not a streak: a client could otherwise interleave a lookup it knows with every guess. A room swept between the lookup and the entry is not a miss |
 
 ### Increment 1
@@ -113,8 +113,9 @@ stateDiagram-v2
 
 - **The handler counts, per connection.** `GameSocketHandler` keeps the misses of each connection in a map beside its seat, cleaned in `afterConnectionClosed`: nothing global and nothing per address, since the edge already caps the open WebSockets per address at 24 and rate-limits the requests ([infra ADR 0015](https://github.com/Didelo-lilian/infra/blob/main/docs/adr/0015-the-game-behind-the-edge.md)). What a per-connection count cannot see is a client that reconnects; the edge's limits bound how fast it can.
 - **The fifth miss closes the connection** with `CloseStatus.POLICY_VIOLATION` (1008) and the reason `too many unknown rooms`, and sends nothing else: the refusal that would follow reaches nobody, so the front learns of the limit from the close, not from a fifth "no such room".
-- **`rejoin` is not counted.** It needs a token as well as a code, and the front sends it once, on opening, for the seat it stored; a valid `rejoin` is never blocked by earlier misses. The price is that `rejoin` still tells a code that exists ("unknown player") from one that does not ("no such room"), without limit; a guess costs a token the caller does not have either way.
-- **The front does not reconnect after that close**, whether or not a seat is stored: it would ask again with a fresh count. The close reason rejects the command in flight and is shown in French; the next command the visitor sends opens a new connection.
+- **`rejoin` is not counted**, as the issue has it: the front sends it on every opening while a seat is stored, so a valid `rejoin` is never blocked by earlier misses. The price is a known gap: `rejoin` still tells a code that exists ("unknown player") from one that does not ("no such room"), without limit, and `watch` needs no token, so a client can look for codes with `rejoin` and spend its misses on nothing. Counting `rejoin` too is one word (`lookUp` in place of `room` in `rejoin`); a stored seat that points at a swept room would then cost one miss, which the front never repeats.
+- **The front says why and does not retry the command.** The close reason rejects the command in flight and is shown in French. Without a seat the connection stays closed, and the next command the visitor sends opens a new one; a player who is seated reconnects and rejoins as after any lost connection, which is never counted.
+- **A closed connection may keep sending.** The container reads the frames already on their way until the client answers the close, so the handler ignores a message whose connection it has already forgotten, instead of letting it create a room nobody can reach.
 
 ```mermaid
 stateDiagram-v2
@@ -136,4 +137,4 @@ stateDiagram-v2
 - The delays are constants of `Room` (`TURN_GRACE`, `SIGNALER_LIMIT`), not settings: the tests move the clock. The front says nothing about the 5 minutes beyond a Signaleur who leaves, and a game ended that way shows its winner like any other.
 - A spectator whose connection drops, or who reloads, has to go through the link again: nothing is kept for them, and a lost connection (not a reload) is said on the invitation page. A room swept while spectators watch stops for them without a word; nothing could change in it anymore, since the sweep only drops a room whose players have all been away for 30 minutes.
 - Watching is offered by the invitation link only: someone who types a code by hand joins as a player. A lobby visitor who asks to watch is told the game has not started, and a late friend who tries to join a game in progress is told it has started, with the button to watch next to it.
-- A visitor who mistypes a code five times in a row is cut off and told so; trying again opens a connection with a count of zero, so the limit turns a scan into one handshake per five codes rather than stopping it: how fast a client can reconnect is the edge's to bound.
+- A visitor who mistypes a code five times is cut off and told so; trying again opens a connection with a count of zero, so the limit turns a scan into one handshake per five codes rather than stopping it: how fast a client can reconnect is the edge's to bound.

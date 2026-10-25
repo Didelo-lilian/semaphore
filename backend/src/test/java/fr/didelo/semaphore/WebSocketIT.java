@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import fr.didelo.semaphore.game.Room;
+import fr.didelo.semaphore.game.RoomRegistry;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -12,6 +13,7 @@ import java.net.http.WebSocket;
 import java.net.http.WebSocketHandshakeException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -36,6 +38,8 @@ class WebSocketIT {
 
   // The application's own mapper, so the test reads the messages as the server writes them.
   @Autowired JsonMapper json;
+
+  @Autowired RoomRegistry rooms;
 
   private final HttpClient http = HttpClient.newHttpClient();
   private final List<Client> clients = new ArrayList<>();
@@ -664,6 +668,27 @@ class WebSocketIT {
     assertThat(again.await("joined").path("playerId").asString())
         .isEqualTo(bob.joined.path("playerId").asString());
     assertThat(again.closeCode).isNull();
+  }
+
+  @Test
+  void whatAClosedConnectionKeepsSendingIsIgnored() throws Exception {
+    var client = new Client(ALLOWED_ORIGIN);
+    var roomsBefore = rooms.all().size();
+    missRooms(client, 4);
+
+    // The server may keep reading frames until the client answers its close: none of them must act.
+    try {
+      client.send("{\"type\":\"watch\",\"code\":\"00000\"}");
+      for (var i = 0; i < 5; i++) {
+        client.send("{\"type\":\"createRoom\",\"name\":\"Ana\"}");
+      }
+    } catch (CompletionException e) {
+      // the connection is already closed on the client's side
+    }
+    eventually(() -> client.closeCode != null);
+    Thread.sleep(300);
+
+    assertThat(rooms.all()).hasSize(roomsBefore);
   }
 
   @Test

@@ -117,7 +117,6 @@ describe("the game in the browser", () => {
     expect(
       await screen.findByText(/Trop de codes inconnus/),
     ).toBeInTheDocument();
-    expect(FakeSocket.all).toHaveLength(1);
   });
 
   it("shows the refusal of the server on the page that asked", async () => {

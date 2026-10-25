@@ -154,6 +154,18 @@ class GameSocketHandlerTest {
   }
 
   @Test
+  void aMessageThatArrivesAfterTheConnectionClosedIsIgnored() throws Exception {
+    var session = connect("s1");
+    handler.afterConnectionClosed(session, CloseStatus.GOING_AWAY);
+
+    receive(session, "{\"type\":\"createRoom\",\"name\":\"Ana\"}");
+    receive(session, "{\"type\":\"watch\",\"code\":\"00000\"}");
+
+    assertThat(registry.all()).isEmpty();
+    verify(session, never()).sendMessage(any());
+  }
+
+  @Test
   void aLeaveFromAConnectionWithoutASeatIsRefused() throws Exception {
     var session = connect("s1");
 

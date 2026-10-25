@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.4.0](https://github.com/Didelo-lilian/semaphore/compare/v0.3.0...v0.4.0) (2026-10-25)
+
+
+### Features
+
+* close a connection that asks for five unknown rooms ([9b36b75](https://github.com/Didelo-lilian/semaphore/commit/9b36b75bc009e93277b7fb304730b4835065795d))
+* **front:** animate card reveals and player presence ([#42](https://github.com/Didelo-lilian/semaphore/issues/42)) ([479a054](https://github.com/Didelo-lilian/semaphore/commit/479a054bad488fb1b22cf4926e570cfd2a1a5859))
+* keep the rooms in Redis, shared by the replicas ([4587a72](https://github.com/Didelo-lilian/semaphore/commit/4587a72b8d0d8f593cf790bb5cb5e2a0ca6f187b))
+
+
+### Bug fixes
+
+* harden the rooms in Redis before two replicas go live ([e370b6a](https://github.com/Didelo-lilian/semaphore/commit/e370b6aef1019caf3fd9799ff43f190de9394579))
+
+
+### Documentation
+
+* keep the rooms in Redis, shared by the replicas ([#39](https://github.com/Didelo-lilian/semaphore/issues/39)) ([06badc0](https://github.com/Didelo-lilian/semaphore/commit/06badc03fa94313d52cc15447dc115a5c15eb9e9))
+
 ## [0.3.0](https://github.com/Didelo-lilian/semaphore/compare/v0.2.0...v0.3.0) (2026-10-24)
 
 

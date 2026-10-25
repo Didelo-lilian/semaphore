@@ -7,6 +7,10 @@ const EXACT: Record<string, string> = {
     "La partie n'a pas encore commencé : rejoins le salon pour jouer.",
   "too many unknown rooms":
     "Trop de codes inconnus : la connexion a été coupée. Vérifie le code, puis réessaie.",
+  "the server is busy, try again":
+    "Le serveur est occupé, réessaie dans un instant.",
+  "the server is full, try again later":
+    "Le serveur est plein, réessaie plus tard.",
   "too many spectators": "Trop de monde regarde déjà cette partie.",
   "spectators cannot play": "Un spectateur regarde sans jouer.",
   "a name has 1 to 20 characters": "Un nom fait de 1 à 20 caractères.",

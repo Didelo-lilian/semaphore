@@ -1,6 +1,11 @@
 spring:
   application:
     name: semaphore
+  task:
+    scheduling:
+      pool:
+        # The heartbeat must not wait behind a slow sweep.
+        size: 3
 
 management:
   endpoints:

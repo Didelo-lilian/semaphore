@@ -1,6 +1,6 @@
 # 3. Rooms, the state machine and the protocol
 
-Date: 2026-10-24 · Status: accepted, amended by [ADR 0006](0006-presence-and-disconnections.md)
+Date: 2026-10-24 · Status: accepted, amended by [ADR 0006](0006-presence-and-disconnections.md) and [ADR 0008](0008-rooms-in-redis-shared-by-replicas.md)
 
 ## Context
 
@@ -10,7 +10,7 @@ Date: 2026-10-24 · Status: accepted, amended by [ADR 0006](0006-presence-and-di
 
 ### One place for the rules
 
-`Room` (package `game`) is one game, from the lobby to the end, and the only class that knows the rules. It has no dependency on Spring or on the WebSocket: the clock and the random generator are given to it, so a test plays a whole game with a fixed seed. It is not thread safe; the WebSocket handler and the sweep synchronize on the room they touch.
+`Room` (package `game`) is one game, from the lobby to the end, and the only class that knows the rules. It has no dependency on Spring or on the WebSocket: the clock and the random generator are given to it, so a test plays a whole game with a fixed seed. It is not thread safe and it is not shared: a change loads the room from its saved state (`RoomState`, an immutable record), applies a command and saves the new state if nobody saved a newer one meanwhile ([ADR 0008](0008-rooms-in-redis-shared-by-replicas.md)).
 
 ### Four states
 
@@ -62,13 +62,13 @@ sequenceDiagram
   participant R as Room
   participant L as Lookouts' browsers
   S->>H: {"type":"signal","id":"7","word":"voyage","number":2}
-  H->>R: apply(player, Signal), under the room's lock
+  H->>R: load the room, apply(player, Signal), save
   alt refused
     R-->>H: IllegalMove(reason)
     H-->>S: {"type":"error","id":"7","reason":"..."}
   else accepted
-    R-->>H: the room has changed
-    Note over H: one view per player is built under the lock,<br/>the sends happen after it is released
+    R-->>H: the room has changed and is saved
+    Note over H: one view per player is built from the saved room,<br/>the sends happen after the save
     H-->>S: roomUpdated with id 7, the view with the key
     H-->>L: roomUpdated without id, the view without the key
   end
@@ -97,13 +97,13 @@ The id is the handler's business: `Room` never sees it, and `GameSocketHandler` 
 
 ### Rooms
 
-`RoomRegistry` keeps every room in memory under a five character code without `0`, `O`, `1`, `I` or `L`, since it is read aloud and typed. A room none of whose players is connected for 30 minutes is dropped by a sweep that runs every minute, and so is a room nobody ever joined: spectators do not keep a room alive. A connection holds one seat, or watches: a second `createRoom`, `joinRoom` or `rejoin` on it is refused, and a room that could not be entered (a bad name) is dropped at once. A message with a missing field is as unreadable as broken JSON.
+`RoomRegistry` creates, finds and changes the rooms through a `RoomStore`, in memory by default and in Redis when `SEMAPHORE_REDIS_URL` is set ([ADR 0008](0008-rooms-in-redis-shared-by-replicas.md)), under a five character code without `0`, `O`, `1`, `I` or `L`, since it is read aloud and typed. A room none of whose players is connected for 30 minutes is dropped by a sweep that runs every minute, and so is a room nobody ever joined: spectators do not keep a room alive. A connection holds one seat, or watches: a second `createRoom`, `joinRoom` or `rejoin` on it is refused, and a room that could not be entered (a bad name) is never kept. A message with a missing field is as unreadable as broken JSON.
 
-A player is the connection that holds their token. Closing the connection marks the player absent, in the lobby as in a game, and `rejoin` with the token gives the seat back; the new connection replaces the old one, which is closed, so a late close of the old one changes nothing. In the lobby the seat is kept for 30 seconds only and then the player is removed, so nobody absent blocks the start or keeps the host seat for long, and the host cannot start while someone is offline; leaving on purpose (`leave`) removes the player at once ([ADR 0006](0006-presence-and-disconnections.md)). Once the game has started the seat stays for good, and a missing Signaleur costs their team its turns, then the game ([ADR 0006](0006-presence-and-disconnections.md)): the sweep that runs every second passes the turn after 60 seconds away, at once for someone who left on purpose, and ends the game when a Signaleur has been away for 5 minutes. Nobody replaces a Signaleur: the key stays with the first of the team.
+A player is the connection that holds their token. Closing the connection marks the player absent, in the lobby as in a game, and `rejoin` with the token gives the seat back; the new connection replaces the old one, which is closed, so a late close of the old one changes nothing; with several replicas the old one may be on another, which is told through `seatTaken` ([ADR 0008](0008-rooms-in-redis-shared-by-replicas.md)). In the lobby the seat is kept for 30 seconds only and then the player is removed, so nobody absent blocks the start or keeps the host seat for long, and the host cannot start while someone is offline; leaving on purpose (`leave`) removes the player at once ([ADR 0006](0006-presence-and-disconnections.md)). Once the game has started the seat stays for good, and a missing Signaleur costs their team its turns, then the game ([ADR 0006](0006-presence-and-disconnections.md)): the sweep that runs every second passes the turn after 60 seconds away, at once for someone who left on purpose, and ends the game when a Signaleur has been away for 5 minutes. Nobody replaces a Signaleur: the key stays with the first of the team.
 
 A spectator is a connection with no seat and no token, which the room only counts: closing it, or `leave`, takes them off the count at once, and a reload goes back through the invitation link. Every command of a spectator is refused ("spectators cannot play"), as is entering a room again.
 
-Changes happen under the room's lock but the messages go out after it is released: a slow or broken connection (its buffer overflowing throws `SessionLimitExceededException`) never holds a room or stops the others from getting their view.
+A change is saved before any message goes out: a slow or broken connection (its buffer overflowing throws `SessionLimitExceededException`) never holds a room or stops the others from getting their view.
 
 ### The words
 
@@ -111,9 +111,9 @@ Changes happen under the room's lock but the messages go out after it is release
 
 ## Consequences
 
-- Messages are sent outside the room's lock, so two updates can reach a client out of order: the front keeps the view with the highest `version`.
+- A change is saved first and the messages go out after it, from several threads and replicas, so two updates can reach a connection out of order, and the server does not sort them, since holding a connection while another is written to would let one slow client stall the rest: the front keeps the view with the highest `version`.
 - A Signaleur who disconnects no longer blocks the turn for good: the table says who the game is waiting for and for how long, the turn passes after 60 seconds, and the team loses after 5 minutes ([ADR 0006](0006-presence-and-disconnections.md)). The one who comes back keeps the key, since nobody replaced them.
-- A restart of the server loses every room. For several replicas the rooms move to Redis, shared by all of them, and `Room` keeps the rules ([ADR 0008](0008-rooms-in-redis-shared-by-replicas.md)).
+- A restart of the server loses every room only without Redis: with `SEMAPHORE_REDIS_URL` the rooms live in Redis, shared by all the replicas, and `Room` keeps the rules ([ADR 0008](0008-rooms-in-redis-shared-by-replicas.md)).
 - The records of `ClientMessage`, `ServerMessage` and `RoomView` are the contract the front validates with Zod ([#4](https://github.com/Didelo-lilian/semaphore/issues/4)).
 - A command that the server never answers is not timed out: only a lost connection rejects it.
 - Twelve players, two per team at least and 160 words are constants or configuration, not rules: they can move without touching the state machine.

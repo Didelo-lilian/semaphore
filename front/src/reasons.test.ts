@@ -8,6 +8,15 @@ describe("explain", () => {
     );
   });
 
+  it("translates what the server says when Redis cannot take a change", () => {
+    expect(explain("the server is busy, try again")).toBe(
+      "Le serveur est occupé, réessaie dans un instant.",
+    );
+    expect(explain("the server is full, try again later")).toBe(
+      "Le serveur est plein, réessaie plus tard.",
+    );
+  });
+
   it("translates the refusals that carry a number", () => {
     expect(explain("each team needs at least 2 players")).toBe(
       "Chaque équipe a besoin d'au moins 2 joueurs.",

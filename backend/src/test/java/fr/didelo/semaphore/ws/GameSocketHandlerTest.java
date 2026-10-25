@@ -2,19 +2,23 @@ package fr.didelo.semaphore.ws;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import fr.didelo.semaphore.game.MutableClock;
 import fr.didelo.semaphore.game.Room;
 import fr.didelo.semaphore.game.RoomRegistry;
+import fr.didelo.semaphore.game.Unavailable;
 import fr.didelo.semaphore.game.WordList;
+import fr.didelo.semaphore.store.InMemoryRoomEvents;
+import fr.didelo.semaphore.store.InMemoryRoomStore;
+import fr.didelo.semaphore.store.LocalCluster;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -30,8 +34,12 @@ class GameSocketHandlerTest {
 
   private final JsonMapper json = JsonMapper.builder().build();
   private final MutableClock clock = new MutableClock();
-  private final RoomRegistry registry = spy(new RoomRegistry(clock, new WordList(), 2));
-  private final GameSocketHandler handler = new GameSocketHandler(json, registry);
+  private final RoomRegistry registry =
+      new RoomRegistry(new InMemoryRoomStore(), clock, new WordList(), 2);
+  private final LocalCluster cluster = new LocalCluster();
+  private final GameSocketHandler handler =
+      new GameSocketHandler(json, registry, new InMemoryRoomEvents(), cluster);
+  private final RoomSweeper sweeper = new RoomSweeper(registry, cluster, handler);
 
   private WebSocketSession connect(String id) throws Exception {
     var session = mock(WebSocketSession.class);
@@ -102,7 +110,7 @@ class GameSocketHandlerTest {
     assertThat(lastPayload(session))
         .contains("\"error\"")
         .contains("a name has 1 to 20 characters");
-    verify(registry).drop(any());
+    assertThat(registry.codes()).isEmpty();
   }
 
   @Test
@@ -113,7 +121,7 @@ class GameSocketHandlerTest {
     receive(session, "{\"type\":\"createRoom\",\"name\":\"Ana\"}");
 
     assertThat(lastPayload(session)).contains("you are already in a room");
-    verify(registry, times(1)).drop(any());
+    assertThat(registry.codes()).hasSize(1);
   }
 
   @Test
@@ -126,11 +134,11 @@ class GameSocketHandlerTest {
     handler.afterConnectionClosed(bob, CloseStatus.GOING_AWAY);
 
     clock.advance(Room.LOBBY_GRACE);
-    handler.dropAbsent();
+    sweeper.dropAbsent();
     assertThat(json.readTree(lastPayload(host)).path("room").path("players")).hasSize(2);
 
     clock.advance(Duration.ofSeconds(1));
-    handler.dropAbsent();
+    sweeper.dropAbsent();
     assertThat(json.readTree(lastPayload(host)).path("room").path("players")).hasSize(1);
   }
 
@@ -161,7 +169,7 @@ class GameSocketHandlerTest {
     receive(session, "{\"type\":\"createRoom\",\"name\":\"Ana\"}");
     receive(session, "{\"type\":\"watch\",\"code\":\"00000\"}");
 
-    assertThat(registry.all()).isEmpty();
+    assertThat(registry.codes()).isEmpty();
     verify(session, never()).sendMessage(any());
   }
 
@@ -186,14 +194,109 @@ class GameSocketHandlerTest {
         .isEqualTo(60);
 
     clock.advance(Room.TURN_GRACE.minusSeconds(1));
-    handler.expire();
+    sweeper.expire();
     assertThat(json.readTree(lastPayload(lookout)).path("room").path("turn").asString())
         .isEqualTo(turn);
 
     clock.advance(Duration.ofSeconds(1));
-    handler.expire();
+    sweeper.expire();
     var room = json.readTree(lastPayload(lookout)).path("room");
     assertThat(room.path("turn").asString()).isNotEqualTo(turn);
     assertThat(room.path("turnPassesIn").isNull()).isTrue();
+  }
+
+  /** A handler over a store that fails when told to, with the host of a new room in it. */
+  private record Failing(
+      GameSocketHandler handler, InMemoryRoomStore store, WebSocketSession host) {}
+
+  private Failing failingStore() throws Exception {
+    var store = spy(new InMemoryRoomStore());
+    var handler =
+        new GameSocketHandler(
+            json,
+            new RoomRegistry(store, clock, new WordList(), 2),
+            new InMemoryRoomEvents(),
+            cluster);
+    var host = mock(WebSocketSession.class);
+    when(host.getId()).thenReturn("host");
+    handler.afterConnectionEstablished(host);
+    handler.handleTextMessage(host, new TextMessage("{\"type\":\"createRoom\",\"name\":\"Ana\"}"));
+    return new Failing(handler, store, host);
+  }
+
+  @Test
+  void aCommandThatFindsTheStoreUnavailableIsAnsweredWithAnErrorAndTheConnectionStays()
+      throws Exception {
+    var failing = failingStore();
+    doThrow(new Unavailable("the server is busy, try again")).when(failing.store()).find(any());
+
+    failing
+        .handler()
+        .handleTextMessage(
+            failing.host(),
+            new TextMessage("{\"type\":\"joinTeam\",\"id\":\"7\",\"team\":\"BABORD\"}"));
+
+    var sent = ArgumentCaptor.forClass(TextMessage.class);
+    verify(failing.host(), atLeastOnce()).sendMessage(sent.capture());
+    var answer = json.readTree(sent.getValue().getPayload());
+    assertThat(answer.path("type").asString()).isEqualTo("error");
+    assertThat(answer.path("id").asString()).isEqualTo("7");
+    assertThat(answer.path("reason").asString()).isEqualTo("the server is busy, try again");
+    verify(failing.host(), never()).close(any());
+  }
+
+  @Test
+  void aRejoinThatCannotBeSavedClosesTheOldConnectionTooSinceItsSeatIsGone() throws Exception {
+    var failing = failingStore();
+    var joined = ArgumentCaptor.forClass(TextMessage.class);
+    verify(failing.host(), atLeastOnce()).sendMessage(joined.capture());
+    var first = json.readTree(joined.getAllValues().getFirst().getPayload());
+    var again = mock(WebSocketSession.class);
+    when(again.getId()).thenReturn("again");
+    failing.handler().afterConnectionEstablished(again);
+    doThrow(new Unavailable("the server is busy, try again"))
+        .when(failing.store())
+        .replace(any(), anyInt());
+
+    failing
+        .handler()
+        .handleTextMessage(
+            again,
+            new TextMessage(
+                "{\"type\":\"rejoin\",\"code\":\""
+                    + first.path("room").path("code").asString()
+                    + "\",\"token\":\""
+                    + first.path("token").asString()
+                    + "\"}"));
+
+    var busy = CloseStatus.SERVICE_OVERLOAD.withReason("the server is busy, try again");
+    verify(again).close(busy);
+    verify(failing.host()).close(busy);
+  }
+
+  @Test
+  void aRejoinThatFindsTheStoreUnavailableClosesTheConnectionSoTheFrontTriesAgain()
+      throws Exception {
+    var failing = failingStore();
+    var joined = ArgumentCaptor.forClass(TextMessage.class);
+    verify(failing.host(), atLeastOnce()).sendMessage(joined.capture());
+    var first = json.readTree(joined.getAllValues().getFirst().getPayload());
+    var again = mock(WebSocketSession.class);
+    when(again.getId()).thenReturn("again");
+    failing.handler().afterConnectionEstablished(again);
+    doThrow(new Unavailable("the server is busy, try again")).when(failing.store()).find(any());
+
+    failing
+        .handler()
+        .handleTextMessage(
+            again,
+            new TextMessage(
+                "{\"type\":\"rejoin\",\"code\":\""
+                    + first.path("room").path("code").asString()
+                    + "\",\"token\":\""
+                    + first.path("token").asString()
+                    + "\"}"));
+
+    verify(again).close(CloseStatus.SERVICE_OVERLOAD.withReason("the server is busy, try again"));
   }
 }

@@ -11,7 +11,9 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.random.RandomGenerator;
 import java.util.stream.IntStream;
@@ -20,7 +22,8 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * One game, from the lobby to the end. It is the only place that knows the rules (ADR 0001). It is
- * not thread safe: whoever shares it synchronizes on it.
+ * not thread safe and is not shared: it is restored from a {@link RoomState}, changed by one
+ * command and saved back as a new state (ADR 0008).
  */
 @RequiredArgsConstructor
 public final class Room {
@@ -52,20 +55,82 @@ public final class Room {
   private List<Card> board = List.of();
   private Phase phase = Phase.LOBBY;
   // Spectators have no seat and no token, so the room only counts them: they never keep it alive.
-  private int spectators;
+  // Per replica, the one that holds their connection, so the count goes with it if it dies.
+  private final Map<String, Integer> spectators = new LinkedHashMap<>();
   private Team turn;
   private ActiveSignal signal;
   private int revealsLeft;
   private Team winner;
   // Grows with every change, so a client can drop a view that arrives after a newer one.
   private int version;
-  // Set by the first sweep when nobody ever acted: a room is built to be joined right away.
   private Instant lastActivity;
   // The last command or pass of the turn: the wait for someone away starts again after each one.
   private Instant lastMove;
 
+  /** The room as {@code state} left it, with the settings of this application. */
+  public static Room restore(
+      RoomState state,
+      Clock clock,
+      RandomGenerator random,
+      int minTeamSize,
+      List<String> wordPool) {
+    var room = new Room(state.code(), clock, random, minTeamSize, wordPool);
+    for (var p : state.players()) {
+      var player = new Player(p.id(), p.token(), p.name());
+      player.setTeam(p.team());
+      player.setAbsentSince(p.absentSince());
+      player.setLeft(p.left());
+      player.setReplica(p.replica());
+      room.players.put(p.id(), player);
+    }
+    room.flags.putAll(state.flags());
+    room.board = state.board();
+    room.phase = state.phase();
+    room.spectators.putAll(state.spectators());
+    room.turn = state.turn();
+    room.signal = state.signal();
+    room.revealsLeft = state.revealsLeft();
+    room.winner = state.winner();
+    room.version = state.version();
+    room.lastActivity = state.lastActivity();
+    room.lastMove = state.lastMove();
+    return room;
+  }
+
+  public RoomState state() {
+    return new RoomState(
+        code,
+        version,
+        phase,
+        turn,
+        signal,
+        revealsLeft,
+        winner,
+        Map.copyOf(flags),
+        board,
+        players.values().stream()
+            .map(
+                p ->
+                    new RoomState.PlayerState(
+                        p.getId(),
+                        p.getToken(),
+                        p.getName(),
+                        p.getTeam(),
+                        p.getAbsentSince(),
+                        p.isLeft(),
+                        p.getReplica()))
+            .toList(),
+        Map.copyOf(spectators),
+        lastActivity,
+        lastMove);
+  }
+
   public String code() {
     return code;
+  }
+
+  public int version() {
+    return version;
   }
 
   public Phase phase() {
@@ -77,14 +142,12 @@ public final class Room {
   }
 
   public boolean abandonedFor(Duration duration) {
-    if (lastActivity == null) {
-      lastActivity = clock.instant();
-    }
     return players.values().stream().noneMatch(Player::isConnected)
         && Duration.between(lastActivity, clock.instant()).compareTo(duration) > 0;
   }
 
-  public Player join(String name) {
+  /** {@code replica} is the one that holds the new player's connection. */
+  public Player join(String name, String replica) {
     if (phase != Phase.LOBBY) {
       throw new IllegalMove("the game has started");
     }
@@ -96,41 +159,82 @@ public final class Room {
       throw new IllegalMove("a name has 1 to 20 characters");
     }
     var player = new Player(UUID.randomUUID().toString(), UUID.randomUUID().toString(), trimmed);
+    player.setReplica(replica);
     players.put(player.getId(), player);
     lastActivity = clock.instant();
     version++;
     return player;
   }
 
-  /** Counts one more spectator. A lobby has no game to watch: whoever comes to it plays. */
-  public void watch() {
+  /** Counts one more spectator, held by {@code replica}. A lobby has no game to watch. */
+  public void watch(String replica) {
     if (phase == Phase.LOBBY) {
       throw new IllegalMove("the game has not started");
     }
-    if (spectators >= MAX_SPECTATORS) {
+    if (spectatorCount() >= MAX_SPECTATORS) {
       throw new IllegalMove("too many spectators");
     }
-    spectators++;
+    spectators.merge(replica, 1, Integer::sum);
     version++;
   }
 
-  public void unwatch() {
-    spectators--;
+  public void unwatch(String replica) {
+    // A replica judged dead has lost its count already: no entry is left to decrement.
+    spectators.computeIfPresent(replica, (r, count) -> count > 1 ? count - 1 : null);
     version++;
   }
 
-  public void disconnect(String playerId) {
-    players.get(playerId).setAbsentSince(clock.instant());
-    lastActivity = clock.instant();
-    version++;
-  }
-
-  public void reconnect(String playerId) {
+  /**
+   * A connection closed. Nothing changes if the player already has another one, on another replica:
+   * the old connection may close long after they took their seat back there.
+   */
+  public void disconnect(String playerId, String replica) {
     var player = players.get(playerId);
+    // Gone already: swept as absent while this connection was still open.
+    if (player != null && Objects.equals(player.getReplica(), replica)) {
+      absent(player);
+      version++;
+    }
+  }
+
+  /** The player's connection is now held by {@code replica}. */
+  public void reconnect(String playerId, String replica) {
+    var player = known(playerId);
     player.setAbsentSince(null);
     player.setLeft(false);
+    player.setReplica(replica);
     lastActivity = clock.instant();
     version++;
+  }
+
+  /**
+   * The connection of a player the room counts absent is held by {@code replica}. Nothing changes
+   * if they have left, are gone, or have taken their seat back elsewhere since the room was read.
+   */
+  public void reclaim(String playerId, String replica) {
+    var player = players.get(playerId);
+    if (player != null && player.getReplica() == null && !player.isLeft()) {
+      reconnect(playerId, replica);
+    }
+  }
+
+  /**
+   * Marks absent every player whose connection is held by a replica that is no longer alive, and
+   * forgets the spectators it held. The usual grace periods then apply. Returns whether the room
+   * changed.
+   */
+  public boolean dropReplicasNotIn(Set<String> alive) {
+    var gone =
+        players.values().stream()
+            .filter(p -> p.isConnected() && !alive.contains(p.getReplica()))
+            .toList();
+    gone.forEach(this::absent);
+    var lost = spectators.keySet().removeIf(replica -> !alive.contains(replica));
+    if (gone.isEmpty() && !lost) {
+      return false;
+    }
+    version++;
+    return true;
   }
 
   /**
@@ -140,8 +244,10 @@ public final class Room {
    */
   public void leave(String playerId) {
     if (phase != Phase.LOBBY) {
-      disconnect(playerId);
-      players.get(playerId).setLeft(true);
+      var player = known(playerId);
+      absent(player);
+      player.setLeft(true);
+      version++;
       expire();
       return;
     }
@@ -198,7 +304,7 @@ public final class Room {
   }
 
   public void apply(String playerId, Command command) {
-    var player = players.get(playerId);
+    var player = known(playerId);
     if (!phase.allows(command)) {
       throw new IllegalMove("not possible in this phase");
     }
@@ -226,6 +332,25 @@ public final class Room {
   /** What a lookout sees, from no seat: the same for every spectator, so it is built once. */
   public RoomView spectatorView() {
     return view(null);
+  }
+
+  private int spectatorCount() {
+    return spectators.values().stream().mapToInt(Integer::intValue).sum();
+  }
+
+  /** A player can be gone while their connection is still open: swept as absent by mistake. */
+  private Player known(String playerId) {
+    var player = players.get(playerId);
+    if (player == null) {
+      throw new IllegalMove("unknown player");
+    }
+    return player;
+  }
+
+  private void absent(Player player) {
+    player.setAbsentSince(clock.instant());
+    player.setReplica(null);
+    lastActivity = clock.instant();
   }
 
   private RoomView view(Player viewer) {
@@ -259,7 +384,7 @@ public final class Room {
                         p == host,
                         phase != Phase.LOBBY && p.getTeam() != null && signaler(p.getTeam()) == p))
             .toList(),
-        spectators,
+        spectatorCount(),
         board.stream()
             .map(
                 c ->

@@ -109,7 +109,7 @@ For example `PROFILE=long docker compose -f load/compose.yaml up --build --exit-
 COMPOSE_PROFILES=redis SEMAPHORE_REDIS_URL=redis://redis:6379 REPLICAS=2 docker compose -f load/compose.yaml up --build --exit-code-from k6
 ```
 
-The `redis` profile starts the Valkey image and options of production (`stacks/redis` of the infra repository, without a password: nothing but this rig reaches it), makes the replicas wait for it and hands them its address. nginx does what Traefik does, a replica per handshake with nothing sticky, so most tables get connections on both replicas (the round robin runs in each worker of nginx, a few tables land on one): a "no such room" is a room that one replica could not see. `REPLICAS=2` without the profile shows it, the rooms stay in the process of each replica and the test reports it.
+The `redis` profile starts the Valkey image and options of production (`stacks/redis` of the infra repository, without a password: nothing but this rig reaches it), makes the replicas wait for it, and `SEMAPHORE_REDIS_URL` is what tells them to use it. nginx does what Traefik does, a replica per handshake with nothing sticky, so most tables get connections on both replicas (the round robin runs in each worker of nginx, a few tables land on one): a "no such room" is a room that one replica could not see. `REPLICAS=2` alone shows it: without `SEMAPHORE_REDIS_URL` the rooms stay in the process of each replica and the test reports it.
 
 ### Thresholds
 
@@ -140,6 +140,7 @@ The same runs of one replica with its rooms in memory (`REPLICAS=1`, the compose
 | 50 | 30 s, two runs | 552, 552 | 3, 3 ms | 50, 34 ms | 148, 196 ms |
 | 100 | 5 min | 10741 | 3 ms | 21 ms | 974 ms |
 | 50 | 30 s, three runs, first measurements | 551, 550, 557 | 5, 5, 2 ms | 43, 17, 12 ms | 178, 165, 224 ms |
+| 100 | 30 s, first measurements | 975 | 43 ms | 154 ms | 1901 ms |
 | 100 | 5 min, first measurements | 10351 | 13 ms | 61 ms | 1072 ms |
 | 150 | 5 min, first measurements | 12647 | 70 ms | 170 ms | 2262 ms |
 | 200 | 5 min, first measurements | 12489 | 169 ms | 291 ms | 1966 ms |

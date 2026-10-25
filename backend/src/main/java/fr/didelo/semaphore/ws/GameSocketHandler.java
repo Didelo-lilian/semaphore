@@ -169,7 +169,7 @@ public class GameSocketHandler extends TextWebSocketHandler {
   }
 
   private List<Delivery> rejoin(WebSocketSession session, ClientMessage.Rejoin rejoin) {
-    var room = room(rejoin.code());
+    var room = lookUp(session, rejoin.code());
     var replaced = new ArrayList<WebSocketSession>();
     List<Delivery> deliveries;
     synchronized (room) {
@@ -235,20 +235,13 @@ public class GameSocketHandler extends TextWebSocketHandler {
     }
   }
 
-  private Room room(String code) {
-    return rooms.find(code).orElseThrow(() -> new IllegalMove("no such room"));
-  }
-
   /** Counts the codes that find no room on a connection: the last one closes it. */
   private Room lookUp(WebSocketSession session, String code) {
-    try {
-      return room(code);
-    } catch (IllegalMove e) {
-      if (misses.merge(session.getId(), 1, Integer::sum) >= MAX_MISSES) {
-        close(session, CloseStatus.POLICY_VIOLATION.withReason("too many unknown rooms"));
-      }
-      throw e;
+    var room = rooms.find(code);
+    if (room.isEmpty() && misses.merge(session.getId(), 1, Integer::sum) >= MAX_MISSES) {
+      close(session, CloseStatus.POLICY_VIOLATION.withReason("too many unknown rooms"));
     }
+    return room.orElseThrow(() -> new IllegalMove("no such room"));
   }
 
   private void close(WebSocketSession session, CloseStatus status) {

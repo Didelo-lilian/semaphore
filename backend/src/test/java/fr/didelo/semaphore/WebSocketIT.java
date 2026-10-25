@@ -157,13 +157,15 @@ class WebSocketIT {
     return client;
   }
 
-  /** Asks for a room that does not exist, as a join and as a watch in turn. */
+  /** Asks for a room that does not exist, as a join, a watch and a rejoin in turn. */
   private static void missRooms(Client client, int times) throws InterruptedException {
+    var asks =
+        List.of(
+            "{\"type\":\"joinRoom\",\"code\":\"00000\",\"name\":\"Ana\"}",
+            "{\"type\":\"watch\",\"code\":\"00000\"}",
+            "{\"type\":\"rejoin\",\"code\":\"00000\",\"token\":\"x\"}");
     for (var i = 0; i < times; i++) {
-      client.send(
-          i % 2 == 0
-              ? "{\"type\":\"joinRoom\",\"code\":\"00000\",\"name\":\"Ana\"}"
-              : "{\"type\":\"watch\",\"code\":\"00000\"}");
+      client.send(asks.get(i % asks.size()));
       assertThat(client.error()).isEqualTo("no such room");
     }
   }
@@ -635,6 +637,32 @@ class WebSocketIT {
     assertThat(client.history)
         .filteredOn(m -> m.path("type").asString().equals("error"))
         .hasSize(4);
+  }
+
+  @Test
+  void theServerClosesAConnectionThatKeepsTryingToRejoinARoomThatIsGone() throws Exception {
+    var client = new Client(ALLOWED_ORIGIN);
+    var rejoin = "{\"type\":\"rejoin\",\"code\":\"00000\",\"token\":\"x\"}";
+    for (var i = 0; i < 4; i++) {
+      client.send(rejoin);
+      assertThat(client.error()).isEqualTo("no such room");
+    }
+
+    client.send(rejoin);
+    eventually(() -> client.closeCode != null);
+
+    assertThat(client.closeCode).isEqualTo(1008);
+  }
+
+  @Test
+  void aSeatWhoseRoomWasSweptCostsOneMissAndTheConnectionStaysUsable() throws Exception {
+    var client = new Client(ALLOWED_ORIGIN);
+
+    client.send("{\"type\":\"rejoin\",\"code\":\"00000\",\"token\":\"x\"}");
+    assertThat(client.error()).isEqualTo("no such room");
+
+    assertThat(createRoom(client, "Ana")).hasSize(5);
+    assertThat(client.closeCode).isNull();
   }
 
   @Test

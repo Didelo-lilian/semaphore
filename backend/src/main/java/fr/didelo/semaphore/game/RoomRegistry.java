@@ -34,16 +34,19 @@ public class RoomRegistry {
   private final Clock clock;
   private final WordList wordList;
   private final int minTeamSize;
+  private final List<GameEndListener> listeners;
 
   public RoomRegistry(
       RoomStore store,
       Clock clock,
       WordList wordList,
-      @Value("${semaphore.min-team-size}") int minTeamSize) {
+      @Value("${semaphore.min-team-size}") int minTeamSize,
+      List<GameEndListener> listeners) {
     this.store = store;
     this.clock = clock;
     this.wordList = wordList;
     this.minTeamSize = minTeamSize;
+    this.listeners = listeners;
   }
 
   /**
@@ -83,8 +86,12 @@ public class RoomRegistry {
     for (var attempt = 0; attempt < ATTEMPTS; attempt++) {
       var room = find(code).orElseThrow(() -> new IllegalMove("no such room"));
       var loaded = room.version();
+      var wasEnded = room.phase() == Phase.ENDED;
       var result = change.apply(room);
       if (room.version() == loaded || store.replace(room.state(), loaded)) {
+        if (!wasEnded && room.phase() == Phase.ENDED) {
+          announce(room);
+        }
         return new Saved<>(room, result, room.version() != loaded);
       }
     }
@@ -105,11 +112,30 @@ public class RoomRegistry {
       try {
         find(code)
             .filter(room -> room.abandonedFor(ABANDONED_AFTER))
-            .ifPresent(room -> store.drop(code, room.version()));
+            .ifPresent(
+                room -> {
+                  // The write that follows the end of a game may have failed: this is its last try.
+                  if (room.phase() == Phase.ENDED) {
+                    announce(room);
+                  }
+                  store.drop(code, room.version());
+                });
       } catch (Unavailable e) {
         // This room cannot be read now: the next sweep tries again, and the others go on.
       } catch (RuntimeException e) {
         RoomFailures.log(code, "dropped", e);
+      }
+    }
+  }
+
+  private void announce(Room room) {
+    var state = room.state();
+    for (var listener : listeners) {
+      try {
+        listener.ended(state);
+      } catch (RuntimeException e) {
+        // The room is saved and the game is over: what the listeners do must never undo that.
+        RoomFailures.log(room.code(), "announced as ended", e);
       }
     }
   }

@@ -41,6 +41,8 @@ docker run --rm -v "$PWD/backend:/app" -v semaphore-gradle:/gradle-home -e GRADL
 
 There is no database by default. Set `SPRING_DATASOURCE_URL` (`jdbc:postgresql://host:5432/semaphore`, empty means none), `SPRING_DATASOURCE_USERNAME` and `SPRING_DATASOURCE_PASSWORD` to give the backend a Postgres 17: it migrates the schema when it starts with Flyway (`backend/src/main/resources/db/migration`) and keeps a `JdbcClient` for the code that needs it ([ADR 0013](docs/adr/0013-postgres-with-flyway-and-a-plain-jdbc-client.md)). In production the password is a secret file read with `SPRING_CONFIG_IMPORT=configtree:/run/secrets/`, as the Redis address is. A migration only adds, for one release, because the previous version keeps running on the new schema during a rolling deploy. The health of the backend does not include the database.
 
+A game that ends with at least one account in it is written once, by whichever replica ended it, to `game` and `game_player`, on a thread of its own: a failed write is logged and tried once more when the abandoned room is dropped, and never changes the game ([ADR 0012](docs/adr/0012-finished-games-profiles-and-the-leaderboard.md)). Nothing is written until players can sign in.
+
 ```bash
 docker run -d --rm --name semaphore-postgres -p 5432:5432 -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=semaphore postgres:17-alpine
 ```
@@ -165,7 +167,7 @@ The `load` workflow plays the shape production is moving to (two replicas and a 
 
 ## Architecture
 
-The diagram is updated in the same pull request as any change it shows. It shows two replicas of the backend with their rooms in Redis ([ADR 0008](docs/adr/0008-rooms-in-redis-shared-by-replicas.md)); one replica without `SEMAPHORE_REDIS_URL` is the same picture without Redis, its rooms in the process.
+The diagram is updated in the same pull request as any change it shows. It shows two replicas of the backend with their rooms in Redis ([ADR 0008](docs/adr/0008-rooms-in-redis-shared-by-replicas.md)); one replica without `SEMAPHORE_REDIS_URL` is the same picture without Redis, its rooms in the process. The games that end are written to Postgres when `SPRING_DATASOURCE_URL` is set ([ADR 0012](docs/adr/0012-finished-games-profiles-and-the-leaderboard.md)), and nowhere otherwise.
 
 ```mermaid
 flowchart LR
@@ -180,9 +182,11 @@ flowchart LR
       registry["RoomRegistry<br/>load, apply, save if the version is unchanged<br/>(5 tries), 5-character codes"]
       room["Room<br/>the only place that knows the rules"]
       words[("words.txt<br/>160 French nouns")]
+      recorder["GameRecorder (only with a database)<br/>its own thread, writes a game that has ended<br/>with an account in it, once"]
     end
     other["Replica 2<br/>the same image, its own connections"]
     redis[("Redis (Valkey)<br/>room:{code}: version + state<br/>channel rooms: changed (code, version),<br/>seat taken (code, player)<br/>replica:{id}: heartbeat 15 s<br/>lock:{name}")]
+    postgres[("Postgres (optional)<br/>game, game_player<br/>migrated by Flyway at start")]
   end
 
   player -->|"HTTPS, WSS"| traefik
@@ -198,6 +202,8 @@ flowchart LR
   handler -->|"publish: room changed"| redis
   redis -.->|"room changed, seat taken"| handler
   other <-->|"the same"| redis
+  registry -->|"a game has ended"| recorder
+  recorder -->|"INSERT ... ON CONFLICT DO NOTHING"| postgres
 ```
 
 ### What the rooms in Redis cost
@@ -248,10 +254,11 @@ sequenceDiagram
 | Kind | Where | What it proves |
 |---|---|---|
 | Rules | `RoomTest` | every legal and illegal move in each state, signal validation, both ways to win, the Signaleur fixed for the grid, leaving the lobby, a lobby that keeps an absent player for 30 seconds then drops them, the start refused while someone is offline, the seat kept when leaving a game, the spectators (no key before the end in any view built for them, 20 at most, refused in a lobby, never keeping a room alive), the turn that passes after 60 seconds away (and starts the wait again on the team's next turn), at once for someone who left, the end of a game after 5 minutes without a Signaleur, nobody replacing a Signaleur, the seconds left in the view, the key never in a lookout's view, the players tied to a replica (a late close from another replica ignored, the players of a dead replica marked absent, its spectators dropped), a player who is gone refused instead of crashing the command |
-| Registry, words | `RoomRegistryTest`, `WordListTest` | codes, sweep of abandoned rooms, a change replayed on a newer room after a conflict and refused as busy after 5, a refused move leaving the room as it was, a clean word list with no two words too close |
+| Registry, words | `RoomRegistryTest`, `WordListTest` | codes, sweep of abandoned rooms, a change replayed on a newer room after a conflict and refused as busy after 5, a refused move leaving the room as it was, a game that ends announced once (and again, as the last try of its write, when its abandoned room is dropped; a room that never ended not at all), a clean word list with no two words too close |
 | Store | `RoomStoreContract`, run by `InMemoryRoomStoreTest` and `RedisRoomStoreIT` | what any store must do (a room comes back as saved, empty lists included, a code taken is refused, a replace or a drop only at the version that was loaded), and for Valkey: a field this version does not know is read, the 24-hour life renewed by each save, a write refused for memory raising "full" while the reads go on, a state it cannot read answered as busy |
 | Replicas | `ReplicasTest` | two handlers over one store with a channel that can lose messages: a player on each, the id kept on the sender's answer only, the key and the tokens never on the channel, a rejoin on the other replica closing the old connection, a lost `seatTaken` or message repaired by the check of versions, a replica judged dead while its connections are fine set right, a close that could not be written tried again unless the player is back, two rejoins of one player on two replicas leaving the one the room holds, a seat made while the room is being read, a connection that closes while its player is marked back, a room that cannot be read not stopping the sweep of the others, a player swept away while connected losing the connection, a replica stopped without losing the room, a heartbeat that runs out, each sweep running on one replica per tick (checked against the store) |
 | Redis | `RedisClusterIT`, `RedisReplicasIT`, `RedisLateStartIT`, `StoreCostIT` | against a real Valkey: the heartbeat that expires, a lock taken by one replica, a channel that subscribes again after a break; two backends started in one test with real WebSocket clients (see each other, hidden cards, rejoin elsewhere, a stopped replica, players marked absent when its heartbeat runs out, a lost message caught up, a write refused for memory); the heartbeat and the locks still taken when Redis is full; a backend started before Redis, healthy and refusing cleanly until Redis arrives; the cost of a command |
+| History | `GameResultTest`, `GameHistoryIT`, `GameRecorderTest`, `GameRecordingIT` | how a game ended read from its state (all the words of a team, even the last one revealed by the other team, a second reef, a forfeit) with its roles and its end time, a game written with its players and who they are, a game that is already there left as it is, a write that fails halfway leaving nothing, a game of guests only or from before the history not written, a write that fails given up without stopping the next, and the whole path from a game ended in the registry to its rows, written once |
 | Database | `NoDatabaseTest`, `DatabaseIT`, `DatabaseDownIT` | without a URL no `DataSource` and no Flyway (every other test of the backend runs that way), against a real Postgres the migrations ran and a query works, and the health check stays up, with no database component, once Postgres is stopped |
 | WebSocket | `WebSocketIT` | the application on a random port, driven by the JDK's WebSocket client: create, join, leaving the lobby on purpose, a dropped lobby player shown offline and coming back with their seat, rejoin with a token, a new connection replacing the old, errors and missing fields, the id of a message echoed on its answer and absent from what goes to the others, a started game, a turn that passes at once when the Signaleur in play leaves, a spectator who watches a game, is counted, never receives the key before the end over a real game played to its last reef, has every command refused, the 21st refused, a connection closed at its 5th unknown room code (join, watch and rejoin counted together, the refusal of the 5th never sent, a success not resetting the count, a valid rejoin never blocked, a seat whose room was swept costing one miss), whatever a closed connection keeps sending ignored, refused origin |
 | Handler | `GameSocketHandlerTest` | a broken connection does not stop the others, a room that could not be entered is not kept, one room per connection, the sweep telling the lobby that an absent player is gone, the sweep passing the turn of a game that waits for an absent Signaleur, a `leave` without a seat refused, the count of unknown room codes going with the connection, a message that arrives after the close ignored, a store that is unavailable answered with an error, and a rejoin answered with a close of both connections that makes the front try again |

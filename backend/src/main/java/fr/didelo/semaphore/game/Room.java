@@ -66,6 +66,10 @@ public final class Room {
   private Instant lastActivity;
   // The last command or pass of the turn: the wait for someone away starts again after each one.
   private Instant lastMove;
+  // Made when the game starts and kept in the state: what the history knows the game by, once,
+  // whichever replica ends it. A game that started before it existed has none.
+  private UUID gameId;
+  private Instant endedAt;
 
   /** The room as {@code state} left it, with the settings of this application. */
   public static Room restore(
@@ -81,6 +85,7 @@ public final class Room {
       player.setAbsentSince(p.absentSince());
       player.setLeft(p.left());
       player.setReplica(p.replica());
+      player.setAccountId(p.accountId());
       room.players.put(p.id(), player);
     }
     room.flags.putAll(state.flags());
@@ -94,6 +99,8 @@ public final class Room {
     room.version = state.version();
     room.lastActivity = state.lastActivity();
     room.lastMove = state.lastMove();
+    room.gameId = state.gameId();
+    room.endedAt = state.endedAt();
     return room;
   }
 
@@ -118,11 +125,14 @@ public final class Room {
                         p.getTeam(),
                         p.getAbsentSince(),
                         p.isLeft(),
-                        p.getReplica()))
+                        p.getReplica(),
+                        p.getAccountId()))
             .toList(),
         Map.copyOf(spectators),
         lastActivity,
-        lastMove);
+        lastMove,
+        gameId,
+        endedAt);
   }
 
   public String code() {
@@ -301,8 +311,7 @@ public final class Room {
             .filter(s -> !s.isConnected() && !now.isBefore(s.getAbsentSince().plus(SIGNALER_LIMIT)))
             .min(Comparator.comparing(Player::getAbsentSince));
     if (abandoned.isPresent()) {
-      winner = abandoned.get().getTeam().other();
-      phase = Phase.ENDED;
+      end(abandoned.get().getTeam().other());
     } else if (passesAt().filter(at -> !now.isBefore(at)).isPresent()) {
       endTurn();
       // The turn may have reached a team whose Signaleur left: it passes again at once.
@@ -435,6 +444,7 @@ public final class Room {
             .mapToObj(i -> new Card(words.get(i), kinds.get(i), false))
             .toList();
     turn = Team.values()[random.nextInt(Team.values().length)];
+    gameId = UUID.randomUUID();
     phase = Phase.SIGNAL;
   }
 
@@ -479,16 +489,14 @@ public final class Room {
     revealsLeft--;
     for (var team : Team.values()) {
       if (board.stream().filter(c -> c.kind() == team.kind()).allMatch(Card::revealed)) {
-        winner = team;
-        phase = Phase.ENDED;
+        end(team);
         return;
       }
     }
     if (card.kind() == CardKind.REEF) {
       flags.merge(turn, -1, Integer::sum);
       if (flags.get(turn) == 0) {
-        winner = turn.other();
-        phase = Phase.ENDED;
+        end(turn.other());
         return;
       }
     }
@@ -517,6 +525,12 @@ public final class Room {
     var since = away.isAfter(lastMove) ? away : lastMove;
     var atOnce = awaited.stream().allMatch(Player::isLeft) && !signaler(turn.other()).isLeft();
     return Optional.of(since.plus(atOnce ? Duration.ZERO : TURN_GRACE));
+  }
+
+  private void end(Team winner) {
+    this.winner = winner;
+    phase = Phase.ENDED;
+    endedAt = clock.instant();
   }
 
   private void endTurn() {

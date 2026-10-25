@@ -47,6 +47,48 @@ docker rm -f semaphore-e2e-backend   # when you are done
 
 A failed run leaves a trace of the four pages: `npx playwright show-trace test-results/*/trace.zip`. In CI it is the `e2e-traces` artifact of the run.
 
+## Run the load test
+
+k6 plays whole games over the real protocol against a backend of its own: the host creates a room, three players join it, two teams, the game starts, a spectator watches, and the Signaleurs and lookouts play until a team has found its eight words. Everything runs in containers, so the machine needs Docker and nothing else (the backend image is built from `backend/`, with its JDK 25).
+
+```bash
+docker compose -f load/compose.yaml up --build --abort-on-container-exit --exit-code-from k6
+docker compose -f load/compose.yaml down   # when you are done
+```
+
+The command exits with k6's status: 0 when every threshold held, 99 when one did not. The numbers are printed at the end and kept in `load/results/` (`summary.md`, `summary.json`). It never goes near `play.didelo.fr`, whose edge allows 24 connections per address where a table needs five: the script refuses a `WS_URL` on `didelo.fr`, and the backend of the compose file only accepts the origin k6 sends, which production would refuse.
+
+```mermaid
+flowchart LR
+  subgraph rig["load/compose.yaml"]
+    direction LR
+    k6["k6<br/>one virtual user per room:<br/>four players and a spectator,<br/>five WebSockets"]
+    lb["lb · nginx<br/>round robin, as Traefik<br/>is in front in production"]
+    back["backend × REPLICAS<br/>the production image<br/>and memory limit"]
+    redis[("redis<br/>profile redis, off")]
+  end
+  k6 -->|"/ws"| lb
+  lb -->|"/ws"| back
+  back -.->|"SEMAPHORE_REDIS_URL,<br/>not read yet"| redis
+```
+
+| Variable | Default | What it sets |
+|---|---|---|
+| `PROFILE` | `short` | `short`: 10 rooms for 30 seconds, what a pull request runs. `long`: 60 rooms for 5 minutes, what the workflow runs on demand |
+| `ROOMS` | by profile | rooms playing at once: each one is a virtual user, so 5 connections per room |
+| `DURATION` | by profile | how long rooms start new games; a game that has started is played to its end |
+| `THINK_MS` | `100` | the pause before each command, 0.5 to 1.5 times this: a player reads the table before acting |
+| `REPLICAS` | `1` | backend containers behind nginx |
+
+For example `PROFILE=long REPLICAS=2 docker compose -f load/compose.yaml up --build --abort-on-container-exit --exit-code-from k6`. Several replicas only work once the rooms are shared: with them in memory a room lives in one replica, and the five connections of a table spread over two of them get "no such room", which the test reports as protocol errors. The `redis` profile is there for that day and is off: `COMPOSE_PROFILES=redis SEMAPHORE_REDIS_URL=redis://redis:6379 REPLICAS=2` starts a Redis and hands the backend its address, which it does not read yet.
+
+### Thresholds
+
+Three, and k6 exits with 99 when one is broken: no protocol error (a refusal, an answer that does not come, a connection that drops, the wrong kind of answer), every game ends with a winner in the five views, and 95% of the command round trips under 1000 ms (provisional, being measured on the runner).
+
+
+The `load` workflow runs the short profile on every pull request that touches `backend/**` or `load/**`, and the long one on demand (Actions, Load, Run workflow), puts the numbers in the job summary and keeps `load/results/` as the `load-results` artifact. It is not a required check: it measures a shared runner, and a slow run is a reason to look, not to block a merge.
+
 ## Architecture
 
 The diagram is updated in the same pull request as any change it shows. It shows one backend with its rooms in memory, as it runs today; the rooms move to Redis, shared by two replicas, in [ADR 0008](docs/adr/0008-rooms-in-redis-shared-by-replicas.md).
@@ -116,14 +158,15 @@ sequenceDiagram
 | Screens | `app.test.tsx`, `screens.test.tsx` | create a room and land in its lobby, invitation link, refusal shown where it was asked, room link without a seat, seat back after a reload, team choice, start rules, the key only for Signaleurs, the table for each role and phase (signal form, words to touch, waiting lines, winner and whole key), presence (online count, offline players dimmed, the start held while someone is away, the line naming the Signaleur or the lookouts the game waits for, the countdown that restarts with each view), the invitation page that offers to watch, the table read only for a spectator (no form, no word to touch, no pass, leaving at once, the whole key after the end, the count shown to the players too), a whole game played as a lookout through the router and a fake socket |
 | Motion | `motion.test.tsx`, `motion.test.ts` | a card turns when a view reveals it and not when it is already revealed on the first render, a turn that another view does not cut, a player who comes in, goes out (kept as a hidden row until its fade ends) or comes back before it ends, absence and return that mark nothing, nothing marked or kept under reduced motion, and the stylesheet: durations and curves equal to the theme of the design system, every animation switched off under `prefers-reduced-motion` |
 | End to end | `e2e/full-game.spec.ts` | the real front and the real backend together, in four browser contexts: Alice creates a room and invites the others with its link, everybody picks a team, the Signaleurs are the first of their team to have arrived, only they see the key, the server refuses a signal that is a word of the grid and the front says why, the Signaleurs signal and the lookouts touch their words and pass until a team has found all of its words, the winner is announced to the four players and each goes back home |
+| Load | `load/game.js` | the same game played over the real protocol by many tables at once against the production image behind nginx: every game ends with a winner in all five views, no refusal, no answer missing, and the round trip of a command (from the message to the answer that carries its id) stays under the threshold; the update reaching the next player to act is measured too |
 
-`./gradlew check` runs the backend ones with the formatting check, `npm run check` the front ones with lint, types and the build. The pull request runs both (JDK 25, Node 24), plays the end-to-end game, builds the two images, lints the workflows, scans for secrets and runs CodeQL.
+`./gradlew check` runs the backend ones with the formatting check, `npm run check` the front ones with lint, types and the build. The pull request runs both (JDK 25, Node 24), plays the end-to-end game, builds the two images, lints the workflows, scans for secrets and runs CodeQL. When it touches `backend/` or `load/` it also plays the short load profile, which is not a required check.
 
 ## Delivery
 
 ```mermaid
 flowchart LR
-  dev["Branch<br/>signed commits"] --> pr["Pull request<br/>backend and front checks, end-to-end game,<br/>image builds, actionlint, gitleaks, CodeQL, title"]
+  dev["Branch<br/>signed commits"] --> pr["Pull request<br/>backend and front checks, end-to-end game,<br/>image builds, actionlint, gitleaks, CodeQL, title,<br/>short load test if backend/ or load/ changed"]
   pr -->|"squash merge"| main["main"]
   main --> image["Image workflow"]
   image --> ghcr[("GHCR<br/>semaphore:main<br/>semaphore-front:main")]

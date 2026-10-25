@@ -130,7 +130,6 @@ export class GameClient {
     const socket = this.open(this.url);
     this.socket = socket;
     socket.onopen = () => {
-      this.attempts = 0;
       this.update({ connection: "open" });
       const session = this.store.load();
       if (session !== null && this.pending.length === 0) {
@@ -147,6 +146,9 @@ export class GameClient {
         return;
       }
       this.socket = null;
+      // A rejoin that was cut off has no answer to wait for: a refusal on the next connection is
+      // that of a command, not of a seat that is gone.
+      this.awaitingRejoin = false;
       const reason =
         event.reason === TOO_MANY_MISSES ? TOO_MANY_MISSES : "connection lost";
       for (const { reject } of this.waiting.splice(0)) {
@@ -187,6 +189,9 @@ export class GameClient {
     const received = parsed.data;
     switch (received.type) {
       case "joined":
+        // Not at the opening of the socket: while the server is cut off from its store it accepts
+        // the socket and closes it again, and the retries would never slow down.
+        this.attempts = 0;
         this.awaitingRejoin = false;
         this.store.save({ code: received.room.code, token: received.token });
         this.show(received.room);

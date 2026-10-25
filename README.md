@@ -80,7 +80,7 @@ flowchart LR
 | `THINK_MS` | `100` | the pause before each command, 0.5 to 1.5 times this: a player reads the table before acting |
 | `REPLICAS` | `1` | backend containers behind nginx |
 
-For example `PROFILE=long REPLICAS=2 docker compose -f load/compose.yaml up --build --abort-on-container-exit --exit-code-from k6`. Several replicas only work once the rooms are shared: with them in memory a room lives in one replica, and the five connections of a table spread over two of them get "no such room", which the test reports as protocol errors. The `redis` profile is there for that day and is off: `COMPOSE_PROFILES=redis SEMAPHORE_REDIS_URL=redis://redis:6379 REPLICAS=2` starts a Redis and hands the backend its address, which it does not read yet.
+For example `PROFILE=long REPLICAS=2 docker compose -f load/compose.yaml up --build --abort-on-container-exit --exit-code-from k6`. Several replicas only work once the rooms are shared ([ADR 0008](docs/adr/0008-rooms-in-redis-shared-by-replicas.md)): with them in memory a room lives in one replica, and the five connections of a table spread over two of them get "no such room", which the test reports as protocol errors. nginx does what Traefik does in production, a replica per handshake with nothing sticky. The `redis` profile is there for that day and is off: `COMPOSE_PROFILES=redis SEMAPHORE_REDIS_URL=redis://redis:6379 REPLICAS=2` starts a Redis, makes the replicas wait for it and hands them its address, which the backend does not read yet.
 
 ### Thresholds
 

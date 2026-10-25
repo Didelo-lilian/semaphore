@@ -4,7 +4,7 @@
 #
 # Variables, all optional: REPLICAS (backend containers, 1), PROFILE (short or long), ROOMS, DURATION, THINK_MS, P95_MS.
 # The rooms live in the process of each replica unless SEMAPHORE_REDIS_URL is set: more than one replica needs the redis
-# profile, which is how production runs (the command is on the redis service).
+# profile, which is how production is meant to run (the command is on the redis service).
 name: semaphore-load
 
 services:
@@ -32,7 +32,7 @@ services:
         # Off unless the redis profile is.
         required: false
 
-  # Off by default, for when the rooms live in Valkey and the replicas share them, as in production. To turn it on:
+  # Off by default, for when the rooms live in Valkey and the replicas share them, as production is moving to. To turn it on:
   #   COMPOSE_PROFILES=redis SEMAPHORE_REDIS_URL=redis://redis:6379 REPLICAS=2 docker compose -f load/compose.yaml up ...
   redis:
     profiles: [redis]

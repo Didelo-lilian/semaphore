@@ -103,13 +103,13 @@ flowchart LR
 | `P95_MS` | by profile | the threshold on the p95 of a command, 1000 ms for `short` and 1450 ms for `long` |
 | `REPLICAS` | `1` | backend containers behind nginx |
 
-For example `PROFILE=long docker compose -f load/compose.yaml up --build --exit-code-from k6`. That is one replica with its rooms in memory. Production runs two replicas whose rooms live in Valkey ([ADR 0008](docs/adr/0008-rooms-in-redis-shared-by-replicas.md)), and the `load` workflow plays that shape:
+For example `PROFILE=long docker compose -f load/compose.yaml up --build --exit-code-from k6`. That is one replica with its rooms in memory. Production is moving to two replicas whose rooms live in Valkey ([ADR 0008](docs/adr/0008-rooms-in-redis-shared-by-replicas.md)), and the `load` workflow plays that shape:
 
 ```bash
 COMPOSE_PROFILES=redis SEMAPHORE_REDIS_URL=redis://redis:6379 REPLICAS=2 docker compose -f load/compose.yaml up --build --exit-code-from k6
 ```
 
-The `redis` profile starts the Valkey image and options of production (`stacks/redis` of the infra repository, without a password: nothing but this rig reaches it), makes the replicas wait for it and hands them its address. nginx does what Traefik does, a replica per handshake with nothing sticky, so the five connections of a table land on both replicas: a protocol error is a room that one replica could not see. `REPLICAS=2` without the profile shows it, the rooms stay in the process of each replica and the test reports "no such room".
+The `redis` profile starts the Valkey image and options of production (`stacks/redis` of the infra repository, without a password: nothing but this rig reaches it), makes the replicas wait for it and hands them its address. nginx does what Traefik does, a replica per handshake with nothing sticky, so most tables get connections on both replicas (the round robin runs in each worker of nginx, a few tables land on one): a "no such room" is a room that one replica could not see. `REPLICAS=2` without the profile shows it, the rooms stay in the process of each replica and the test reports it.
 
 ### Thresholds
 
@@ -121,7 +121,7 @@ k6 exits with 99 when one of the three is broken.
 | `games_finished` is 100% | every game ended with a winner, seen by the five connections of the table |
 | `command_duration` p95 under 1000 ms (`short`) or 1450 ms (`long`) | 95% of the commands were answered within that time, from the message to the answer that carries its id |
 
-The values come from the GitHub runner (`ubuntu-latest`, 4 vCPUs), the machine the check runs on, with the shape of production: k6, nginx, two replicas of the backend with their limit of 384 MiB each and a Valkey, all on that one machine, 100 ms to think. This scenario was run there several times and with several sizes, k6 reading the clock in milliseconds (a range is the lowest and the highest of the runs):
+The values come from the GitHub runner (`ubuntu-latest`, 4 vCPUs), the machine the check runs on, with the shape production is moving to: k6, nginx, two replicas of the backend with their limit of 384 MiB each and a Valkey, all on that one machine, 100 ms to think. This scenario was run there several times and with several sizes, k6 reading the clock in milliseconds (a range is the lowest and the highest of the runs):
 
 | Rooms | Duration | Runs | Games | p95 | p99 | max |
 |---|---|---|---|---|---|---|
@@ -131,9 +131,9 @@ The values come from the GitHub runner (`ubuntu-latest`, 4 vCPUs), the machine t
 | 150 | 5 min | 1 | 7719 | 198 ms | 447 ms | 3268 ms |
 | 200 | 5 min | 1 | 12663 | 130 ms | 327 ms | 2468 ms |
 
-Every run had no error but one of the five at 100 rooms for 5 minutes, which had two: "the server is busy, try again". Both replicas logged a command to Valkey timing out after 2 seconds within the same second, and Valkey logged nothing at that time, so what stopped was the runner or the JVMs, not Valkey. It is the answer the backend gives when the store does not answer, and the check is not required: a red run of this kind is a reason to run it again and look.
+Every run had no error but one of the five at 100 rooms for 5 minutes, which had two: "the server is busy, try again". Both replicas logged a command to Valkey timing out after 2 seconds within the same second, and Valkey logged nothing at that time, but a stalled Valkey leaves nothing in its log either, so the runner, the JVMs or Valkey stopped and the logs do not say which. It is the answer the backend gives when the store does not answer, and the check is not required: a red run of this kind is a reason to run it again and look.
 
-The same runs of one replica with its rooms in memory (`REPLICAS=1`, the compose file without a profile), measured again along with the runs above, and in the first measurements of this test:
+The same runs of one replica with its rooms in memory (`REPLICAS=1`, the compose file without a profile), measured along with the first batch of the runs above (50 rooms: 12, 32 and 61 ms; 100 rooms: 88, 102 and 144 ms) and in the first measurements of this test:
 
 | Rooms | Duration | Games | p95 | p99 | max |
 |---|---|---|---|---|---|
@@ -144,11 +144,11 @@ The same runs of one replica with its rooms in memory (`REPLICAS=1`, the compose
 | 150 | 5 min, first measurements | 12647 | 70 ms | 170 ms | 2262 ms |
 | 200 | 5 min, first measurements | 12489 | 169 ms | 291 ms | 1966 ms |
 
-What the rooms in Valkey and the second replica cost: every command now reads and writes the room in Valkey (a compare-and-set) and the other replica hears of it through a channel, where it used to change an object in the process. The median round trip goes from 1 ms to 1 to 7 ms at 50 rooms and to 5 to 28 ms at 100 rooms, the p95 from 3 ms to 12 to 99 ms at 50 rooms and to 88 to 144 ms at 100, and the games played in 5 minutes by 100 rooms fall from 10741 to 6417 to 8161 (thinking alone takes a game about 3 seconds, the pace of one replica in memory). At 200 rooms the two replicas are no slower than the single one in memory (130 ms against 169 ms): they share the work of two JVMs, or the run was on a faster runner, since runs of the same size differ more than that and no ranking of the sizes among themselves can be read in the table.
+What the rooms in Valkey and the second replica cost: every command now reads and writes the room in Valkey (a compare-and-set) and the other replica hears of it through a channel, where it used to change an object in the process. The median round trip goes from 1 ms to 1 to 7 ms at 50 rooms and to 5 to 28 ms at 100 rooms for 5 minutes, the p95 from 3 ms to 12 to 99 ms at 50 rooms and to 88 to 144 ms at 100, and the games played in 5 minutes by 100 rooms fall from 10741 to 6417 to 8161 (thinking alone takes a game about 3 seconds, the pace of one replica in memory). At 200 rooms the two replicas are no slower than the single one in memory (130 ms against 169 ms): they share the work of two JVMs, or the run was on a faster runner, since runs of the same size differ more than that and no ranking of the sizes among themselves can be read in the table.
 
-Each threshold is **ten times the worst p95 of its profile, rounded up to a multiple of 50 ms**: 99 ms gives 1000 for `short` and 144 ms gives 1450 for `long`. They were 50 and 150 with one replica in memory: the cost above is why they rose, and so is the spread, since identical runs of 50 rooms differ by a factor of eight here (12 to 99 ms) where they differed by two or three with one replica. A tighter margin would turn noise into red runs, while a command that waits for others (a lock shared by every room, a slow save) moves the p95 by far more than ten. These thresholds only catch a collapse: what proves that the rooms are shared is `protocol_errors` at 0, since the five connections of a table land on both replicas. On a laptop that runs other containers the same scenario can be ten times slower, which says nothing about the code: raise `P95_MS` there.
+Each threshold is **ten times the worst p95 of its profile, rounded up to a multiple of 50 ms**: 99 ms gives 1000 for `short` and 144 ms gives 1450 for `long`. They were 50 and 150 with one replica in memory: the cost above is why they rose, and so is the spread, since identical runs of 50 rooms differ by a factor of eight here (12 to 99 ms) where they differed by two or three with one replica. A tighter margin would turn noise into red runs, while a command that waits for others (a lock shared by every room, a slow save) moves the p95 by far more than ten. These thresholds only catch a collapse: what proves that the rooms are shared is `protocol_errors` at 0, since most tables get connections on both replicas. On a laptop that runs other containers the same scenario can be ten times slower, which says nothing about the code: raise `P95_MS` there.
 
-The `load` workflow plays the shape of production (two replicas and a Valkey). It runs the short profile on every pull request that touches `backend/**`, `load/**` or the workflow itself, and the long one on demand (Actions, Load, Run workflow), puts the numbers in the job summary and keeps `load/results/` as the `load-results` artifact. It is not a required check: it measures a shared runner, and a slow run is a reason to look, not to block a merge.
+The `load` workflow plays the shape production is moving to (two replicas and a Valkey). It runs the short profile on every pull request that touches `backend/**`, `load/**` or the workflow itself, and the long one on demand (Actions, Load, Run workflow), puts the numbers in the job summary and keeps `load/results/` as the `load-results` artifact. It is not a required check: it measures a shared runner, and a slow run is a reason to look, not to block a merge.
 
 ## Architecture
 

@@ -25,16 +25,16 @@ jobs:
     timeout-minutes: 30
     env:
       PROFILE: ${{ inputs.profile || 'short' }}
-      # The shape of production: two replicas that share their rooms in Valkey.
+      # The shape production is moving to: two replicas that share their rooms in Valkey.
       COMPOSE_PROFILES: redis
       SEMAPHORE_REDIS_URL: redis://redis:6379
       REPLICAS: 2
     steps:
       - uses: actions/checkout@v7
       # The backend is built from backend/ with the production Dockerfile and k6 plays whole games against two replicas
-      # of it through nginx, on this runner: it never goes near play.didelo.fr. A table's connections land on both, so
-      # an error means the rooms were not shared. A threshold that fails fails the step, and the logs of the backend,
-      # nginx and Valkey are in it.
+      # of it through nginx, on this runner: it never goes near play.didelo.fr. Most tables have connections on both,
+      # so a "no such room" means the rooms were not shared. A threshold that fails fails the step, and the logs of
+      # the backend, nginx and Valkey are in it.
       - run: docker compose -f load/compose.yaml up --build --exit-code-from k6
       - if: ${{ !cancelled() && hashFiles('load/results/summary.md') != '' }}
         run: cat load/results/summary.md >> "$GITHUB_STEP_SUMMARY"

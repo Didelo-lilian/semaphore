@@ -92,9 +92,9 @@ class RedisRoomEvents implements RoomEvents {
 
   @PreDestroy
   void close() {
-    executor.shutdownNow();
     if (subscription != null) {
       subscription.close();
     }
+    executor.shutdownNow();
   }
 }

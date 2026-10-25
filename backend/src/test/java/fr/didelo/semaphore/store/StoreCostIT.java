@@ -10,6 +10,7 @@ import fr.didelo.semaphore.game.RoomStore;
 import fr.didelo.semaphore.game.Team;
 import fr.didelo.semaphore.game.WordList;
 import java.time.Clock;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -52,7 +53,7 @@ class StoreCostIT {
   }
 
   private static void measure(String name, RoomStore store) {
-    var registry = new RoomRegistry(store, Clock.systemUTC(), new WordList(), 2);
+    var registry = new RoomRegistry(store, Clock.systemUTC(), new WordList(), 2, List.of());
     var code = startedRoom(registry);
     var state = store.find(code).orElseThrow();
     var bytes = JSON.writeValueAsBytes(state).length;
@@ -90,7 +91,9 @@ class StoreCostIT {
         s.players(),
         s.spectators(),
         s.lastActivity(),
-        s.lastMove());
+        s.lastMove(),
+        s.gameId(),
+        s.endedAt());
   }
 
   @Test

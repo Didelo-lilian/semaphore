@@ -29,7 +29,8 @@ class DatabaseIT {
 
   @Test
   void migratesAtStartAndQueries() {
-    assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("1");
+    assertThat(flyway.info().pending()).isEmpty();
+    assertThat(flyway.info().applied()).isNotEmpty();
     assertThat(jdbc.sql("SELECT count(*) FROM game").query(Long.class).single()).isZero();
   }
 

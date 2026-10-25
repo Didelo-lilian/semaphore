@@ -3,6 +3,7 @@ package fr.didelo.semaphore.game;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * What is kept of a room between two changes: the state of a game, without the rules or the
@@ -24,7 +25,9 @@ public record RoomState(
     List<PlayerState> players,
     Map<String, Integer> spectators,
     Instant lastActivity,
-    Instant lastMove) {
+    Instant lastMove,
+    UUID gameId,
+    Instant endedAt) {
 
   /** A room saved before a collection existed has none of it in its JSON: it reads as empty. */
   public RoomState {
@@ -41,5 +44,6 @@ public record RoomState(
       Team team,
       Instant absentSince,
       boolean left,
-      String replica) {}
+      String replica,
+      UUID accountId) {}
 }

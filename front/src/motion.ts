@@ -8,13 +8,6 @@ interface Leaver<T> {
 }
 
 /**
- * Whether the browser may move things. When it may not, nothing is marked and no row is kept for an exit that would
- * never play: the screen is final at once, as it always is for the tests.
- */
-const motionAllowed = () =>
-  window.matchMedia("(prefers-reduced-motion: no-preference)").matches;
-
-/**
  * What entered `items` since the render before, and what left it, so that a list animates a change and not its first
  * render: a card already revealed, or a player already in the room, when the page opens (join, rejoin, spectator)
  * is never marked. `present` says when an item counts, so a card enters when it is revealed.
@@ -37,7 +30,9 @@ export const useListMotion = <T>(
   // Derived from the previous list during the render, the way React asks for it, rather than from an effect.
   if (items !== seen) {
     setSeen(items);
-    if (motionAllowed()) {
+    // A browser that asks for less motion gets none: nothing is marked and no row is kept for an exit that would never
+    // play, so the screen is final at once, as it always is for the tests.
+    if (window.matchMedia("(prefers-reduced-motion: no-preference)").matches) {
       const now = new Set(items.filter(present).map(id));
       const before = new Set(seen.filter(present).map(id));
       const entered = new Set(entering);

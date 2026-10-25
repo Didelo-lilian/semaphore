@@ -8,6 +8,7 @@ import static org.mockito.Mockito.spy;
 
 import fr.didelo.semaphore.store.InMemoryRoomStore;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
@@ -22,7 +23,8 @@ class RoomRegistryTest {
 
   private final MutableClock clock = new MutableClock();
   private final InMemoryRoomStore store = spy(new InMemoryRoomStore());
-  private final RoomRegistry registry = new RoomRegistry(store, clock, new WordList(), 2);
+  private final RoomRegistry registry =
+      new RoomRegistry(store, clock, new WordList(), 2, List.of());
 
   @Test
   void aCodeHasFiveCharactersWithoutLookAlikes() {
@@ -182,5 +184,48 @@ class RoomRegistryTest {
     return Stream.of(
         new Unavailable("the server is busy, try again"),
         new NullPointerException("a field this version needs is missing"));
+  }
+
+  @Test
+  void aGameThatEndsIsAnnouncedOnceAndAgainWhenItsAbandonedRoomIsDropped() {
+    var ended = new ArrayList<RoomState>();
+    var registry = new RoomRegistry(store, clock, new WordList(), 2, List.of(ended::add));
+    var code = Moves.startedGame(registry, null);
+    var players = registry.find(code).orElseThrow().state().players();
+    var turn = registry.find(code).orElseThrow().state().turn();
+    var away = players.get(turn.other() == Team.BABORD ? 0 : 2).id();
+    registry.change(code, room -> room.disconnect(away, REPLICA));
+    assertThat(ended).isEmpty();
+
+    clock.advance(Room.SIGNALER_LIMIT);
+    registry.change(code, Room::expire);
+    registry.change(code, Room::expire);
+    registry.change(code, room -> room.reconnect(away, REPLICA));
+
+    assertThat(ended)
+        .singleElement()
+        .satisfies(state -> assertThat(state.phase()).isEqualTo(Phase.ENDED));
+
+    registry.change(code, room -> players.forEach(p -> room.disconnect(p.id(), REPLICA)));
+    clock.advance(Duration.ofMinutes(31));
+    registry.dropAbandoned();
+
+    assertThat(ended).hasSize(2).allSatisfy(state -> assertThat(state.code()).isEqualTo(code));
+    assertThat(registry.find(code)).isEmpty();
+  }
+
+  @Test
+  void aRoomThatNeverEndedIsDroppedWithoutAnAnnouncement() {
+    var ended = new ArrayList<RoomState>();
+    var registry = new RoomRegistry(store, clock, new WordList(), 2, List.of(ended::add));
+    var code = Moves.startedGame(registry, null);
+    var players = registry.find(code).orElseThrow().state().players();
+    registry.change(code, room -> players.forEach(p -> room.disconnect(p.id(), REPLICA)));
+    clock.advance(Duration.ofMinutes(31));
+
+    registry.dropAbandoned();
+
+    assertThat(registry.find(code)).isEmpty();
+    assertThat(ended).isEmpty();
   }
 }

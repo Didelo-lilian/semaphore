@@ -35,7 +35,7 @@ class GameSocketHandlerTest {
   private final JsonMapper json = JsonMapper.builder().build();
   private final MutableClock clock = new MutableClock();
   private final RoomRegistry registry =
-      new RoomRegistry(new InMemoryRoomStore(), clock, new WordList(), 2);
+      new RoomRegistry(new InMemoryRoomStore(), clock, new WordList(), 2, List.of());
   private final LocalCluster cluster = new LocalCluster();
   private final GameSocketHandler handler =
       new GameSocketHandler(json, registry, new InMemoryRoomEvents(), cluster);
@@ -214,7 +214,7 @@ class GameSocketHandlerTest {
     var handler =
         new GameSocketHandler(
             json,
-            new RoomRegistry(store, clock, new WordList(), 2),
+            new RoomRegistry(store, clock, new WordList(), 2, List.of()),
             new InMemoryRoomEvents(),
             cluster);
     var host = mock(WebSocketSession.class);

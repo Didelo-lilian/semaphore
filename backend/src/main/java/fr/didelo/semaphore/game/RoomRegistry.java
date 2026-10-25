@@ -108,6 +108,8 @@ public class RoomRegistry {
             .ifPresent(room -> store.drop(code, room.version()));
       } catch (Unavailable e) {
         // This room cannot be read now: the next sweep tries again, and the others go on.
+      } catch (RuntimeException e) {
+        RoomFailures.log(code, "dropped", e);
       }
     }
   }

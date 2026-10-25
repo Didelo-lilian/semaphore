@@ -3,6 +3,7 @@ package fr.didelo.semaphore.ws;
 import fr.didelo.semaphore.game.Cluster;
 import fr.didelo.semaphore.game.IllegalMove;
 import fr.didelo.semaphore.game.Room;
+import fr.didelo.semaphore.game.RoomFailures;
 import fr.didelo.semaphore.game.RoomRegistry;
 import fr.didelo.semaphore.game.Unavailable;
 import java.time.Duration;
@@ -84,6 +85,8 @@ public class RoomSweeper {
         } catch (IllegalMove | Unavailable e) {
           // The room was dropped since the list was made, or cannot be read or saved now: the next
           // tick tries again, and the other rooms go on.
+        } catch (RuntimeException e) {
+          RoomFailures.log(code, "swept by " + name, e);
         }
       }
     } catch (Unavailable e) {

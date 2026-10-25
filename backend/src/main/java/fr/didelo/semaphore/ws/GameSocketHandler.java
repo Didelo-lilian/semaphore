@@ -7,6 +7,7 @@ import fr.didelo.semaphore.game.Player;
 import fr.didelo.semaphore.game.Room;
 import fr.didelo.semaphore.game.RoomEvent;
 import fr.didelo.semaphore.game.RoomEvents;
+import fr.didelo.semaphore.game.RoomFailures;
 import fr.didelo.semaphore.game.RoomRegistry;
 import fr.didelo.semaphore.game.RoomState;
 import fr.didelo.semaphore.game.RoomView;
@@ -185,6 +186,9 @@ public class GameSocketHandler extends TextWebSocketHandler implements SmartLife
       // The room was dropped while spectators watched.
     } catch (Unavailable e) {
       unsettled.add(seat);
+    } catch (RuntimeException e) {
+      // A room that breaks cannot be told: its connections would be closed again and again.
+      RoomFailures.log(seat.code(), "told that a connection closed", e);
     }
   }
 
@@ -221,6 +225,8 @@ public class GameSocketHandler extends TextWebSocketHandler implements SmartLife
         refresh(code);
       } catch (Unavailable e) {
         // This room cannot be read now: the next check tries again, and the others go on.
+      } catch (RuntimeException e) {
+        RoomFailures.log(code, "checked", e);
       }
     }
   }
@@ -241,6 +247,8 @@ public class GameSocketHandler extends TextWebSocketHandler implements SmartLife
       }
     } catch (Unavailable e) {
       // The next check of versions repairs what this event would have.
+    } catch (RuntimeException e) {
+      RoomFailures.log(event.code(), "read after an event", e);
     }
   }
 
@@ -267,8 +275,8 @@ public class GameSocketHandler extends TextWebSocketHandler implements SmartLife
    * The room and the connections held here must agree on who is connected here. They do not after a
    * replica was judged dead while its connections were fine (its players are marked absent), or
    * when a {@code seatTaken} was lost (the player is held elsewhere and the old connection is still
-   * open). The room is the one that is set right, and the connections that have lost their seat are
-   * closed. Returns the room as it is saved.
+   * open). The room is the one that is set right, its count of the spectators held here included,
+   * and the connections that have lost their seat are closed. Returns the room as it is saved.
    */
   private Room reconcile(Room room, Map<String, Seat> held) {
     var players =
@@ -292,16 +300,39 @@ public class GameSocketHandler extends TextWebSocketHandler implements SmartLife
         back.add(seat.playerId());
       }
     }
-    if (back.isEmpty()) {
+    // Only up: a spectator who joined meanwhile makes the room count more for a moment, which does
+    // no harm. One who left meanwhile is taken off again after the write.
+    var seen = room.state().spectators().getOrDefault(cluster.id(), 0);
+    var local = (int) held.values().stream().filter(Seat::spectator).count();
+    var recount = seen < local;
+    if (back.isEmpty() && !recount) {
       return room;
     }
     try {
-      var saved = rooms.change(room.code(), r -> back.forEach(id -> r.reclaim(id, cluster.id())));
-      // A connection that closed meanwhile found nobody to mark absent: the room is told now.
+      var saved =
+          rooms.change(
+              room.code(),
+              r -> {
+                back.forEach(id -> r.reclaim(id, cluster.id()));
+                if (recount) {
+                  r.recountSpectators(cluster.id(), seen, local);
+                }
+              });
+      // A connection that closed meanwhile found nobody to mark absent, or a count to lower: the
+      // room is told now.
       for (var id : back) {
         var seat = new Seat(room.code(), id);
         if (!seats.containsValue(seat)) {
           release(seat);
+        }
+      }
+      if (recount) {
+        var spectators =
+            seats.values().stream()
+                .filter(seat -> seat.spectator() && seat.code().equals(room.code()))
+                .count();
+        for (var gone = local - spectators; gone > 0; gone--) {
+          release(new Seat(room.code(), null));
         }
       }
       if (saved.changed()) {

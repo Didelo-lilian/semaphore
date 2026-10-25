@@ -1,0 +1,78 @@
+# The backend behind a load balancer, and k6 playing whole games against it (README, "Run the load test").
+#
+#   docker compose -f load/compose.yaml up --build --exit-code-from k6
+#
+# Variables, all optional: REPLICAS (backend containers, 1), PROFILE (short or long), ROOMS, DURATION, THINK_MS, P95_MS.
+name: semaphore-load
+
+services:
+  backend:
+    build: ../backend
+    deploy:
+      replicas: ${REPLICAS:-1}
+    # Production's limits (stacks/semaphore of the infra repository): the numbers mean what they would mean there.
+    mem_limit: 384m
+    read_only: true
+    tmpfs: [/tmp]
+    environment:
+      # The origin k6 sends. Any other, production's included, gets the backend's 403.
+      - SEMAPHORE_ALLOWED_ORIGINS=http://load.test
+      # Only passed on when set: a blank value would not be the same as none. The backend does not read it yet.
+      - SEMAPHORE_REDIS_URL
+    healthcheck:
+      test: [CMD, wget, --quiet, --spider, "http://127.0.0.1:8080/actuator/health"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    depends_on:
+      redis:
+        condition: service_healthy
+        # Off unless the redis profile is.
+        required: false
+
+  # Off by default, for when the rooms live in Redis and two replicas share them. To turn it on:
+  #   COMPOSE_PROFILES=redis SEMAPHORE_REDIS_URL=redis://redis:6379 REPLICAS=2 docker compose -f load/compose.yaml up ...
+  redis:
+    profiles: [redis]
+    image: redis:8.8.3-alpine
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  # What production has in front of the backend (Traefik), whatever the number of replicas.
+  lb:
+    image: nginx:1.30.6-alpine3.24
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, wget, --quiet, --spider, "http://127.0.0.1:8080/actuator/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  k6:
+    image: grafana/k6:2.2.0
+    command: run /load/game.js
+    # Docker creates the results folder as root when it is missing: the image's own user could not write in it.
+    user: root
+    environment:
+      - WS_URL=ws://lb:8080/ws
+      - ORIGIN=http://load.test
+      - REPLICAS
+      - RESULTS_DIR=/results
+      - PROFILE
+      - ROOMS
+      - DURATION
+      - THINK_MS
+      - P95_MS
+    volumes:
+      - ./game.js:/load/game.js:ro
+      - ./results:/results
+    depends_on:
+      lb:
+        condition: service_healthy

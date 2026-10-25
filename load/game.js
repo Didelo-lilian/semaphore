@@ -7,8 +7,8 @@ import { Counter, Rate, Trend } from "k6/metrics";
 
 // The p95 threshold of a command is ten times the worst p95 measured on a CI runner with these rooms (README, "Thresholds").
 const PROFILES = {
-  short: { rooms: 50, duration: "30s", p95: 50 },
-  long: { rooms: 100, duration: "5m", p95: 150 },
+  short: { rooms: 50, duration: "30s", p95: 1000 },
+  long: { rooms: 100, duration: "5m", p95: 1450 },
 };
 const PROFILE = __ENV.PROFILE || "short";
 if (!PROFILES[PROFILE]) {

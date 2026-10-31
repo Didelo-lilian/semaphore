@@ -50,7 +50,7 @@ services:
 
   # What production has in front of the backend (Traefik), whatever the number of replicas.
   lb:
-    image: nginx:1.30.6-alpine3.24
+    image: nginx:1.31.7-alpine3.24
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:

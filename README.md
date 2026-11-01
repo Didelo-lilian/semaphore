@@ -65,7 +65,7 @@ The WebSocket handshake carries the same cookie. A player's id and pseudo come f
 
 ### Sign-in
 
-A guest can sign in with GitHub or Google: `GET /api/auth/login/github` (or `google`) sends the browser to the provider, `GET /api/auth/callback/{provider}` brings it back, `POST /api/auth/logout` ends the session and `DELETE /api/auth/account` deletes the account. The front starts a login from the home page, once the player has a pseudo (without one the browser lands on `/?login=pseudo`); a login that fails for any reason lands on `/?login=failed`. `GET /api/me` then answers `account`, and lists the `providers` that are on (the front draws their buttons) when the browser is not signed in. The flow is the authorization code with `state` and PKCE, kept in Valkey for ten minutes under the cookie `__Host-login`; nothing the provider returns is stored, not even its token: an account is one row, `(provider, subject, display_name)`, with no e-mail and no avatar. A guest and an account are never merged. The choices are in [ADR 0011](docs/adr/0011-sign-in-with-github-or-google.md).
+A guest can sign in with GitHub or Google: `GET /api/auth/login/github` (or `google`) sends the browser to the provider, `GET /api/auth/callback/{provider}` brings it back, `POST /api/auth/logout` ends the session and `DELETE /api/auth/account` deletes the account. The front starts a login from the home page, once the player has a pseudo (without one the browser lands on `/?login=pseudo&provider=github`, and the front asks for it and carries on); a login that fails for any reason lands on `/?login=failed`. `GET /api/me` then answers `account`, and lists the `providers` that are on (the front draws their buttons) when the browser is not signed in. The flow is the authorization code with `state` and PKCE, kept in Valkey for ten minutes under the cookie `__Host-login`; nothing the provider returns is stored, not even its token: an account is one row, `(provider, subject, display_name)`, with no e-mail and no avatar. A guest and an account are never merged. The choices are in [ADR 0011](docs/adr/0011-sign-in-with-github-or-google.md).
 
 There is no sign-in by default: a provider is on when its client id and its secret are both set, and it needs a database for the accounts. In production the four values are secret files read by `configtree` (`semaphore.auth.github.client-id`, `.client-secret`, and the same for `google`); locally, with applications of your own whose callback is `http://localhost:8080/api/auth/callback/github` (or `google`):
 
@@ -117,20 +117,27 @@ The home page says what the game is and links to `/privacy` and `/terms`, whose 
 
 ## Run the end-to-end test
 
-One game, four players in four browser contexts, against the real backend and the built front ([ADR 0007](docs/adr/0007-an-end-to-end-test-of-a-whole-game.md)); the four are guests, and a second spec follows two guests through pseudo, rename and a shared room, and the home page when `/api/me` is out.
+One game, four players in four browser contexts, against the real backend and the built front ([ADR 0007](docs/adr/0007-an-end-to-end-test-of-a-whole-game.md)); the four are guests, and a second spec follows two guests through pseudo, rename and a shared room, and the home page when `/api/me` is out. A third plays a game in which Alice signed in with a fake GitHub (`e2e/fake-provider.ts`, started by the test) and reads the Postgres back: the game is there, with her account, and deleting the account takes the game away.
+
+It needs a Postgres, which the test does not start (CI has a service container for it):
+
+```bash
+docker run -d --rm --name semaphore-e2e-db -p 5432:5432 -e POSTGRES_USER=semaphore -e POSTGRES_PASSWORD=semaphore -e POSTGRES_DB=semaphore postgres:18-alpine
+docker rm -f semaphore-e2e-db   # when you are done
+```
 
 ```bash
 (cd backend && ./gradlew bootJar)                          # needs a JDK 25, builds build/libs/semaphore.jar
 (cd front && npm ci && npm run build)
 cd e2e && npm ci && npx playwright install chromium
-npm test    # starts the jar on :8080 and `vite preview` on :4173, then plays the game in a few seconds
+npm test    # starts the fake GitHub on :9100, the jar on :8080 and `vite preview` on :4173, then plays the games in a few seconds
 ```
 
-Without a JDK 25 on the machine, build the jar and run it in containers, from the repository root, then start `npm test` in `e2e/`: outside CI Playwright reuses a backend that already listens on :8080, which must allow `http://localhost:4173` as below (the front is always started by the test).
+Without a JDK 25 on the machine, build the jar and run it in containers, from the repository root, then start `npm test` in `e2e/`: outside CI Playwright reuses a backend that already listens on :8080, which must allow `http://localhost:4173` and be set up for the database and the fake GitHub as below (the fake GitHub and the front are always started by the test; the backend reaches both the database and the fake GitHub through `host.docker.internal`, the browser the fake GitHub at `localhost`).
 
 ```bash
 docker run --rm -v "$PWD/backend:/app" -v semaphore-gradle:/gradle-home -e GRADLE_USER_HOME=/gradle-home -w /app gradle:9.8.2-jdk25-alpine ./gradlew bootJar
-docker run -d --rm --name semaphore-e2e-backend -p 8080:8080 -e SEMAPHORE_ALLOWED_ORIGINS=http://localhost:4173 -v "$PWD/backend/build/libs/semaphore.jar:/app/semaphore.jar:ro" eclipse-temurin:25-jre-alpine java -jar /app/semaphore.jar
+docker run -d --rm --name semaphore-e2e-backend -p 8080:8080 -e SEMAPHORE_ALLOWED_ORIGINS=http://localhost:4173 -e SPRING_DATASOURCE_URL=jdbc:postgresql://host.docker.internal:5432/semaphore -e SPRING_DATASOURCE_USERNAME=semaphore -e SPRING_DATASOURCE_PASSWORD=semaphore -e SEMAPHORE_AUTH_GITHUB_CLIENT_ID=e2e -e SEMAPHORE_AUTH_GITHUB_CLIENT_SECRET=e2e -e SEMAPHORE_AUTH_GITHUB_AUTHORIZATION_URI=http://localhost:9100/authorize -e SEMAPHORE_AUTH_GITHUB_TOKEN_URI=http://host.docker.internal:9100/token -e SEMAPHORE_AUTH_GITHUB_USER_INFO_URI=http://host.docker.internal:9100/user -v "$PWD/backend/build/libs/semaphore.jar:/app/semaphore.jar:ro" eclipse-temurin:25-jre-alpine java -jar /app/semaphore.jar
 docker rm -f semaphore-e2e-backend   # when you are done
 ```
 

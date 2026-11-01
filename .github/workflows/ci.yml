@@ -40,10 +40,25 @@ jobs:
       # Lint, types, tests and the production build.
       - run: npm run check
 
-  # A whole game with four players in four browsers, against the real backend and the built front.
+  # A whole game with four players in four browsers, against the real backend and the built front, with a Postgres and a
+  # fake GitHub (e2e/fake-provider.ts) for the player who signs in.
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: semaphore
+          POSTGRES_PASSWORD: semaphore
+          POSTGRES_DB: semaphore
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U semaphore"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6

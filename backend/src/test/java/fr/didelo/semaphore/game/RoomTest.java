@@ -111,6 +111,17 @@ class RoomTest {
   }
 
   @Test
+  void aNameWithAControlCharacterIsRefused() {
+    var room = new Room("ABCDE", Clock.systemUTC(), new Random(7), 2, POOL);
+
+    for (var name : new String[] {"an\u0000a", "an\na", "an\u007fa", "an\u0085a"}) {
+      assertThatThrownBy(() -> room.join(name, REPLICA))
+          .isInstanceOf(IllegalMove.class)
+          .hasMessage("a name has no control character");
+    }
+  }
+
+  @Test
   void lobbyAcceptsPlayersWithValidNamesOnly() {
     var room = new Room("ABCDE", Clock.systemUTC(), new Random(1), 2, POOL);
 

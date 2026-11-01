@@ -154,11 +154,8 @@ public final class Room {
     if (players.size() >= MAX_PLAYERS) {
       throw new IllegalMove("the room is full");
     }
-    var trimmed = name.strip();
-    if (trimmed.isEmpty() || trimmed.length() > 20) {
-      throw new IllegalMove("a name has 1 to 20 characters");
-    }
-    var player = new Player(UUID.randomUUID().toString(), UUID.randomUUID().toString(), trimmed);
+    var player =
+        new Player(UUID.randomUUID().toString(), UUID.randomUUID().toString(), PlayerName.of(name));
     player.setReplica(replica);
     players.put(player.getId(), player);
     lastActivity = clock.instant();

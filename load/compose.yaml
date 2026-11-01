@@ -63,7 +63,7 @@ services:
       retries: 15
 
   k6:
-    image: grafana/k6:2.2.0
+    image: grafana/k6:2.3.0
     command: run /load/game.js
     # Docker creates the results folder as root when it is missing: the image's own user could not write in it.
     user: root

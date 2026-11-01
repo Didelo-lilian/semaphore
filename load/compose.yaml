@@ -38,7 +38,7 @@ services:
     profiles: [redis]
     # The image and the options of production (stacks/redis of the infra repository), without the password: nothing
     # but this rig reaches it. The data is a tmpfs, nothing has to survive the run.
-    image: valkey/valkey:9.1.2-alpine@sha256:48332870af354a799964c0012ae1194a0bf2bf894eb508f945810596dc2d8d11
+    image: valkey/valkey:9.1.3-alpine@sha256:bf09d58e96d6b4524a15396b65b242bbe18beebbcc15a04d8ee75ddac62fae0b
     command: [valkey-server, --appendonly, "yes", --appendfsync, everysec, --save, "", --maxmemory, 64mb, --maxmemory-policy, noeviction]
     tmpfs: [/data]
     mem_limit: 192m
@@ -50,7 +50,7 @@ services:
 
   # What production has in front of the backend (Traefik), whatever the number of replicas.
   lb:
-    image: nginx:1.30.6-alpine3.24
+    image: nginx:1.31.7-alpine3.24
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
@@ -63,7 +63,7 @@ services:
       retries: 15
 
   k6:
-    image: grafana/k6:2.2.0
+    image: grafana/k6:2.3.0
     command: run /load/game.js
     # Docker creates the results folder as root when it is missing: the image's own user could not write in it.
     user: root

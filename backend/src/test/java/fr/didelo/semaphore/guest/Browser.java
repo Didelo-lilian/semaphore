@@ -12,50 +12,59 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Enough of a browser for {@code /api/me}: it keeps the cookies by hand, since Java's cookie jar
- * would not send a {@code Secure} cookie over plain HTTP, and sends the CSRF token as the page
- * does.
+ * Enough of a browser for the API: it keeps the cookies by hand, since Java's cookie jar would not
+ * send a {@code Secure} cookie over plain HTTP, sends the CSRF token as the page does, and follows
+ * no redirect, so a test sees each one.
  */
-final class Browser {
+public final class Browser {
 
   private final HttpClient http = HttpClient.newHttpClient();
   private final Map<String, String> cookies = new LinkedHashMap<>();
   private int port;
-  List<String> setCookies = List.of();
+  public List<String> setCookies = List.of();
 
-  Browser(int port) {
+  public Browser(int port) {
     this.port = port;
   }
 
   /** The same browser, now talking to another replica. */
-  void use(int otherPort) {
+  public void use(int otherPort) {
     port = otherPort;
   }
 
-  String cookie(String name) {
+  public String cookie(String name) {
     return cookies.get(name);
   }
 
-  void setCookie(String name, String value) {
+  public void setCookie(String name, String value) {
     cookies.put(name, value);
   }
 
-  HttpResponse<String> get() {
+  public HttpResponse<String> get() {
     return send("GET", null, cookie("__Host-XSRF-TOKEN"));
   }
 
-  HttpResponse<String> put(String json) {
+  public HttpResponse<String> put(String json) {
     return send("PUT", json, cookie("__Host-XSRF-TOKEN"));
   }
 
-  HttpResponse<String> delete() {
+  public HttpResponse<String> delete() {
     return send("DELETE", null, cookie("__Host-XSRF-TOKEN"));
+  }
+
+  /** A request to any path (and query), with the token as the page sends it. */
+  public HttpResponse<String> request(String method, String path) {
+    return send(method, path, null, cookie("__Host-XSRF-TOKEN"));
   }
 
   /** Sends {@code token} as the header, as the page does with the one it read from the cookie. */
   HttpResponse<String> send(String method, String json, String token) {
+    return send(method, "/api/me", json, token);
+  }
+
+  private HttpResponse<String> send(String method, String path, String json, String token) {
     var request =
-        HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/me"))
+        HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
             .method(
                 method,
                 json == null

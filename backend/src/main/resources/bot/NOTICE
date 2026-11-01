@@ -1,0 +1,15 @@
+fr-vectors.bin: French word vectors
+
+This file is adapted from the "French Word Embeddings" of Jean-Philippe Fauconnier
+(http://fauconnier.github.io), the model frWac_non_lem_no_postag_no_phrase_200_skip_cut100,
+trained on the frWaC corpus. It is shared under the Creative Commons Attribution 3.0 licence
+(CC BY 3.0, https://creativecommons.org/licenses/by/3.0/).
+
+Changes: the vocabulary is cut to 50 000 words (plus the words of the game), the vectors are
+normalised and quantised to bytes. tools/vectors/build.py makes the file from the original.
+
+@misc{fauconnier_2015,
+	author = {Fauconnier, Jean-Philippe},
+	title = {French Word Embeddings},
+	url = {http://fauconnier.github.io},
+	year = {2015}}

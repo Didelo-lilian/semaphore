@@ -122,7 +122,7 @@ One game, four players in four browser contexts, against the real backend and th
 It needs a Postgres, which the test does not start (CI has a service container for it):
 
 ```bash
-docker run -d --rm --name semaphore-e2e-db -p 5432:5432 -e POSTGRES_USER=semaphore -e POSTGRES_PASSWORD=semaphore -e POSTGRES_DB=semaphore postgres:18-alpine
+docker run -d --rm --name semaphore-e2e-db -p 127.0.0.1:5432:5432 -e POSTGRES_USER=semaphore -e POSTGRES_PASSWORD=semaphore -e POSTGRES_DB=semaphore postgres:18-alpine
 docker rm -f semaphore-e2e-db   # when you are done
 ```
 
@@ -137,7 +137,7 @@ Without a JDK 25 on the machine, build the jar and run it in containers, from th
 
 ```bash
 docker run --rm -v "$PWD/backend:/app" -v semaphore-gradle:/gradle-home -e GRADLE_USER_HOME=/gradle-home -w /app gradle:9.8.2-jdk25-alpine ./gradlew bootJar
-docker run -d --rm --name semaphore-e2e-backend -p 8080:8080 -e SEMAPHORE_ALLOWED_ORIGINS=http://localhost:4173 -e SPRING_DATASOURCE_URL=jdbc:postgresql://host.docker.internal:5432/semaphore -e SPRING_DATASOURCE_USERNAME=semaphore -e SPRING_DATASOURCE_PASSWORD=semaphore -e SEMAPHORE_AUTH_GITHUB_CLIENT_ID=e2e -e SEMAPHORE_AUTH_GITHUB_CLIENT_SECRET=e2e -e SEMAPHORE_AUTH_GITHUB_AUTHORIZATION_URI=http://localhost:9100/authorize -e SEMAPHORE_AUTH_GITHUB_TOKEN_URI=http://host.docker.internal:9100/token -e SEMAPHORE_AUTH_GITHUB_USER_INFO_URI=http://host.docker.internal:9100/user -v "$PWD/backend/build/libs/semaphore.jar:/app/semaphore.jar:ro" eclipse-temurin:25-jre-alpine java -jar /app/semaphore.jar
+docker run -d --rm --name semaphore-e2e-backend --add-host=host.docker.internal:host-gateway -p 8080:8080 -e SEMAPHORE_ALLOWED_ORIGINS=http://localhost:4173 -e SPRING_DATASOURCE_URL=jdbc:postgresql://host.docker.internal:5432/semaphore -e SPRING_DATASOURCE_USERNAME=semaphore -e SPRING_DATASOURCE_PASSWORD=semaphore -e SEMAPHORE_AUTH_GITHUB_CLIENT_ID=e2e -e SEMAPHORE_AUTH_GITHUB_CLIENT_SECRET=e2e -e SEMAPHORE_AUTH_GITHUB_AUTHORIZATION_URI=http://localhost:9100/authorize -e SEMAPHORE_AUTH_GITHUB_TOKEN_URI=http://host.docker.internal:9100/token -e SEMAPHORE_AUTH_GITHUB_USER_INFO_URI=http://host.docker.internal:9100/user -v "$PWD/backend/build/libs/semaphore.jar:/app/semaphore.jar:ro" eclipse-temurin:25-jre-alpine java -jar /app/semaphore.jar
 docker rm -f semaphore-e2e-backend   # when you are done
 ```
 

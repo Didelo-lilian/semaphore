@@ -26,6 +26,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -142,15 +144,22 @@ class SignInIT {
         .doesNotContainKeys("scope", "nonce");
   }
 
-  @Test
-  void aVisitorWhoChoseNoPseudoIsSentBackAndHoldsNoLoginCookie() {
+  @ParameterizedTest
+  @CsvSource(
+      delimiter = '|',
+      value = {
+        "/api/auth/login/github|/?login=pseudo&provider=github",
+        "/api/auth/login/google|/?login=pseudo&provider=google",
+        "/api/auth/login/%67ithub|/?login=pseudo"
+      })
+  void aVisitorWhoChoseNoPseudoIsSentBackAndHoldsNoLoginCookie(String path, String expected) {
     var browser = new Browser(port);
     browser.get();
 
-    var response = browser.request("GET", "/api/auth/login/github");
+    var response = browser.request("GET", path);
 
     assertThat(response.statusCode()).isEqualTo(302);
-    assertThat(landing(response)).isEqualTo("/?login=pseudo&provider=github");
+    assertThat(landing(response)).isEqualTo(expected);
     assertThat(browser.cookie("__Host-login")).isNull();
   }
 

@@ -1,9 +1,6 @@
 package fr.didelo.semaphore.store;
 
 import java.time.Duration;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,15 +19,7 @@ class InMemorySessions {
 
   @Bean
   MapSessionRepository sessions(@Value("${semaphore.session.idle-timeout}") Duration idleTimeout) {
-    var sessions =
-        new MapSessionRepository(
-            Collections.synchronizedMap(
-                new LinkedHashMap<String, Session>() {
-                  @Override
-                  protected boolean removeEldestEntry(Map.Entry<String, Session> eldest) {
-                    return size() > MAX_SESSIONS;
-                  }
-                }));
+    var sessions = new MapSessionRepository(Bounded.<String, Session>map(MAX_SESSIONS));
     sessions.setDefaultMaxInactiveInterval(idleTimeout);
     return sessions;
   }

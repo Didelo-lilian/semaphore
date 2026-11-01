@@ -4,6 +4,7 @@ import fr.didelo.semaphore.guest.SessionKeys;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.time.Instant;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataAccessException;
@@ -52,6 +53,7 @@ class LoginOutcome implements AuthenticationSuccessHandler, AuthenticationFailur
     // Against session fixation: whatever id the browser held before, it holds another now.
     request.changeSessionId();
     session.setAttribute(SessionKeys.ACCOUNT_ID, account.id().toString());
+    session.setAttribute(SessionKeys.ACCOUNT_AT, Long.toString(Instant.now().getEpochSecond()));
     session.setAttribute(SessionKeys.GUEST_NAME, account.displayName());
     response.sendRedirect("/");
   }

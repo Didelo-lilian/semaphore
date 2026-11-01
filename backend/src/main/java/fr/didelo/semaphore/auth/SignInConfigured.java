@@ -14,6 +14,6 @@ class SignInConfigured implements Condition {
   public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
     var environment = context.getEnvironment();
     return !environment.getProperty("spring.datasource.url", "").isBlank()
-        && !Providers.registrations(environment).isEmpty();
+        && !Providers.of(environment).registrations().isEmpty();
   }
 }

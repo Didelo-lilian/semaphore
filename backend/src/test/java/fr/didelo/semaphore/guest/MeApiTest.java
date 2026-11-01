@@ -168,12 +168,16 @@ class MeApiTest {
 
     for (var json :
         new String[] {
-          "{\"name\":\"an\\u0000a\"}", "{\"name\":\"an\\na\"}", "{\"name\":\"an\\u007fa\"}"
+          "{\"name\":\"an\\u0000a\"}",
+          "{\"name\":\"an\\na\"}",
+          "{\"name\":\"an\\u007fa\"}",
+          "{\"name\":\"an\\u202ea\"}",
+          "{\"name\":\"an\\u200ba\"}"
         }) {
       var response = browser.put(json);
       assertThat(response.statusCode()).as(json).isEqualTo(400);
       assertThat(body(response).get("error").asString())
-          .isEqualTo("a name has no control character");
+          .isEqualTo("a name has no control or format character");
     }
     assertThat(browser.cookie("__Host-session")).isNull();
   }

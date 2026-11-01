@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -29,13 +31,11 @@ import org.springframework.web.bind.annotation.RestController;
  * Sign-in is optional, so its beans may be missing: then no provider is on, and a session that
  * names an account no longer has one.
  */
+@Slf4j
 @RestController
 @RequestMapping("/api/me")
 @RequiredArgsConstructor
 class MeController {
-
-  static final String ID = SessionKeys.GUEST_ID;
-  static final String NAME = SessionKeys.GUEST_NAME;
 
   @JsonInclude(JsonInclude.Include.NON_NULL)
   record Me(String kind, String id, String name, List<String> providers) {}
@@ -61,14 +61,12 @@ class MeController {
   Me put(@RequestBody Rename rename, HttpServletRequest request) {
     var name = PlayerName.of(rename.name());
     var session = request.getSession();
-    session.setAttribute(NAME, name);
-    if (session.getAttribute(ID) == null) {
-      session.setAttribute(ID, UUID.randomUUID().toString());
+    session.setAttribute(SessionKeys.GUEST_NAME, name);
+    if (session.getAttribute(SessionKeys.GUEST_ID) == null) {
+      session.setAttribute(SessionKeys.GUEST_ID, UUID.randomUUID().toString());
     }
-    var accountId = (String) session.getAttribute(SessionKeys.ACCOUNT_ID);
-    if (accountId != null) {
-      accounts.ifPresent(accounts -> accounts.rename(UUID.fromString(accountId), name));
-    }
+    accounts.ifPresent(
+        accounts -> accounts.signedIn(session).ifPresent(id -> accounts.rename(id, name)));
     return me(session);
   }
 
@@ -82,22 +80,35 @@ class MeController {
   }
 
   /**
-   * The account is read at each call: it may have been deleted from another browser, and the
-   * session then goes back to being a guest's, with the name it had.
+   * The account is read at each call: it may have been renamed or deleted from another browser, so
+   * the session takes its name again, or goes back to being a guest's with the name it had. With
+   * the database out of reach the session answers alone, since the game does not need it (ADR
+   * 0013).
    */
   private Me me(HttpSession session) {
-    var accountId = (String) session.getAttribute(SessionKeys.ACCOUNT_ID);
-    if (accountId != null) {
-      var account = accounts.flatMap(accounts -> accounts.find(UUID.fromString(accountId)));
-      if (account.isPresent()) {
-        return new Me("account", accountId, account.get().displayName(), null);
+    var signedIn = accounts.flatMap(accounts -> accounts.signedIn(session));
+    if (signedIn.isPresent()) {
+      var id = signedIn.get().toString();
+      try {
+        var account = accounts.get().find(signedIn.get());
+        if (account.isPresent()) {
+          var name = account.get().displayName();
+          if (!name.equals(session.getAttribute(SessionKeys.GUEST_NAME))) {
+            session.setAttribute(SessionKeys.GUEST_NAME, name);
+          }
+          return new Me("account", id, name, null);
+        }
+        session.removeAttribute(SessionKeys.ACCOUNT_ID);
+        session.removeAttribute(SessionKeys.ACCOUNT_AT);
+      } catch (DataAccessException e) {
+        log.warn("The account of a session could not be read: {}", e.toString());
+        return new Me("account", id, (String) session.getAttribute(SessionKeys.GUEST_NAME), null);
       }
-      session.removeAttribute(SessionKeys.ACCOUNT_ID);
     }
     return new Me(
         "guest",
-        (String) session.getAttribute(ID),
-        (String) session.getAttribute(NAME),
+        (String) session.getAttribute(SessionKeys.GUEST_ID),
+        (String) session.getAttribute(SessionKeys.GUEST_NAME),
         providers());
   }
 

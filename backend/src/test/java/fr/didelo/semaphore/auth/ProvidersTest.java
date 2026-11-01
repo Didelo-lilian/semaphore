@@ -24,7 +24,7 @@ class ProvidersTest {
             "google.client-id", "",
             "google.client-secret", "secret");
 
-    assertThat(Providers.registrations(environment)).isEmpty();
+    assertThat(Providers.of(environment).registrations()).isEmpty();
   }
 
   @Test
@@ -36,7 +36,7 @@ class ProvidersTest {
             "google.client-id", "c",
             "google.client-secret", "d");
 
-    var registrations = Providers.registrations(environment);
+    var registrations = Providers.of(environment).registrations();
 
     assertThat(registrations).containsOnlyKeys("github", "google");
     assertThat(registrations.get("github").getScopes()).isEmpty();
@@ -53,7 +53,7 @@ class ProvidersTest {
             "github.client-secret", "b",
             "github.token-uri", "http://idp.test/token");
 
-    var github = Providers.registrations(environment).get("github");
+    var github = Providers.of(environment).registrations().get("github");
 
     assertThat(github.getProviderDetails().getTokenUri()).isEqualTo("http://idp.test/token");
     assertThat(github.getProviderDetails().getAuthorizationUri())

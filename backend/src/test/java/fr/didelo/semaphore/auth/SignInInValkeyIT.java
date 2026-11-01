@@ -55,6 +55,9 @@ class SignInInValkeyIT {
     browser.put("{\"name\":\"ana\"}");
     var start = browser.request("GET", "/api/auth/login/github");
     var login = browser.cookie("__Host-login");
+    var guestSession =
+        "session:sessions:"
+            + new String(Base64.getDecoder().decode(browser.cookie("__Host-session")));
     var subject = FakeProvider.newSubject();
     var callback = FakeProvider.approve(start.headers().firstValue("Location").orElseThrow());
     FakeProvider.willSignIn("github", subject);
@@ -65,6 +68,7 @@ class SignInInValkeyIT {
       // In flight: JSON under the id of the cookie, for ten minutes at most.
       assertThat(valkey.get("login:" + login)).contains("\"state\"", "code_verifier");
       assertThat(valkey.ttl("login:" + login)).isBetween(590L, 600L);
+      assertThat(valkey.exists(guestSession)).isOne();
 
       browser.use(other);
       var back = browser.request("GET", callback);
@@ -77,16 +81,16 @@ class SignInInValkeyIT {
           "session:sessions:"
               + new String(Base64.getDecoder().decode(browser.cookie("__Host-session")));
       assertThat(valkey.hget(session, "sessionAttr:account.id")).isNotBlank();
-      // A JWT starts with "eyJ": the access token and the ID token are nowhere, nor is a secret.
-      for (var key : valkey.keys("*")) {
-        var held =
-            switch (valkey.type(key)) {
-              case "hash" -> valkey.hgetall(key).toString();
-              case "string" -> valkey.get(key);
-              default -> "";
-            };
-        assertThat(held).as(key).doesNotContain("eyJ", "github-secret", "google-secret");
-      }
+      // Against session fixation: the id the browser held before the login is dead in Valkey.
+      assertThat(valkey.exists(guestSession)).isZero();
+      // What the session holds is these four plain strings: nothing of the provider, no
+      // Authentication, however it would be encoded.
+      assertThat(valkey.hkeys(session).stream().filter(field -> field.startsWith("sessionAttr:")))
+          .containsExactlyInAnyOrder(
+              "sessionAttr:guest.id",
+              "sessionAttr:guest.name",
+              "sessionAttr:account.id",
+              "sessionAttr:account.at");
     }
   }
 }

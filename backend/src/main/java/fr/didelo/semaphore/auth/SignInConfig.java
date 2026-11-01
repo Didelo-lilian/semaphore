@@ -1,16 +1,22 @@
 package fr.didelo.semaphore.auth;
 
+import fr.didelo.semaphore.history.GameHistory;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
+import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.core.env.Environment;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.http.converter.FormHttpMessageConverter;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.security.config.ObjectPostProcessor;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.core.Authentication;
@@ -35,8 +41,10 @@ import org.springframework.security.oauth2.jwt.JwtDecoderFactory;
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 import org.springframework.security.web.csrf.CsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestTemplate;
 
@@ -64,16 +72,32 @@ class SignInConfig {
   }
 
   @Bean
+  Providers providers(Environment environment) {
+    return Providers.of(environment);
+  }
+
+  /** An account session does not outlive the cookie (ADR 0011): the same property gives both. */
+  @Bean
+  Accounts accounts(
+      JdbcClient jdbc,
+      GameHistory history,
+      TransactionTemplate transaction,
+      @Value("${semaphore.session.cookie-max-age}") Duration sessionLife) {
+    return new Accounts(jdbc, history, transaction, sessionLife);
+  }
+
+  @Bean
   @Order(1)
   SecurityFilterChain signIn(
       HttpSecurity http,
       Providers providers,
+      Accounts accounts,
       CookieLoginRequests requests,
       LoginOutcome outcome,
       CsrfTokenRepository tokens,
       JwtDecoderFactory<ClientRegistration> idTokens) {
-    var authorize =
-        new DefaultOAuth2AuthorizationRequestResolver(providers.repository(), Providers.LOGIN);
+    var repository = providers.repository();
+    var authorize = new DefaultOAuth2AuthorizationRequestResolver(repository, Providers.LOGIN);
     authorize.setAuthorizationRequestCustomizer(OAuth2AuthorizationRequestCustomizers.withPkce());
     var token = new RestClientAuthorizationCodeTokenResponseClient();
     token.setRestClient(
@@ -109,22 +133,25 @@ class SignInConfig {
                 csrf.csrfTokenRepository(tokens)
                     .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler()))
         .oauth2Login(
-            login ->
-                login
-                    .clientRegistrationRepository(providers.repository())
-                    .authorizedClientRepository(new NoAuthorizedClients())
-                    .authorizationEndpoint(
-                        endpoint ->
-                            endpoint
-                                .authorizationRequestResolver(authorize)
-                                .authorizationRequestRepository(requests))
-                    .redirectionEndpoint(endpoint -> endpoint.baseUri(Providers.CALLBACK + "/*"))
-                    .tokenEndpoint(endpoint -> endpoint.accessTokenResponseClient(token))
-                    .userInfoEndpoint(
-                        endpoint -> endpoint.userService(github).oidcUserService(google))
-                    .successHandler(outcome)
-                    .failureHandler(outcome))
-        .addFilterBefore(new PseudoFirst(), OAuth2AuthorizationRequestRedirectFilter.class)
+            login -> {
+              login.withObjectPostProcessor(new RedirectFailures(outcome));
+              login
+                  .clientRegistrationRepository(repository)
+                  .authorizedClientRepository(new NoAuthorizedClients())
+                  .authorizationEndpoint(
+                      endpoint ->
+                          endpoint
+                              .authorizationRequestResolver(authorize)
+                              .authorizationRequestRepository(requests))
+                  .redirectionEndpoint(endpoint -> endpoint.baseUri(Providers.CALLBACK + "/*"))
+                  .tokenEndpoint(endpoint -> endpoint.accessTokenResponseClient(token))
+                  .userInfoEndpoint(
+                      endpoint -> endpoint.userService(github).oidcUserService(google))
+                  .successHandler(outcome)
+                  .failureHandler(outcome);
+            })
+        .addFilterBefore(new PseudoFirst(accounts), OAuth2AuthorizationRequestRedirectFilter.class)
+        .addFilterBefore(new HomeOnFailure(), PseudoFirst.class)
         .build();
   }
 
@@ -153,6 +180,23 @@ class SignInConfig {
                       OidcIdTokenDecoderFactory.createDefaultClaimTypeConverters()));
               return decoder;
             });
+  }
+
+  /**
+   * The filter that starts a login answers a bare 500 to whatever goes wrong, when Valkey cannot
+   * keep the login for one; it sends the player home with the code of every failure instead.
+   */
+  @RequiredArgsConstructor
+  private static final class RedirectFailures
+      implements ObjectPostProcessor<OAuth2AuthorizationRequestRedirectFilter> {
+
+    private final AuthenticationFailureHandler failures;
+
+    @Override
+    public <O extends OAuth2AuthorizationRequestRedirectFilter> O postProcess(O filter) {
+      filter.setAuthenticationFailureHandler(failures);
+      return filter;
+    }
   }
 
   /** Spring's default keeps the provider's token in memory for as long as the process runs. */

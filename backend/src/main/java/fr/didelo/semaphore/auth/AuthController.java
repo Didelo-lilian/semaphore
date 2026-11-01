@@ -1,7 +1,7 @@
 package fr.didelo.semaphore.auth;
 
-import fr.didelo.semaphore.guest.SessionKeys;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -39,11 +39,11 @@ class AuthController {
   @DeleteMapping("/account")
   ResponseEntity<Void> delete(HttpServletRequest request) {
     var session = request.getSession(false);
-    var id = session == null ? null : (String) session.getAttribute(SessionKeys.ACCOUNT_ID);
-    if (id == null) {
+    var id = session == null ? Optional.<UUID>empty() : accounts.signedIn(session);
+    if (id.isEmpty()) {
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
     }
-    accounts.delete(UUID.fromString(id));
+    accounts.delete(id.get());
     session.invalidate();
     return ResponseEntity.noContent().build();
   }

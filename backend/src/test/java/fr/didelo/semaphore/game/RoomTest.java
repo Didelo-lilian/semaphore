@@ -114,10 +114,10 @@ class RoomTest {
   void aNameWithAControlCharacterIsRefused() {
     var room = new Room("ABCDE", Clock.systemUTC(), new Random(7), 2, POOL);
 
-    for (var name : new String[] {"an\u0000a", "an\na", "an\u007fa", "an\u0085a"}) {
+    for (var name : new String[] {"an\u0000a", "an\na", "an\u007fa", "an\u0085a", "an‮a", "an​a"}) {
       assertThatThrownBy(() -> room.join(name, REPLICA))
           .isInstanceOf(IllegalMove.class)
-          .hasMessage("a name has no control character");
+          .hasMessage("a name has no control or format character");
     }
   }
 

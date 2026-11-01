@@ -6,13 +6,19 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
- * A login starts only for a browser that already chose a pseudo (ADR 0011): the account is created
- * with it, and a visitor with no session cannot fill the store of logins in flight.
+ * A login starts only for a browser that already chose a pseudo and has no account yet (ADR 0011):
+ * the account is created with the pseudo, a session that signed in keeps its account, and a browser
+ * with no session at all cannot start one (the logins in flight are held in Valkey, and the edge
+ * limits how many one address starts).
  */
+@RequiredArgsConstructor
 final class PseudoFirst extends OncePerRequestFilter {
+
+  private final Accounts accounts;
 
   @Override
   protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -26,8 +32,10 @@ final class PseudoFirst extends OncePerRequestFilter {
     var session = request.getSession(false);
     if (session == null || session.getAttribute(SessionKeys.GUEST_NAME) == null) {
       response.sendRedirect("/?login=pseudo");
-      return;
+    } else if (accounts.signedIn(session).isPresent()) {
+      response.sendRedirect("/");
+    } else {
+      chain.doFilter(request, response);
     }
-    chain.doFilter(request, response);
   }
 }

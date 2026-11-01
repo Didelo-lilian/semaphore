@@ -3,8 +3,6 @@ package fr.didelo.semaphore.store;
 import fr.didelo.semaphore.auth.LoginRequests;
 import fr.didelo.semaphore.auth.WithSignIn;
 import java.time.Instant;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import org.springframework.stereotype.Component;
@@ -19,14 +17,7 @@ class InMemoryLoginRequests implements LoginRequests {
 
   private record Waiting(String json, Instant until) {}
 
-  private final Map<String, Waiting> waiting =
-      Collections.synchronizedMap(
-          new LinkedHashMap<>() {
-            @Override
-            protected boolean removeEldestEntry(Map.Entry<String, Waiting> eldest) {
-              return size() > MAX_REQUESTS;
-            }
-          });
+  private final Map<String, Waiting> waiting = Bounded.map(MAX_REQUESTS);
 
   @Override
   public void put(String id, String json) {

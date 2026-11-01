@@ -88,7 +88,9 @@ final class FakeProvider {
     return callback.getRawPath() + "?" + callback.getRawQuery();
   }
 
-  /** The form of the last code exchange the fake received, as parameters. */
+  /**
+   * The form of the last code exchange the fake received, as parameters; none if there was none.
+   */
   static Map<String, String> lastCodeExchange() throws InterruptedException {
     String form = null;
     try {
@@ -101,7 +103,7 @@ final class FakeProvider {
     } catch (RuntimeException drained) {
       // The fake throws, instead of returning null, when no request is left.
     }
-    return parameters("http://provider.test/token?" + form);
+    return form == null ? Map.of() : parameters("http://provider.test/token?" + form);
   }
 
   /** The decoded parameters of a URL. */

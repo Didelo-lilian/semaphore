@@ -1,23 +1,38 @@
 package fr.didelo.semaphore.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 
 import fr.didelo.semaphore.Postgres;
+import fr.didelo.semaphore.game.Unavailable;
 import fr.didelo.semaphore.guest.Browser;
 import java.net.URI;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.QueryTimeoutException;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.session.MapSession;
+import org.springframework.session.MapSessionRepository;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -36,6 +51,11 @@ class SignInIT {
   @LocalServerPort private int port;
   @Autowired private JdbcClient jdbc;
 
+  // Spies: they do what the real beans do until a test makes a store fail.
+  @MockitoSpyBean private LoginRequests requests;
+  @MockitoSpyBean private MapSessionRepository sessions;
+  @MockitoSpyBean private Accounts accounts;
+
   private static JsonNode body(HttpResponse<String> response) {
     return JSON.readTree(response.body());
   }
@@ -48,6 +68,11 @@ class SignInIT {
   private static String landing(HttpResponse<String> response) {
     var uri = URI.create(location(response));
     return uri.getRawPath() + (uri.getRawQuery() == null ? "" : "?" + uri.getRawQuery());
+  }
+
+  private MapSession sessionOf(Browser browser) {
+    return sessions.findById(
+        new String(Base64.getDecoder().decode(browser.cookie("__Host-session"))));
   }
 
   private Browser guest(String pseudo) {
@@ -220,14 +245,80 @@ class SignInIT {
   }
 
   @Test
-  void aWrongStateIsRefusedAndNothingIsCreated() throws Exception {
+  void aWrongStateIsRefusedBeforeTheCodeIsExchangedAndNothingIsCreated() throws Exception {
     var browser = guest("ana");
-    browser.request("GET", "/api/auth/login/github");
+    var start = browser.request("GET", "/api/auth/login/github");
+    // A code the provider really issued, for the real state: only the state is forged.
+    var callback = FakeProvider.approve(location(start));
+    var forged = callback.replaceFirst("state=[^&]+", "state=forged");
+    FakeProvider.lastCodeExchange();
 
-    var back = browser.request("GET", "/api/auth/callback/github?code=any&state=forged");
+    var back = browser.request("GET", forged);
 
     assertThat(landing(back)).isEqualTo("/?login=failed");
+    assertThat(FakeProvider.lastCodeExchange()).isEmpty();
     assertThat(body(browser.get()).get("kind").asString()).isEqualTo("guest");
+  }
+
+  @Test
+  void aBrowserThatStartsAgainLeavesNoEarlierLoginBehind() {
+    var browser = guest("ana");
+    browser.request("GET", "/api/auth/login/github");
+    var first = browser.cookie("__Host-login");
+    assertThat(requests.get(first)).isPresent();
+
+    browser.request("GET", "/api/auth/login/google");
+
+    assertThat(browser.cookie("__Host-login")).isNotEqualTo(first);
+    assertThat(requests.get(first)).isEmpty();
+    assertThat(requests.get(browser.cookie("__Host-login"))).isPresent();
+  }
+
+  @Test
+  void aSessionThatHasAnAccountDoesNotStartAnotherLogin() throws Exception {
+    var subject = FakeProvider.newSubject();
+    var browser = guest("ana");
+    signIn(browser, "github", subject);
+    var account = body(browser.get()).get("id").asString();
+
+    var response = browser.request("GET", "/api/auth/login/google");
+
+    assertThat(landing(response)).isEqualTo("/");
+    assertThat(browser.cookie("__Host-login")).isNull();
+    assertThat(body(browser.get()).get("id").asString()).isEqualTo(account);
+    assertThat(accountsOf("github", subject)).hasSize(1);
+  }
+
+  @Test
+  void twoFirstLoginsOfOneIdentityAtOnceMakeOneAccount() throws Exception {
+    var subject = FakeProvider.newSubject();
+    var browsers = List.of(guest("ana"), guest("bob"));
+    var callbacks = new ArrayList<String>();
+    for (var browser : browsers) {
+      callbacks.add(
+          FakeProvider.approve(location(browser.request("GET", "/api/auth/login/github"))));
+      FakeProvider.willSignIn("github", subject);
+    }
+    var go = new CountDownLatch(1);
+
+    try (var pool = Executors.newFixedThreadPool(2)) {
+      var backs =
+          IntStream.range(0, 2)
+              .mapToObj(
+                  i ->
+                      pool.submit(
+                          () -> {
+                            go.await();
+                            return landing(browsers.get(i).request("GET", callbacks.get(i)));
+                          }))
+              .toList();
+      go.countDown();
+      for (var back : backs) {
+        assertThat(back.get(10, TimeUnit.SECONDS)).isEqualTo("/");
+      }
+    }
+
+    assertThat(accountsOf("github", subject)).hasSize(1);
   }
 
   @Test
@@ -313,6 +404,81 @@ class SignInIT {
     assertThat(renamed.get("name").asString()).isEqualTo("zoe");
     assertThat(accountsOf("github", subject)).containsExactly("zoe");
     assertThat(body(second.get()).get("name").asString()).isEqualTo("zoe");
+    // The name a room reads at the handshake is the session's: it follows the account.
+    assertThat(sessionOf(second).<String>getAttribute("guest.name")).isEqualTo("zoe");
+  }
+
+  @Test
+  void anAccountSessionStopsCountingAsOneAfterTheLifeOfTheCookie() throws Exception {
+    var subject = FakeProvider.newSubject();
+    var browser = guest("ana");
+    signIn(browser, "github", subject);
+    var session = sessionOf(browser);
+    var longAgo = Instant.now().minus(31, ChronoUnit.DAYS).getEpochSecond();
+    session.setAttribute("account.at", Long.toString(longAgo));
+    sessions.save(session);
+
+    assertThat(browser.request("DELETE", "/api/auth/account").statusCode()).isEqualTo(401);
+    assertThat(accountsOf("github", subject)).hasSize(1);
+    var me = body(browser.get());
+    assertThat(me.get("kind").asString()).isEqualTo("guest");
+    assertThat(me.get("name").asString()).isEqualTo("ana");
+  }
+
+  @Test
+  void aLoginThatValkeyCannotKeepSendsTheBrowserHome() {
+    var browser = guest("ana");
+    doThrow(new Unavailable("the server is busy, try again")).when(requests).put(any(), any());
+
+    var response = browser.request("GET", "/api/auth/login/github");
+
+    assertThat(landing(response)).isEqualTo("/?login=failed");
+  }
+
+  @Test
+  void aCallbackThatCannotReadItsLoginSendsTheBrowserHome() throws Exception {
+    var browser = guest("ana");
+    var callback = FakeProvider.approve(location(browser.request("GET", "/api/auth/login/github")));
+    doThrow(new Unavailable("the server is busy, try again")).when(requests).take(any());
+
+    assertThat(landing(browser.request("GET", callback))).isEqualTo("/?login=failed");
+    assertThat(body(browser.get()).get("kind").asString()).isEqualTo("guest");
+  }
+
+  @Test
+  void aSessionStoreThatIsOutSendsALoginHomeWhileTheApiAnswersBusy() {
+    var browser = guest("ana");
+    doThrow(new QueryTimeoutException("out")).when(sessions).findById(any());
+
+    assertThat(landing(browser.request("GET", "/api/auth/login/github")))
+        .isEqualTo("/?login=failed");
+    assertThat(browser.get().statusCode()).isEqualTo(503);
+  }
+
+  @Test
+  void aDatabaseThatIsOutEndsALoginOnFailed() throws Exception {
+    var browser = guest("ana");
+    var callback = FakeProvider.approve(location(browser.request("GET", "/api/auth/login/github")));
+    FakeProvider.willSignIn("github", FakeProvider.newSubject());
+    doThrow(new DataAccessResourceFailureException("down"))
+        .when(accounts)
+        .findOrCreate(any(), any(), any());
+
+    assertThat(landing(browser.request("GET", callback))).isEqualTo("/?login=failed");
+  }
+
+  @Test
+  void anAccountIsStillAnAccountWhileTheDatabaseIsOut() throws Exception {
+    var browser = guest("ana");
+    signIn(browser, "github", FakeProvider.newSubject());
+    var id = body(browser.get()).get("id").asString();
+    doThrow(new DataAccessResourceFailureException("down")).when(accounts).find(any());
+
+    var me = body(browser.get());
+
+    assertThat(me.get("kind").asString()).isEqualTo("account");
+    assertThat(me.get("id").asString()).isEqualTo(id);
+    assertThat(me.get("name").asString()).isEqualTo("ana");
   }
 
   @Test

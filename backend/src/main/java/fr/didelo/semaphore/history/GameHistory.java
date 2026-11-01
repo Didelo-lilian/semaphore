@@ -21,7 +21,9 @@ public class GameHistory {
 
   /**
    * Writes a game and its players, all or nothing. A game that is already there is left as it is:
-   * it returns false, which is what a second replica or a retry meets.
+   * it returns false, which is what a second replica or a retry meets. A seat whose account was
+   * deleted since the player joined is written as a guest's, since the foreign key would otherwise
+   * refuse the whole game.
    */
   boolean record(GameResult result) {
     return transaction.execute(
@@ -46,7 +48,7 @@ public class GameHistory {
             jdbc.sql(
                     """
                     INSERT INTO game_player (game_id, player_id, name, team, role, account_id)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, (SELECT id FROM account WHERE id = ?))
                     """)
                 .params(
                     result.id(),
@@ -64,7 +66,8 @@ public class GameHistory {
   /**
    * Removes the person and keeps the table (ADR 0012), all or nothing: the account's rows lose
    * their account id and their name, then the games left with no account in them go. The other
-   * players' history does not change.
+   * players' history does not change. The games are locked first, in one order: two people of one
+   * game forgotten at once each see the other's seat as it was, and neither would drop the game.
    */
   public void forget(UUID accountId) {
     transaction.executeWithoutResult(
@@ -72,24 +75,33 @@ public class GameHistory {
           var games =
               jdbc.sql(
                       """
-                      UPDATE game_player SET account_id = NULL, name = 'a former player'
-                      WHERE account_id = ?
-                      RETURNING game_id
+                      SELECT id FROM game
+                      WHERE id IN (SELECT game_id FROM game_player WHERE account_id = ?)
+                      ORDER BY id
+                      FOR UPDATE
                       """)
                   .param(accountId)
                   .query(UUID.class)
                   .list();
-          if (!games.isEmpty()) {
-            jdbc.sql(
-                    """
-                    DELETE FROM game
-                    WHERE id IN (:games)
-                      AND NOT EXISTS (
-                        SELECT 1 FROM game_player WHERE game_id = game.id AND account_id IS NOT NULL)
-                    """)
-                .param("games", games)
-                .update();
+          if (games.isEmpty()) {
+            return;
           }
+          jdbc.sql(
+                  """
+                  UPDATE game_player SET account_id = NULL, name = 'a former player'
+                  WHERE account_id = ?
+                  """)
+              .param(accountId)
+              .update();
+          jdbc.sql(
+                  """
+                  DELETE FROM game
+                  WHERE id = ANY (?)
+                    AND NOT EXISTS (
+                      SELECT 1 FROM game_player WHERE game_id = game.id AND account_id IS NOT NULL)
+                  """)
+              .param(games.toArray(UUID[]::new))
+              .update();
         });
   }
 }

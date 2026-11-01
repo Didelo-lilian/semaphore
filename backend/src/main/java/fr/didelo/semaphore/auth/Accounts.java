@@ -1,17 +1,18 @@
 package fr.didelo.semaphore.auth;
 
+import fr.didelo.semaphore.guest.SessionKeys;
 import fr.didelo.semaphore.history.GameHistory;
+import jakarta.servlet.http.HttpSession;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /** The accounts of ADR 0011: a provider, the id it gives, and the name shown in the game. */
-@Component
-@WithSignIn
 @RequiredArgsConstructor
 public class Accounts {
 
@@ -23,6 +24,28 @@ public class Accounts {
   private final JdbcClient jdbc;
   private final GameHistory history;
   private final TransactionTemplate transaction;
+  private final Duration sessionLife;
+
+  /**
+   * The account this session signed in to, unless that was longer ago than the cookie lives: each
+   * use renews a session in Valkey, so without this a copied cookie would hold the account for
+   * good. A login that is too old is dropped from the session, which is then a guest's.
+   */
+  public Optional<UUID> signedIn(HttpSession session) {
+    var id = (String) session.getAttribute(SessionKeys.ACCOUNT_ID);
+    if (id == null) {
+      return Optional.empty();
+    }
+    var at =
+        Instant.ofEpochSecond(
+            Long.parseLong((String) session.getAttribute(SessionKeys.ACCOUNT_AT)));
+    if (at.plus(sessionLife).isAfter(Instant.now())) {
+      return Optional.of(UUID.fromString(id));
+    }
+    session.removeAttribute(SessionKeys.ACCOUNT_ID);
+    session.removeAttribute(SessionKeys.ACCOUNT_AT);
+    return Optional.empty();
+  }
 
   /**
    * The account of this identity, created with {@code displayName} the first time. One statement,

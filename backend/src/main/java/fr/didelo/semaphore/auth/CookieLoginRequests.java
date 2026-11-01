@@ -58,6 +58,11 @@ class CookieLoginRequests implements AuthorizationRequestRepository<OAuth2Author
       OAuth2AuthorizationRequest authorization,
       HttpServletRequest request,
       HttpServletResponse response) {
+    // A browser that starts again leaves its earlier login behind: that key is dropped here.
+    var previous = WebUtils.getCookie(request, COOKIE);
+    if (previous != null) {
+      requests.take(previous.getValue());
+    }
     var id = IDS.generateKey();
     requests.put(
         id,

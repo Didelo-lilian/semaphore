@@ -9,5 +9,8 @@ public final class SessionKeys {
   /** Set when the browser signed in (ADR 0011); the name is then the account's. */
   public static final String ACCOUNT_ID = "account.id";
 
+  /** When it signed in, in epoch seconds: an account session does not outlive the cookie. */
+  public static final String ACCOUNT_AT = "account.at";
+
   private SessionKeys() {}
 }

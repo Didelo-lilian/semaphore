@@ -12,7 +12,6 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
-import org.springframework.stereotype.Component;
 
 /**
  * The providers that are on: GitHub and Google with an id and a secret that are not blank (ADR
@@ -21,9 +20,7 @@ import org.springframework.stereotype.Component;
  * The endpoints are the built-in ones, no discovery, so a provider that is down cannot stop the
  * backend from starting; the properties can replace them (tests, GitHub Enterprise).
  */
-@Component
-@WithSignIn
-public class Providers {
+public record Providers(Map<String, ClientRegistration> registrations) {
 
   static final String LOGIN = "/api/auth/login";
   static final String CALLBACK = "/api/auth/callback";
@@ -47,42 +44,31 @@ public class Providers {
     }
   }
 
-  private final Map<String, ClientRegistration> registrations;
-  private final ClientRegistrationRepository repository;
-
-  Providers(Environment environment) {
-    registrations = registrations(environment);
-    repository = new InMemoryClientRegistrationRepository(registrations);
-  }
-
-  /** The registrations of the providers that are on, in a stable order. */
-  static Map<String, ClientRegistration> registrations(Environment environment) {
+  /** The providers that are on, in a stable order. */
+  static Providers of(Environment environment) {
     var binder = Binder.get(environment);
     var on = new LinkedHashMap<String, ClientRegistration>();
     for (var name : NAMES) {
-      var settings = binder.bind("semaphore.auth." + name, Settings.class);
-      if (settings.isBound() && settings.get().on()) {
-        on.put(name, register(name, settings.get()));
+      var bound = binder.bind("semaphore.auth." + name, Settings.class);
+      if (bound.isBound() && bound.get().on()) {
+        var settings = bound.get();
+        var builder =
+            name.equals("github")
+                ? github(name)
+                : CommonOAuth2Provider.GOOGLE.getBuilder(name).scope("openid");
+        builder
+            .clientId(settings.clientId())
+            .clientSecret(settings.clientSecret())
+            .redirectUri("{baseUrl}" + CALLBACK + "/{registrationId}");
+        replace(settings.authorizationUri(), builder::authorizationUri);
+        replace(settings.tokenUri(), builder::tokenUri);
+        replace(settings.userInfoUri(), builder::userInfoUri);
+        replace(settings.jwkSetUri(), builder::jwkSetUri);
+        replace(settings.issuerUri(), builder::issuerUri);
+        on.put(name, builder.build());
       }
     }
-    return on;
-  }
-
-  private static ClientRegistration register(String name, Settings settings) {
-    var builder =
-        name.equals("github")
-            ? github(name)
-            : CommonOAuth2Provider.GOOGLE.getBuilder(name).scope("openid");
-    builder
-        .clientId(settings.clientId())
-        .clientSecret(settings.clientSecret())
-        .redirectUri("{baseUrl}" + CALLBACK + "/{registrationId}");
-    replace(settings.authorizationUri(), builder::authorizationUri);
-    replace(settings.tokenUri(), builder::tokenUri);
-    replace(settings.userInfoUri(), builder::userInfoUri);
-    replace(settings.jwkSetUri(), builder::jwkSetUri);
-    replace(settings.issuerUri(), builder::issuerUri);
-    return builder.build();
+    return new Providers(on);
   }
 
   /**
@@ -108,7 +94,7 @@ public class Providers {
   }
 
   ClientRegistrationRepository repository() {
-    return repository;
+    return new InMemoryClientRegistrationRepository(registrations);
   }
 
   /** The names the front draws a button for. */

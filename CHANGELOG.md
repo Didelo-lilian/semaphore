@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.5.0](https://github.com/Didelo-lilian/semaphore/compare/v0.4.0...v0.5.0) (2026-11-01)
+
+
+### Features
+
+* add Postgres with Flyway migrations ([#59](https://github.com/Didelo-lilian/semaphore/issues/59)) ([f2d5105](https://github.com/Didelo-lilian/semaphore/commit/f2d510515d200b972a008eb72977397f2cef6e62))
+* add the logo, the favicon and the privacy and terms pages ([#70](https://github.com/Didelo-lilian/semaphore/issues/70)) ([ad1217d](https://github.com/Didelo-lilian/semaphore/commit/ad1217d0a51a7165c5c2302af7828202d2536d43))
+* give a signal at three levels from the word vectors ([#75](https://github.com/Didelo-lilian/semaphore/issues/75)) ([bc83ca3](https://github.com/Didelo-lilian/semaphore/commit/bc83ca3b3633f0396b5384f235cbca93217ec90c))
+* identify guests at the WebSocket handshake and remember the pseudo in the front ([#72](https://github.com/Didelo-lilian/semaphore/issues/72)) ([b06ac50](https://github.com/Didelo-lilian/semaphore/commit/b06ac50909fbfa0fab824333a740366733e4552d))
+* keep a guest's pseudo in a session shared by the replicas ([#61](https://github.com/Didelo-lilian/semaphore/issues/61)) ([83f4a0a](https://github.com/Didelo-lilian/semaphore/commit/83f4a0aaf65db7bd57e93a09a3eba2415969a964))
+* load the French word vectors for the bots ([#68](https://github.com/Didelo-lilian/semaphore/issues/68)) ([6cafafe](https://github.com/Didelo-lilian/semaphore/commit/6cafafea3e6a04442d7b9720406cc4041397c7fe))
+* pick cards from a signal at three levels ([#78](https://github.com/Didelo-lilian/semaphore/issues/78)) ([8e238d3](https://github.com/Didelo-lilian/semaphore/commit/8e238d38aa8cab23e6e972950b77221663d67164))
+* record the games that end with an account in them ([#62](https://github.com/Didelo-lilian/semaphore/issues/62)) ([018510b](https://github.com/Didelo-lilian/semaphore/commit/018510b6ac786025af392eea3198d78b75604eff))
+* sign in with GitHub or Google ([#74](https://github.com/Didelo-lilian/semaphore/issues/74)) ([c9c2736](https://github.com/Didelo-lilian/semaphore/commit/c9c2736a2695a83f79bd3da157de02eaf6f45c9c))
+* sign in, sign out and delete the account from the home page ([#79](https://github.com/Didelo-lilian/semaphore/issues/79)) ([b135cf2](https://github.com/Didelo-lilian/semaphore/commit/b135cf237a8ba51b4a46a6f43c2a515b6d1960ef))
+
+
+### Documentation
+
+* add ADR 0011 on signing in with GitHub or Google ([#57](https://github.com/Didelo-lilian/semaphore/issues/57)) ([fb18097](https://github.com/Didelo-lilian/semaphore/commit/fb18097a408cbbb1b0a7a40076fc19c7878b6240))
+* add ADR 0012 on finished games, profiles and the leaderboard ([#60](https://github.com/Didelo-lilian/semaphore/issues/60)) ([fc3be84](https://github.com/Didelo-lilian/semaphore/commit/fc3be846003ca8334daf3fa64f134d55b3abaf33))
+* choose the French word vectors for the bots ([#56](https://github.com/Didelo-lilian/semaphore/issues/56)) ([a87e4be](https://github.com/Didelo-lilian/semaphore/commit/a87e4be56a7ad6cee752243d2147b0f9a95fdf9c))
+* record how guest sessions work ([#58](https://github.com/Didelo-lilian/semaphore/issues/58)) ([3afa243](https://github.com/Didelo-lilian/semaphore/commit/3afa2436c056d2db90391c587d9feacebe90f30a))
+
 ## [0.4.0](https://github.com/Didelo-lilian/semaphore/compare/v0.3.0...v0.4.0) (2026-10-25)
 
 

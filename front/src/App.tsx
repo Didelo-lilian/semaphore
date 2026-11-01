@@ -1,16 +1,24 @@
 import { Alert, Button } from "@didelo/design-system";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getRouteApi,
   Navigate,
   Outlet,
   useNavigate,
 } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useCommand, useGame, useRoom } from "./game.tsx";
-import { meOptions, useMe, useSaveName } from "./me.ts";
+import {
+  meOptions,
+  Refused,
+  useDeleteAccount,
+  useMe,
+  useSaveName,
+  useSignOut,
+} from "./me.ts";
 import type { ClientMessage, Team } from "./protocol.ts";
 import { About } from "./ui/About.tsx";
+import { type Failure, providerName } from "./ui/Account.tsx";
 import { Home } from "./ui/Home.tsx";
 import { Lobby } from "./ui/Lobby.tsx";
 import { Table } from "./ui/Table.tsx";
@@ -39,18 +47,44 @@ export const Shell = () => {
 
 const homeApi = getRouteApi("/");
 
+const failureOf = (
+  action: Failure["action"],
+  error: Error | null,
+): Failure | null =>
+  error === null
+    ? null
+    : { action, status: error instanceof Refused ? error.status : null };
+
 export const HomePage = () => {
   const { snapshot } = useGame();
-  const { room } = homeApi.useSearch();
+  const { room, login, provider } = homeApi.useSearch();
   const navigate = useNavigate();
+  // The sign-in sends the browser back with a code in the address (ADR 0011). It is read once, then the address is
+  // cleaned, so that a reload does not bring the message back.
+  const [returned] = useState({ login, provider });
+  useEffect(() => {
+    if (login !== undefined || provider !== undefined) {
+      void navigate({
+        to: "/",
+        search: (previous) => ({ room: previous.room }),
+        replace: true,
+      });
+    }
+  }, [login, provider, navigate]);
   const me = useMe();
   const queryClient = useQueryClient();
   const saveName = useSaveName();
   const enter = useCommand((joined) =>
     navigate({ to: "/salon/$code", params: { code: joined.code } }),
   );
+  const signOut = useSignOut();
+  const deleteAccount = useDeleteAccount();
   const named =
     me.data == null || me.data.kind === "anonymous" ? null : me.data;
+  // The one check of the providers: those the server lists and the front can draw.
+  const providers = (
+    me.data == null || me.data.kind === "account" ? [] : me.data.providers
+  ).filter((name) => providerName(name) !== undefined);
 
   const go = async (name: string, message: ClientMessage) => {
     // Always saved, not only when it differs from what this page read: another tab may have
@@ -65,14 +99,68 @@ export const HomePage = () => {
     enter.mutate(message);
   };
 
+  // The login needs the pseudo in the session: a name the server refused must not start one that
+  // would only come back asking for it.
+  const signIn = useMutation({
+    mutationFn: async ({
+      provider,
+      name,
+    }: {
+      provider: string;
+      name: string;
+    }) => {
+      await queryClient.ensureQueryData(meOptions);
+      await saveName.mutateAsync(name);
+      window.location.assign(`/api/auth/login/${provider}`);
+    },
+  });
+
   return (
     <>
       <Home
         invited={room ?? null}
         initialName={named?.name ?? ""}
-        remembered={named !== null}
-        busy={enter.isPending || saveName.isPending}
+        remembered={named?.kind === "guest"}
+        // A successful sign-in is on its way to the provider: the page must not start a second one.
+        busy={
+          enter.isPending ||
+          saveName.isPending ||
+          signIn.isPending ||
+          signIn.isSuccess
+        }
         error={enter.error?.message ?? snapshot.error}
+        signIn={{
+          providers,
+          returned: returned.login ?? null,
+          resume:
+            returned.login === "pseudo" &&
+            returned.provider !== undefined &&
+            providers.includes(returned.provider)
+              ? returned.provider
+              : null,
+          failed: signIn.isError,
+          onSignIn: (provider, name) => signIn.mutate({ provider, name }),
+        }}
+        account={
+          me.data?.kind === "account"
+            ? {
+                name: me.data.name,
+                busy: signOut.isPending || deleteAccount.isPending,
+                failure:
+                  failureOf("signOut", signOut.error) ??
+                  failureOf("delete", deleteAccount.error),
+                // The message is the one of the last attempt, not of an earlier refusal of the other action.
+                onSignOut: () => {
+                  deleteAccount.reset();
+                  signOut.mutate();
+                },
+                onDelete: () => {
+                  signOut.reset();
+                  deleteAccount.mutate();
+                },
+              }
+            : null
+        }
         onCreate={(name) => go(name, { type: "createRoom", name })}
         onJoin={(code, name) => go(name, { type: "joinRoom", code, name })}
         onWatch={(code) => enter.mutate({ type: "watch", code })}

@@ -9,7 +9,8 @@ import { PrivacyPage, TermsPage } from "./ui/Legal.tsx";
 
 const rootRoute = createRootRoute({ component: Shell });
 
-// `?room=CODE` is the invitation link: a code that is not one is just ignored.
+// `?room=CODE` is the invitation link: a code that is not one is just ignored. `?login=` is where the
+// sign-in sends the browser back to when it stops (ADR 0011), and `provider` the one it was for.
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
@@ -19,6 +20,8 @@ const homeRoute = createRoute({
       .transform((code) => code.toUpperCase())
       .optional()
       .catch(undefined),
+    login: z.enum(["failed", "pseudo"]).optional().catch(undefined),
+    provider: z.string().optional().catch(undefined),
   }),
   component: HomePage,
 });

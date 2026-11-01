@@ -19,6 +19,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 final class PseudoFirst extends OncePerRequestFilter {
 
   private final Accounts accounts;
+  private final Providers providers;
 
   @Override
   protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -31,7 +32,13 @@ final class PseudoFirst extends OncePerRequestFilter {
       throws ServletException, IOException {
     var session = request.getSession(false);
     if (session == null || session.getAttribute(SessionKeys.GUEST_NAME) == null) {
-      response.sendRedirect("/?login=pseudo");
+      // The provider comes from the ones that are on, never from the text of the request.
+      var provider =
+          providers.names().stream()
+              .filter(name -> request.getRequestURI().equals(Providers.LOGIN + "/" + name))
+              .findFirst();
+      response.sendRedirect(
+          "/?login=pseudo" + provider.map(name -> "&provider=" + name).orElse(""));
     } else if (accounts.signedIn(session).isPresent()) {
       response.sendRedirect("/");
     } else {

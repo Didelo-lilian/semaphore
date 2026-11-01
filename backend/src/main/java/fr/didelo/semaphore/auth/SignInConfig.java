@@ -150,7 +150,8 @@ class SignInConfig {
                   .successHandler(outcome)
                   .failureHandler(outcome);
             })
-        .addFilterBefore(new PseudoFirst(accounts), OAuth2AuthorizationRequestRedirectFilter.class)
+        .addFilterBefore(
+            new PseudoFirst(accounts, providers), OAuth2AuthorizationRequestRedirectFilter.class)
         .addFilterBefore(new HomeOnFailure(), PseudoFirst.class)
         .build();
   }

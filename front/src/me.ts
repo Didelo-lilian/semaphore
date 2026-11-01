@@ -6,9 +6,17 @@ import {
 } from "@tanstack/react-query";
 import { z } from "zod";
 
+// The sign-in providers that are on: the server lists them to whoever is not signed in (ADR 0011).
+const providers = z.array(z.string()).default([]);
+
 const meSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("anonymous") }),
-  z.object({ kind: z.literal("guest"), id: z.string(), name: z.string() }),
+  z.object({ kind: z.literal("anonymous"), providers }),
+  z.object({
+    kind: z.literal("guest"),
+    id: z.string(),
+    name: z.string(),
+    providers,
+  }),
   z.object({ kind: z.literal("account"), id: z.string(), name: z.string() }),
 ]);
 
@@ -52,24 +60,45 @@ export async function fetchMe(): Promise<Me | null> {
   }
 }
 
-/** Remembers the pseudo: makes the guest or renames it. Throws when the server refuses. */
-export async function saveName(name: string): Promise<Me> {
+/** The server answered, and refused: `status` says how. A call that got no answer throws something else. */
+export class Refused extends Error {
+  status: number;
+
+  constructor(method: string, url: string, status: number) {
+    super(`${method} ${url} answered ${status}`);
+    this.status = status;
+  }
+}
+
+async function send(method: string, url: string, body?: unknown) {
   const token = csrfToken();
-  const response = await fetch("/api/me", {
-    method: "PUT",
+  const response = await fetch(url, {
+    method,
     headers: {
       Accept: "application/json",
-      "Content-Type": "application/json",
+      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       ...(token === undefined ? {} : { "X-XSRF-TOKEN": token }),
     },
-    body: JSON.stringify({ name }),
+    body: body === undefined ? undefined : JSON.stringify(body),
     signal: timeout(),
   });
   if (!response.ok) {
-    throw new Error(`PUT /api/me answered ${response.status}`);
+    throw new Refused(method, url, response.status);
   }
+  return response;
+}
+
+/** Remembers the pseudo: makes the guest or renames it. Throws when the server refuses. */
+export async function saveName(name: string): Promise<Me> {
+  const response = await send("PUT", "/api/me", { name });
   return meSchema.parse(await response.json());
 }
+
+/** Ends the session: the browser is nobody again. Throws when the server refuses. */
+export const signOut = () => send("POST", "/api/auth/logout");
+
+/** Deletes the account and ends the session (ADR 0011). Throws when the server refuses. */
+export const deleteAccount = () => send("DELETE", "/api/auth/account");
 
 /** The query never fails: what cannot be known is null. */
 export const meOptions = queryOptions({
@@ -88,3 +117,15 @@ export const useSaveName = () => {
     onSuccess: (me) => queryClient.setQueryData(meKey, me),
   });
 };
+
+// What the server says about this browser has to be read again, whatever the answer: a 401 says the session
+// was already gone, and the page must stop showing an account.
+const useEndSession = (end: () => Promise<unknown>) => {
+  const queryClient = useQueryClient();
+  const refresh = () => queryClient.invalidateQueries({ queryKey: meKey });
+  return useMutation({ mutationFn: end, onSuccess: refresh, onError: refresh });
+};
+
+export const useSignOut = () => useEndSession(signOut);
+
+export const useDeleteAccount = () => useEndSession(deleteAccount);

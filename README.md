@@ -63,7 +63,7 @@ A `Secure` cookie is accepted over plain HTTP on `localhost` by Chromium; a brow
 
 ### Word vectors for the bots
 
-The bots play with French word vectors, not with a language model ([ADR 0009](docs/adr/0009-french-word-vectors-for-the-bots.md)). `backend/src/main/resources/bot/fr-vectors.bin` (10.5 MB, 50 000 words) is read at start, takes about 17 MB of heap per replica, and is made from the source model by a script that checks it:
+The bots play with French word vectors, not with a language model ([ADR 0009](docs/adr/0009-french-word-vectors-for-the-bots.md)). `backend/src/main/resources/bot/fr-vectors.bin` (10.5 MB, 50 000 words) is read at start, takes about 15 MiB of heap per replica, and is made from the source model by a script that checks it:
 
 ```bash
 uv run --no-project --with numpy==2.5.4 python -I tools/vectors/build.py   # a few seconds, and the 126 MB source is downloaded once

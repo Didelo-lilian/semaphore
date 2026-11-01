@@ -34,7 +34,7 @@ flowchart LR
 - **The schema is in the repository, applied in the order of the files**, and the backend needs the same Postgres major version as the tests (18, which Flyway 12 and the driver of Spring Boot support); a change of major version in `infra` is tested here first.
 - **One role owns the schema and writes the data.** A second, read-only role for the reads of the leaderboard is possible later; with one application and four queries it is not worth the second secret yet.
 - **The database is not backed up yet** ([infra issue](https://github.com/Didelo-lilian/infra/issues/94)): nothing that cannot be lost is stored before it is.
-- **Not covered**: a migration that takes long on a large table (there is none) holds the start of a replica, and the lock of Flyway with it.
+- **Not covered**: a migration that takes long on a large table (there is none) holds the start of a replica, and the lock of Flyway with it; the other replica, which waits for that lock, is cut by the socket timeout after 10 seconds, fails to start and is restarted until the lock is free.
 
 ### Rejected
 

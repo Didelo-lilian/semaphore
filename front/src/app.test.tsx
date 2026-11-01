@@ -1,6 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GameClient } from "./client.ts";
@@ -631,10 +638,12 @@ describe("the name of a guest", () => {
 describe("signing in", () => {
   type Who = Record<string, unknown>;
   const anonymous: Who = { kind: "anonymous", providers: ["github", "google"] };
+  const account: Who = { kind: "account", id: "a", name: "Ana" };
 
-  // The server of /api/me, /api/auth/logout and /api/auth/account: ending the session makes the
-  // browser anonymous again. `refuse` is the status of the PUT of the name, when it is not 200.
-  const server = (start: Who, refuse?: number) => {
+  // The server of /api/me, /api/auth/logout and /api/auth/account. `refuse` is the status of the PUT of the name when
+  // it is not 200, `ending` the status of the logout and the deletion: 204 and 401 leave the browser anonymous (the
+  // session is gone either way), another one leaves it as it was.
+  const server = (start: Who, refuse?: number, ending = 204) => {
     let who = start;
     const calls = vi.fn(async (url: string, init?: RequestInit) => {
       const method = init?.method ?? "GET";
@@ -643,8 +652,10 @@ describe("signing in", () => {
         return refuse === undefined ? json(200, who) : json(refuse, {});
       }
       if (url !== "/api/me") {
-        who = anonymous;
-        return new Response(null, { status: 204 });
+        if (ending === 204 || ending === 401) {
+          who = anonymous;
+        }
+        return new Response(null, { status: ending });
       }
       return json(200, who);
     });
@@ -661,18 +672,35 @@ describe("signing in", () => {
     return assign;
   };
 
+  const github = () =>
+    screen.findByRole("button", { name: "Se connecter avec GitHub" });
+
   it("saves the name, then goes to the provider chosen", async () => {
     const calls = server(anonymous);
     await mount("/");
     await userEvent.type(await screen.findByLabelText("Ton nom"), "Ana");
     const assign = leaving();
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Se connecter avec GitHub" }),
-    );
+    await userEvent.click(await github());
     await waitFor(() =>
       expect(assign).toHaveBeenCalledWith("/api/auth/login/github"),
     );
     expect(requests(calls)).toEqual(["GET /api/me", "PUT /api/me"]);
+  });
+
+  it("starts one login only, however many times the button is clicked", async () => {
+    const calls = server(anonymous);
+    await mount("/");
+    await userEvent.type(await screen.findByLabelText("Ton nom"), "Ana");
+    const assign = leaving();
+    const button = await github();
+    await userEvent.click(button);
+    await waitFor(() => expect(button).toBeDisabled());
+    fireEvent.click(button);
+    await waitFor(() => expect(assign).toHaveBeenCalledOnce());
+    expect(button).toBeDisabled();
+    expect(
+      requests(calls).filter((call) => call === "PUT /api/me"),
+    ).toHaveLength(1);
   });
 
   it("does not leave when the name was refused, and says so", async () => {
@@ -696,12 +724,35 @@ describe("signing in", () => {
     expect(screen.queryByRole("button", { name: /Se connecter/ })).toBeNull();
   });
 
-  it("says that a login failed", async () => {
+  it.each([["gitlab"], ["constructor"]])(
+    "draws no button for a provider it does not know (%s)",
+    async (name) => {
+      server({ kind: "anonymous", providers: [name, "github"] });
+      await mount("/");
+      expect(await github()).toBeInTheDocument();
+      expect(
+        screen.getAllByRole("button", { name: /Se connecter/ }),
+      ).toHaveLength(1);
+    },
+  );
+
+  it("says that a login failed, once: the address forgets it", async () => {
     server(anonymous);
-    await mount("/?login=failed");
+    const { router } = await mount("/?room=USQ2H&login=failed");
     expect(
       await screen.findByText(/La connexion a échoué/),
     ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(router.state.location.search).toEqual({ room: "USQ2H" }),
+    );
+    expect(screen.getByText(/La connexion a échoué/)).toBeInTheDocument();
+  });
+
+  it("says nothing of a login that failed to a player who is signed in", async () => {
+    server(account);
+    await mount("/?login=failed");
+    await screen.findByText(/Connecté en tant que/);
+    expect(screen.queryByText(/La connexion a échoué/)).toBeNull();
   });
 
   it("asks for the pseudo, then resumes the login", async () => {
@@ -718,15 +769,18 @@ describe("signing in", () => {
     expect(requests(calls)).toContain("PUT /api/me");
   });
 
-  it("resumes only a login the server lists", async () => {
-    server(anonymous);
-    await mount("/?login=pseudo&provider=gitlab");
+  it.each([
+    ["a provider the server does not list", "gitlab", ["github", "google"]],
+    ["a provider that is off", "google", ["github"]],
+    ["a provider the page does not know", "gitlab", ["gitlab", "github"]],
+  ])("resumes no login for %s", async (_, provider, providers) => {
+    server({ kind: "anonymous", providers });
+    await mount(`/?login=pseudo&provider=${provider}`);
     expect(
       await screen.findByText(/Dis-nous comment t'appeler/),
     ).not.toHaveTextContent("avec");
-    expect(
-      await screen.findByRole("button", { name: "Se connecter avec GitHub" }),
-    ).toBeInTheDocument();
+    expect(await github()).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Continuer/ })).toBeNull();
   });
 
   it("ignores a login that is not one", async () => {
@@ -737,26 +791,37 @@ describe("signing in", () => {
   });
 
   describe("with an account", () => {
-    const account: Who = { kind: "account", id: "a", name: "Ana" };
+    const deleteAccount = async () => {
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Supprimer mon compte" }),
+      );
+      await userEvent.click(
+        within(await screen.findByRole("dialog")).getByRole("button", {
+          name: "Supprimer",
+        }),
+      );
+    };
 
-    it("shows who is signed in and signs out", async () => {
+    it("shows who is signed in and signs out, leaving no name behind", async () => {
       const calls = server(account);
       await mount("/");
       expect(await screen.findByText(/Connecté en tant que/)).toHaveTextContent(
         "Ana",
       );
+      await waitFor(() =>
+        expect(screen.getByLabelText("Ton nom")).toHaveValue("Ana"),
+      );
       expect(screen.queryByRole("button", { name: /Se connecter/ })).toBeNull();
       await userEvent.click(
         screen.getByRole("button", { name: "Se déconnecter" }),
       );
-      expect(
-        await screen.findByRole("button", { name: "Se connecter avec GitHub" }),
-      ).toBeInTheDocument();
+      expect(await github()).toBeInTheDocument();
       expect(requests(calls)).toContain("POST /api/auth/logout");
       expect(screen.queryByText(/Connecté en tant que/)).toBeNull();
+      expect(screen.getByLabelText("Ton nom")).toHaveValue("");
     });
 
-    it("deletes the account after a confirmation", async () => {
+    it("deletes the account after a confirmation, leaving no name behind", async () => {
       const calls = server(account);
       await mount("/");
       await userEvent.click(
@@ -768,23 +833,64 @@ describe("signing in", () => {
           name: "Supprimer",
         }),
       );
-      expect(
-        await screen.findByRole("button", { name: "Se connecter avec GitHub" }),
-      ).toBeInTheDocument();
+      expect(await github()).toBeInTheDocument();
       expect(requests(calls)).toContain("DELETE /api/auth/account");
+      expect(screen.getByLabelText("Ton nom")).toHaveValue("");
     });
 
-    it("says when the server did not end the session", async () => {
-      const calls = server(account);
-      calls.mockImplementation(async (url) =>
-        url === "/api/me" ? json(200, account) : json(403, {}),
+    it("keeps the account and says why when the edge refuses the deletion", async () => {
+      server(account, undefined, 403);
+      await mount("/");
+      await deleteAccount();
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        /refusé \(code 403\) : ton compte n'est pas supprimé/,
       );
+      expect(screen.getByText(/Connecté en tant que/)).toBeInTheDocument();
+    });
+
+    it("keeps the account and says so when the server fails to sign out", async () => {
+      server(account, undefined, 500);
       await mount("/");
       await userEvent.click(
         await screen.findByRole("button", { name: "Se déconnecter" }),
       );
-      expect(await screen.findByText(/n'a pas répondu/)).toBeInTheDocument();
-      expect(screen.getByText(/Connecté en tant que/)).toBeInTheDocument();
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        /refusé \(code 500\) : tu es toujours connecté/,
+      );
+    });
+
+    it("says the server did not answer when it did not", async () => {
+      const calls = server(account);
+      calls.mockImplementation(async (url) => {
+        if (url === "/api/me") {
+          return json(200, account);
+        }
+        throw new TypeError("offline");
+      });
+      await mount("/");
+      await deleteAccount();
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        /n'a pas répondu : ton compte n'est pas supprimé/,
+      );
+    });
+
+    it("shows the browser as signed out when the session was already gone", async () => {
+      server(account, undefined, 401);
+      await mount("/");
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Se déconnecter" }),
+      );
+      expect(await github()).toBeInTheDocument();
+      expect(screen.queryByText(/Connecté en tant que/)).toBeNull();
+    });
+
+    it("shows the account inside an invitation", async () => {
+      server(account);
+      await mount("/?room=USQ2H");
+      expect(
+        await screen.findByText(/Connecté en tant que/),
+      ).toBeInTheDocument();
+      expect(screen.getByText("USQ2H")).toBeInTheDocument();
     });
   });
 });

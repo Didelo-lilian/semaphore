@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { deleteAccount, fetchMe, saveName, signOut } from "./me.ts";
+import { deleteAccount, fetchMe, Refused, saveName, signOut } from "./me.ts";
 
 const answer = (status: number, body: unknown) =>
   vi.stubGlobal(
@@ -89,9 +89,22 @@ describe("saveName", () => {
     expect(init.headers).toMatchObject({ "X-XSRF-TOKEN": "tok" });
   });
 
-  it("throws when the server refuses", async () => {
-    answer(429, { error: "slow down" });
-    await expect(saveName("Ana")).rejects.toThrow("429");
+  it.each([403, 429])(
+    "throws a refusal that carries the status %i",
+    async (status) => {
+      answer(status, { error: "no" });
+      await expect(saveName("Ana")).rejects.toMatchObject({
+        constructor: Refused,
+        status,
+      });
+    },
+  );
+
+  it("sends no CSRF header when the browser holds no token", async () => {
+    answer(200, { kind: "guest", id: "g1", name: "Ana" });
+    await saveName("Ana");
+    const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+    expect(init.headers).not.toHaveProperty("X-XSRF-TOKEN");
   });
 });
 
@@ -127,8 +140,39 @@ describe("signOut and deleteAccount", () => {
   it.each([
     ["logout", signOut],
     ["deletion", deleteAccount],
-  ])("throws when the server refuses the %s", async (_, request) => {
+  ])("throws the status when the server refuses the %s", async (_, request) => {
     answer(403, { error: "no" });
-    await expect(request()).rejects.toThrow("403");
+    await expect(request()).rejects.toMatchObject({
+      constructor: Refused,
+      status: 403,
+    });
+  });
+
+  it.each([
+    ["logout", signOut],
+    ["deletion", deleteAccount],
+  ])(
+    "throws something else than a refusal when the %s gets no answer",
+    async (_, request) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => {
+          throw new TypeError("offline");
+        }),
+      );
+      const error = await request().catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(TypeError);
+      expect(error).not.toBeInstanceOf(Refused);
+    },
+  );
+
+  it("sends no CSRF header when the browser holds no token", async () => {
+    Object.defineProperty(document, "cookie", {
+      configurable: true,
+      get: () => "other=1",
+    });
+    await signOut();
+    const [, init] = vi.mocked(fetch).mock.calls[0] as [string, RequestInit];
+    expect(init.headers).not.toHaveProperty("X-XSRF-TOKEN");
   });
 });

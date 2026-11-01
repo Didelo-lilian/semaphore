@@ -188,32 +188,27 @@ describe("Home", () => {
 });
 
 describe("Home sign-in", () => {
-  const home = (
+  const homeProps = (
     signIn: Partial<ComponentProps<typeof Home>["signIn"]>,
     rest: Partial<ComponentProps<typeof Home>> = {},
-  ) =>
-    render(
-      <Home
-        invited={null}
-        initialName=""
-        remembered={false}
-        busy={false}
-        error={null}
-        signIn={{ ...nobody.signIn, ...signIn }}
-        account={null}
-        onCreate={vi.fn()}
-        onJoin={vi.fn()}
-        onWatch={vi.fn()}
-        {...rest}
-      />,
-    );
+  ): ComponentProps<typeof Home> => ({
+    invited: null,
+    initialName: "",
+    remembered: false,
+    busy: false,
+    error: null,
+    signIn: { ...nobody.signIn, ...signIn },
+    account: null,
+    onCreate: vi.fn(),
+    onJoin: vi.fn(),
+    onWatch: vi.fn(),
+    ...rest,
+  });
+  const home = (...args: Parameters<typeof homeProps>) =>
+    render(<Home {...homeProps(...args)} />);
 
-  it("offers no sign-in when the server lists no provider, or one it does not draw", () => {
-    const { unmount } = home({});
-    expect(screen.queryByRole("button", { name: /Se connecter/ })).toBeNull();
-    unmount();
-
-    home({ providers: ["gitlab"] });
+  it("offers no sign-in when the server lists no provider", () => {
+    home({});
     expect(screen.queryByRole("button", { name: /Se connecter/ })).toBeNull();
   });
 
@@ -256,18 +251,14 @@ describe("Home sign-in", () => {
     expect(screen.queryByRole("button", { name: /Google/ })).toBeNull();
   });
 
-  it("offers every provider again when the login to resume is not one it draws", () => {
-    home({
-      providers: ["github", "google"],
-      returned: "pseudo",
-      resume: "gitlab",
-    });
-    expect(
-      screen.getByRole("button", { name: "Se connecter avec Google" }),
-    ).toBeInTheDocument();
+  it("asks for the pseudo and offers every provider when no login is to be resumed", () => {
+    home({ providers: ["github", "google"], returned: "pseudo" });
     expect(
       screen.getByText(/Dis-nous comment t'appeler/),
     ).not.toHaveTextContent("avec");
+    expect(
+      screen.getByRole("button", { name: "Se connecter avec Google" }),
+    ).toBeInTheDocument();
   });
 
   it("says a login did not start when the name was refused", () => {
@@ -281,16 +272,27 @@ describe("Home sign-in", () => {
     ) => ({
       name: "Ana",
       busy: false,
-      failed: false,
+      failure: null,
       onSignOut: vi.fn(),
       onDelete: vi.fn(),
       ...changes,
     });
+    const confirmDeletion = async () => {
+      await userEvent.click(
+        screen.getByRole("button", { name: "Supprimer mon compte" }),
+      );
+      return within(await screen.findByRole("dialog"));
+    };
 
-    it("shows the account and signs out", async () => {
+    it("shows the account, whose name is not edited here, and signs out", async () => {
       const onSignOut = vi.fn();
-      home({ providers: ["github"] }, { account: account({ onSignOut }) });
+      home(
+        { providers: ["github"] },
+        { initialName: "Ana", account: account({ onSignOut }) },
+      );
       expect(screen.getByText(/Connecté en tant que/)).toHaveTextContent("Ana");
+      expect(screen.getByLabelText("Ton nom")).toHaveAttribute("readonly");
+      expect(screen.getByText(/nom de ton compte/)).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /Se connecter/ })).toBeNull();
       await userEvent.click(
         screen.getByRole("button", { name: "Se déconnecter" }),
@@ -298,35 +300,63 @@ describe("Home sign-in", () => {
       expect(onSignOut).toHaveBeenCalledOnce();
     });
 
+    it("shows the account inside an invitation too", () => {
+      home({}, { invited: "USQ2H", account: account() });
+      expect(screen.getByText(/Connecté en tant que/)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Tu es invité dans le salon/),
+      ).toBeInTheDocument();
+    });
+
+    it("does not show where a login ended to a player who is signed in", () => {
+      home({ returned: "failed" }, { account: account() });
+      expect(screen.queryByText(/La connexion a échoué/)).toBeNull();
+    });
+
     it("deletes the account only once the player confirmed", async () => {
       const onDelete = vi.fn();
       home({}, { account: account({ onDelete }) });
-      await userEvent.click(
-        screen.getByRole("button", { name: "Supprimer mon compte" }),
-      );
-      const dialog = await screen.findByRole("dialog");
+      const dialog = await confirmDeletion();
       expect(onDelete).not.toHaveBeenCalled();
 
       await userEvent.click(
-        within(dialog).getByRole("button", { name: "Garder mon compte" }),
+        dialog.getByRole("button", { name: "Garder mon compte" }),
       );
       await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
       expect(onDelete).not.toHaveBeenCalled();
 
       await userEvent.click(
-        screen.getByRole("button", { name: "Supprimer mon compte" }),
-      );
-      await userEvent.click(
-        within(await screen.findByRole("dialog")).getByRole("button", {
-          name: "Supprimer",
-        }),
+        (await confirmDeletion()).getByRole("button", { name: "Supprimer" }),
       );
       expect(onDelete).toHaveBeenCalledOnce();
     });
 
-    it("says when the server did not answer", () => {
-      home({}, { account: account({ failed: true }) });
-      expect(screen.getByText(/n'a pas répondu/)).toBeInTheDocument();
+    it("cannot confirm the deletion twice while it is asked", async () => {
+      home({}, { account: account({ busy: true }) });
+      expect(
+        screen.getByRole("button", { name: "Supprimer mon compte" }),
+      ).toBeDisabled();
+    });
+
+    it.each([
+      ["delete", null, /n'a pas répondu : ton compte n'est pas supprimé/],
+      ["delete", 403, /refusé \(code 403\) : ton compte n'est pas supprimé/],
+      ["signOut", 500, /refusé \(code 500\) : tu es toujours connecté/],
+    ] as const)(
+      "tells what the server did not do (%s, %s)",
+      (action, status, message) => {
+        home({}, { account: account({ failure: { action, status } }) });
+        expect(screen.getByRole("alert")).toHaveTextContent(message);
+      },
+    );
+
+    it("forgets the name of the account once it is left", async () => {
+      const { rerender } = home({}, { initialName: "Ana", account: account() });
+      expect(screen.getByLabelText("Ton nom")).toHaveValue("Ana");
+      rerender(<Home {...homeProps({}, { initialName: "" })} />);
+      await waitFor(() =>
+        expect(screen.getByLabelText("Ton nom")).toHaveValue(""),
+      );
     });
   });
 });

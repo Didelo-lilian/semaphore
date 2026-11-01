@@ -60,6 +60,16 @@ export async function fetchMe(): Promise<Me | null> {
   }
 }
 
+/** The server answered, and refused: `status` says how. A call that got no answer throws something else. */
+export class Refused extends Error {
+  status: number;
+
+  constructor(method: string, url: string, status: number) {
+    super(`${method} ${url} answered ${status}`);
+    this.status = status;
+  }
+}
+
 async function send(method: string, url: string, body?: unknown) {
   const token = csrfToken();
   const response = await fetch(url, {
@@ -73,7 +83,7 @@ async function send(method: string, url: string, body?: unknown) {
     signal: timeout(),
   });
   if (!response.ok) {
-    throw new Error(`${method} ${url} answered ${response.status}`);
+    throw new Refused(method, url, response.status);
   }
   return response;
 }
@@ -108,13 +118,12 @@ export const useSaveName = () => {
   });
 };
 
-// The session is gone: what the server says about this browser has to be read again.
+// What the server says about this browser has to be read again, whatever the answer: a 401 says the session
+// was already gone, and the page must stop showing an account.
 const useEndSession = (end: () => Promise<unknown>) => {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: end,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: meKey }),
-  });
+  const refresh = () => queryClient.invalidateQueries({ queryKey: meKey });
+  return useMutation({ mutationFn: end, onSuccess: refresh, onError: refresh });
 };
 
 export const useSignOut = () => useEndSession(signOut);

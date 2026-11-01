@@ -1,6 +1,6 @@
 import { Alert, Button, TextField } from "@didelo/design-system";
 import { useForm } from "@tanstack/react-form";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { z } from "zod";
 import { explain } from "../reasons.ts";
 import {
@@ -64,6 +64,7 @@ export const Home = ({
   onJoin,
   onWatch,
 }: Props) => {
+  const signedIn = account !== null;
   const resumeName =
     signIn.resume === null ? undefined : providerName(signIn.resume);
   const form = useForm({
@@ -80,6 +81,15 @@ export const Home = ({
       }
     },
   });
+
+  // The name of an account that was just left (signed out, deleted) is not the next visitor's of a shared computer.
+  const wasSignedIn = useRef(signedIn);
+  useEffect(() => {
+    if (wasSignedIn.current && !signedIn) {
+      form.reset({ name: "", code: "" });
+    }
+    wasSignedIn.current = signedIn;
+  }, [form, signedIn]);
 
   // The remembered name arrives after the page: it fills the field unless the player already typed.
   useEffect(() => {
@@ -101,12 +111,12 @@ export const Home = ({
       </p>
 
       {error !== null && <Alert severity="error">{explain(error)}</Alert>}
-      {signIn.returned === "failed" && (
+      {account === null && signIn.returned === "failed" && (
         <Alert severity="error">
           La connexion a échoué. Réessaie, ou joue sans compte.
         </Alert>
       )}
-      {signIn.returned === "pseudo" && (
+      {account === null && signIn.returned === "pseudo" && (
         <Alert severity="info">
           Dis-nous comment t'appeler, puis reprends la connexion
           {resumeName !== undefined && ` avec ${resumeName}`}.
@@ -128,11 +138,13 @@ export const Home = ({
             onBlur={field.handleBlur}
             error={field.state.meta.isTouched && !field.state.meta.isValid}
             helperText={
-              field.state.meta.isTouched
-                ? field.state.meta.errors.map((e) => e?.message).join(" ")
-                : undefined
+              signedIn
+                ? "Le nom de ton compte, visible des autres joueurs."
+                : field.state.meta.isTouched
+                  ? field.state.meta.errors.map((e) => e?.message).join(" ")
+                  : undefined
             }
-            slotProps={{ htmlInput: { maxLength: 20 } }}
+            slotProps={{ htmlInput: { maxLength: 20, readOnly: signedIn } }}
             autoFocus
             fullWidth
           />

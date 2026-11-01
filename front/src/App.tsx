@@ -6,10 +6,11 @@ import {
   Outlet,
   useNavigate,
 } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useCommand, useGame, useRoom } from "./game.tsx";
 import {
   meOptions,
+  Refused,
   useDeleteAccount,
   useMe,
   useSaveName,
@@ -17,6 +18,7 @@ import {
 } from "./me.ts";
 import type { ClientMessage, Team } from "./protocol.ts";
 import { About } from "./ui/About.tsx";
+import { type Failure, providerName } from "./ui/Account.tsx";
 import { Home } from "./ui/Home.tsx";
 import { Lobby } from "./ui/Lobby.tsx";
 import { Table } from "./ui/Table.tsx";
@@ -45,10 +47,30 @@ export const Shell = () => {
 
 const homeApi = getRouteApi("/");
 
+const failureOf = (
+  action: Failure["action"],
+  error: Error | null,
+): Failure | null =>
+  error === null
+    ? null
+    : { action, status: error instanceof Refused ? error.status : null };
+
 export const HomePage = () => {
   const { snapshot } = useGame();
   const { room, login, provider } = homeApi.useSearch();
   const navigate = useNavigate();
+  // The sign-in sends the browser back with a code in the address (ADR 0011). It is read once, then the address is
+  // cleaned, so that a reload does not bring the message back.
+  const [returned] = useState({ login, provider });
+  useEffect(() => {
+    if (login !== undefined || provider !== undefined) {
+      void navigate({
+        to: "/",
+        search: (previous) => ({ room: previous.room }),
+        replace: true,
+      });
+    }
+  }, [login, provider, navigate]);
   const me = useMe();
   const queryClient = useQueryClient();
   const saveName = useSaveName();
@@ -59,8 +81,10 @@ export const HomePage = () => {
   const deleteAccount = useDeleteAccount();
   const named =
     me.data == null || me.data.kind === "anonymous" ? null : me.data;
-  const providers =
-    me.data == null || me.data.kind === "account" ? [] : me.data.providers;
+  // The one check of the providers: those the server lists and the front can draw.
+  const providers = (
+    me.data == null || me.data.kind === "account" ? [] : me.data.providers
+  ).filter((name) => providerName(name) !== undefined);
 
   const go = async (name: string, message: ClientMessage) => {
     // Always saved, not only when it differs from what this page read: another tab may have
@@ -97,16 +121,22 @@ export const HomePage = () => {
         invited={room ?? null}
         initialName={named?.name ?? ""}
         remembered={named?.kind === "guest"}
-        busy={enter.isPending || saveName.isPending || signIn.isPending}
+        // A successful sign-in is on its way to the provider: the page must not start a second one.
+        busy={
+          enter.isPending ||
+          saveName.isPending ||
+          signIn.isPending ||
+          signIn.isSuccess
+        }
         error={enter.error?.message ?? snapshot.error}
         signIn={{
           providers,
-          returned: login ?? null,
+          returned: returned.login ?? null,
           resume:
-            login === "pseudo" &&
-            provider !== undefined &&
-            providers.includes(provider)
-              ? provider
+            returned.login === "pseudo" &&
+            returned.provider !== undefined &&
+            providers.includes(returned.provider)
+              ? returned.provider
               : null,
           failed: signIn.isError,
           onSignIn: (provider, name) => signIn.mutate({ provider, name }),
@@ -116,7 +146,9 @@ export const HomePage = () => {
             ? {
                 name: me.data.name,
                 busy: signOut.isPending || deleteAccount.isPending,
-                failed: signOut.isError || deleteAccount.isError,
+                failure:
+                  failureOf("signOut", signOut.error) ??
+                  failureOf("delete", deleteAccount.error),
                 onSignOut: () => signOut.mutate(),
                 onDelete: () => deleteAccount.mutate(),
               }

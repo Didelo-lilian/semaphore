@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.springframework.beans.factory.annotation.Value;
@@ -53,14 +54,14 @@ public class RoomRegistry {
    * A new room with its first player, who is its host and whose connection {@code replica} holds: a
    * bad name leaves nothing behind.
    */
-  public Saved<Player> create(String name, String replica) {
+  public Saved<Player> create(String name, UUID accountId, String replica) {
     while (true) {
       var code = new StringBuilder();
       for (var i = 0; i < CODE_LENGTH; i++) {
         code.append(ALPHABET.charAt(random.nextInt(ALPHABET.length())));
       }
       var room = new Room(code.toString(), clock, random, minTeamSize, wordList.words());
-      var host = room.join(name, replica);
+      var host = room.join(name, accountId, replica);
       if (store.create(room.state())) {
         return new Saved<>(room, host, true);
       }

@@ -1,11 +1,16 @@
 import { Alert, Button, TextField } from "@didelo/design-system";
 import { useForm } from "@tanstack/react-form";
+import { useEffect } from "react";
 import { z } from "zod";
 import { explain } from "../reasons.ts";
 
 interface Props {
   /** The code of the room a friend's link points to, if any. */
   invited: string | null;
+  /** The pseudo the server remembers for this browser: empty at the first visit, and until it answers. */
+  initialName: string;
+  /** Whether a guest is remembered, to say so. */
+  remembered: boolean;
   busy: boolean;
   error: string | null;
   onCreate: (name: string) => void;
@@ -29,6 +34,8 @@ type Intent = "create" | "join";
 
 export const Home = ({
   invited,
+  initialName,
+  remembered,
   busy,
   error,
   onCreate,
@@ -36,7 +43,7 @@ export const Home = ({
   onWatch,
 }: Props) => {
   const form = useForm({
-    defaultValues: { name: "", code: "" },
+    defaultValues: { name: initialName, code: "" },
     onSubmitMeta: { intent: "create" } as { intent: Intent },
     onSubmit: ({ value, meta }) => {
       const name = value.name.trim();
@@ -47,6 +54,13 @@ export const Home = ({
       }
     },
   });
+
+  // The remembered name arrives after the page: it fills the field unless the player already typed.
+  useEffect(() => {
+    if (initialName !== "" && !form.getFieldMeta("name")?.isDirty) {
+      form.setFieldValue("name", initialName, { dontUpdateMeta: true });
+    }
+  }, [form, initialName]);
 
   return (
     <section
@@ -81,6 +95,11 @@ export const Home = ({
           />
         )}
       </form.Field>
+      {remembered && (
+        <p className="sem-hint">
+          Ton nom est retenu sur cet appareil pour les prochaines parties.
+        </p>
+      )}
 
       {invited === null ? (
         <>

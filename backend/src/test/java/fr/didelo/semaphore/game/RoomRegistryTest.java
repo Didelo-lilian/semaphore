@@ -30,7 +30,7 @@ class RoomRegistryTest {
   void aCodeHasFiveCharactersWithoutLookAlikes() {
     var codes =
         IntStream.range(0, 200)
-            .mapToObj(i -> registry.create("ana", REPLICA).room().code())
+            .mapToObj(i -> registry.create("ana", null, REPLICA).room().code())
             .toList();
 
     assertThat(codes).doesNotHaveDuplicates().allMatch(c -> c.matches("[A-HJKMN-Z2-9]{5}"));
@@ -38,7 +38,7 @@ class RoomRegistryTest {
 
   @Test
   void aRoomIsFoundWhateverTheCaseOrTheSpaces() {
-    var code = registry.create("ana", REPLICA).room().code();
+    var code = registry.create("ana", null, REPLICA).room().code();
 
     assertThat(registry.find(" " + code.toLowerCase() + " ")).isPresent();
     assertThat(registry.find("00000")).isEmpty();
@@ -46,14 +46,14 @@ class RoomRegistryTest {
 
   @Test
   void aRoomWithABadNameIsNotCreated() {
-    assertThatThrownBy(() -> registry.create("   ", REPLICA)).isInstanceOf(IllegalMove.class);
+    assertThatThrownBy(() -> registry.create("   ", null, REPLICA)).isInstanceOf(IllegalMove.class);
 
     assertThat(registry.codes()).isEmpty();
   }
 
   @Test
   void theHostIsTheFirstPlayerOfANewRoom() {
-    var created = registry.create("ana", REPLICA);
+    var created = registry.create("ana", null, REPLICA);
 
     assertThat(created.room().viewFor(created.result().getId()).players())
         .singleElement()
@@ -62,9 +62,9 @@ class RoomRegistryTest {
 
   @Test
   void aChangeIsSavedAndFoundAgain() {
-    var code = registry.create("ana", REPLICA).room().code();
+    var code = registry.create("ana", null, REPLICA).room().code();
 
-    var joined = registry.update(code, room -> room.join("bob", REPLICA));
+    var joined = registry.update(code, room -> room.join("bob", null, REPLICA));
 
     assertThat(joined.changed()).isTrue();
     assertThat(registry.find(code).orElseThrow().byToken(joined.result().getToken())).isPresent();
@@ -73,7 +73,7 @@ class RoomRegistryTest {
 
   @Test
   void aChangeThatDoesNothingSavesNothing() {
-    var code = registry.create("ana", REPLICA).room().code();
+    var code = registry.create("ana", null, REPLICA).room().code();
     var version = registry.find(code).orElseThrow().version();
 
     var saved = registry.change(code, room -> {});
@@ -84,14 +84,14 @@ class RoomRegistryTest {
 
   @Test
   void aChangeTheRulesRefuseSavesNothing() {
-    var code = registry.create("ana", REPLICA).room().code();
+    var code = registry.create("ana", null, REPLICA).room().code();
 
     assertThatThrownBy(
             () ->
                 registry.change(
                     code,
                     room -> {
-                      room.join("bob", REPLICA);
+                      room.join("bob", null, REPLICA);
                       throw new IllegalMove("no");
                     }))
         .isInstanceOf(IllegalMove.class);
@@ -109,16 +109,16 @@ class RoomRegistryTest {
 
   @Test
   void aConflictIsReplayedOnTheNewerRoomSoNoChangeIsLost() {
-    var code = registry.create("ana", REPLICA).room().code();
+    var code = registry.create("ana", null, REPLICA).room().code();
     var attempts = new AtomicInteger();
 
     registry.change(
         code,
         room -> {
-          room.join("bob", REPLICA);
+          room.join("bob", null, REPLICA);
           // Someone else saves a change after this room was loaded and before it is saved.
           if (attempts.incrementAndGet() == 1) {
-            registry.change(code, other -> other.join("cleo", REPLICA));
+            registry.change(code, other -> other.join("cleo", null, REPLICA));
           }
         });
 
@@ -131,7 +131,7 @@ class RoomRegistryTest {
 
   @Test
   void aRoomThatKeepsChangingUnderACommandAnswersTryAgain() {
-    var code = registry.create("ana", REPLICA).room().code();
+    var code = registry.create("ana", null, REPLICA).room().code();
     var attempts = new AtomicInteger();
 
     assertThatThrownBy(
@@ -139,9 +139,9 @@ class RoomRegistryTest {
                 registry.change(
                     code,
                     room -> {
-                      room.join("bob", REPLICA);
+                      room.join("bob", null, REPLICA);
                       attempts.incrementAndGet();
-                      registry.change(code, other -> other.join("cleo", REPLICA));
+                      registry.change(code, other -> other.join("cleo", null, REPLICA));
                     }))
         .isInstanceOf(Unavailable.class)
         .hasMessage("the server is busy, try again");
@@ -150,8 +150,8 @@ class RoomRegistryTest {
 
   @Test
   void theSweepDropsTheRoomsNobodyIsConnectedToAfterThirtyMinutes() {
-    var kept = registry.create("ana", REPLICA);
-    var left = registry.create("bob", REPLICA);
+    var kept = registry.create("ana", null, REPLICA);
+    var left = registry.create("bob", null, REPLICA);
     registry.change(left.room().code(), room -> room.disconnect(left.result().getId(), REPLICA));
 
     registry.dropAbandoned();
@@ -166,8 +166,8 @@ class RoomRegistryTest {
   @ParameterizedTest
   @MethodSource("aRoomThatFails")
   void aRoomThatCannotBeReadDoesNotStopTheSweepOfTheOthers(RuntimeException failure) {
-    var unreadable = registry.create("ana", REPLICA);
-    var left = registry.create("bob", REPLICA);
+    var unreadable = registry.create("ana", null, REPLICA);
+    var left = registry.create("bob", null, REPLICA);
     registry.change(left.room().code(), room -> room.disconnect(left.result().getId(), REPLICA));
     registry.change(
         unreadable.room().code(), room -> room.disconnect(unreadable.result().getId(), REPLICA));

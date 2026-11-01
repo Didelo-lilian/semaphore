@@ -1,16 +1,20 @@
 package fr.didelo.semaphore.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 
+import fr.didelo.semaphore.GameClient;
 import fr.didelo.semaphore.Postgres;
+import fr.didelo.semaphore.game.RoomRegistry;
 import fr.didelo.semaphore.game.Unavailable;
 import fr.didelo.semaphore.guest.Browser;
 import java.net.URI;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -50,6 +54,7 @@ class SignInIT {
 
   @LocalServerPort private int port;
   @Autowired private JdbcClient jdbc;
+  @Autowired private RoomRegistry rooms;
 
   // Spies: they do what the real beans do until a test makes a store fail.
   @MockitoSpyBean private LoginRequests requests;
@@ -423,6 +428,42 @@ class SignInIT {
     var me = body(browser.get());
     assertThat(me.get("kind").asString()).isEqualTo("guest");
     assertThat(me.get("name").asString()).isEqualTo("ana");
+  }
+
+  /** The account the first player of the room that {@code browser} creates sits with, or null. */
+  private UUID accountInARoomCreatedBy(Browser browser) {
+    try (var client = new GameClient(port, "__Host-session=" + browser.cookie("__Host-session"))) {
+      client.send("{\"type\":\"createRoom\",\"name\":\"mallory\"}");
+      await().atMost(Duration.ofSeconds(5)).until(() -> client.room() != null);
+      return rooms
+          .find(client.room().path("code").asString())
+          .orElseThrow()
+          .state()
+          .players()
+          .getFirst()
+          .accountId();
+    }
+  }
+
+  @Test
+  void aSignedInPlayerSitsInARoomWithItsAccount() throws Exception {
+    var browser = guest("ana");
+    signIn(browser, "github", FakeProvider.newSubject());
+
+    assertThat(accountInARoomCreatedBy(browser).toString())
+        .isEqualTo(body(browser.get()).get("id").asString());
+  }
+
+  @Test
+  void aLoginOlderThanTheCookieSitsInARoomAsAGuest() throws Exception {
+    var browser = guest("ana");
+    signIn(browser, "github", FakeProvider.newSubject());
+    var session = sessionOf(browser);
+    session.setAttribute(
+        "account.at", Long.toString(Instant.now().minus(31, ChronoUnit.DAYS).getEpochSecond()));
+    sessions.save(session);
+
+    assertThat(accountInARoomCreatedBy(browser)).isNull();
   }
 
   @Test

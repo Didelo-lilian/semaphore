@@ -1,4 +1,5 @@
 import { Alert, Button } from "@didelo/design-system";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   getRouteApi,
   Navigate,
@@ -7,7 +8,8 @@ import {
 } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useCommand, useGame, useRoom } from "./game.tsx";
-import type { Team } from "./protocol.ts";
+import { meOptions, useMe, useSaveName } from "./me.ts";
+import type { ClientMessage, Team } from "./protocol.ts";
 import { About } from "./ui/About.tsx";
 import { Home } from "./ui/Home.tsx";
 import { Lobby } from "./ui/Lobby.tsx";
@@ -41,17 +43,38 @@ export const HomePage = () => {
   const { snapshot } = useGame();
   const { room } = homeApi.useSearch();
   const navigate = useNavigate();
+  const me = useMe();
+  const queryClient = useQueryClient();
+  const saveName = useSaveName();
   const enter = useCommand((joined) =>
     navigate({ to: "/salon/$code", params: { code: joined.code } }),
   );
+  const named =
+    me.data == null || me.data.kind === "anonymous" ? null : me.data;
+
+  const go = async (name: string, message: ClientMessage) => {
+    // Always saved, not only when it differs from what this page read: another tab may have
+    // renamed the guest since, and the handshake names the player after the session.
+    // A refused PUT (too many, no route yet) is not a lockout: the server then names the player
+    // after the message, as it did before guests.
+    // shortcut: a guest renamed while the PUT is refused is still named by its session, upgrade
+    // when the front can tell the player.
+    // After the first answer of /api/me, which hands out the CSRF cookie the PUT needs.
+    await queryClient.ensureQueryData(meOptions);
+    await saveName.mutateAsync(name).catch(() => undefined);
+    enter.mutate(message);
+  };
+
   return (
     <>
       <Home
         invited={room ?? null}
-        busy={enter.isPending}
+        initialName={named?.name ?? ""}
+        remembered={named !== null}
+        busy={enter.isPending || saveName.isPending}
         error={enter.error?.message ?? snapshot.error}
-        onCreate={(name) => enter.mutate({ type: "createRoom", name })}
-        onJoin={(code, name) => enter.mutate({ type: "joinRoom", code, name })}
+        onCreate={(name) => go(name, { type: "createRoom", name })}
+        onJoin={(code, name) => go(name, { type: "joinRoom", code, name })}
         onWatch={(code) => enter.mutate({ type: "watch", code })}
       />
       <About />

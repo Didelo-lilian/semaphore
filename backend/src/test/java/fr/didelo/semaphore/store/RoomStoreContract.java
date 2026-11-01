@@ -32,7 +32,7 @@ abstract class RoomStoreContract {
 
   static Room lobby(String code) {
     var room = new Room(code, new MutableClock(), new Random(1), 2, POOL);
-    room.join("ana", "replica-1");
+    room.join("ana", null, "replica-1");
     return room;
   }
 
@@ -40,7 +40,7 @@ abstract class RoomStoreContract {
   void aRoomComesBackAsItWasSaved() {
     var room = new Room(newCode(), new MutableClock(), new Random(1), 2, POOL);
     for (var name : List.of("ana", "bob", "cleo", "dan")) {
-      room.join(name, "replica-1");
+      room.join(name, null, "replica-1");
     }
     var ids = room.state().players().stream().map(RoomState.PlayerState::id).toList();
     for (var i = 0; i < ids.size(); i++) {
@@ -92,7 +92,7 @@ abstract class RoomStoreContract {
     var first = lobby(newCode());
     store().create(first.state());
     var second = new Room(first.code(), new MutableClock(), new Random(2), 2, POOL);
-    second.join("bob", "replica-1");
+    second.join("bob", null, "replica-1");
 
     assertThat(store().create(second.state())).isFalse();
 
@@ -104,10 +104,10 @@ abstract class RoomStoreContract {
     var room = lobby(newCode());
     store().create(room.state());
     var loaded = room.version();
-    room.join("bob", "replica-1");
+    room.join("bob", null, "replica-1");
 
     assertThat(store().replace(room.state(), loaded)).isTrue();
-    room.join("cleo", "replica-1");
+    room.join("cleo", null, "replica-1");
     assertThat(store().replace(room.state(), loaded)).isFalse();
 
     assertThat(store().find(room.code()).orElseThrow().players()).hasSize(2);
@@ -117,7 +117,7 @@ abstract class RoomStoreContract {
   void aRoomThatWasDroppedIsNotReplaced() {
     var room = lobby(newCode());
     var loaded = room.version();
-    room.join("bob", "replica-1");
+    room.join("bob", null, "replica-1");
 
     assertThat(store().replace(room.state(), loaded)).isFalse();
 
@@ -129,7 +129,7 @@ abstract class RoomStoreContract {
     var room = lobby(newCode());
     store().create(room.state());
     var seen = room.version();
-    room.join("bob", "replica-1");
+    room.join("bob", null, "replica-1");
     store().replace(room.state(), seen);
 
     assertThat(store().drop(room.code(), seen)).isFalse();

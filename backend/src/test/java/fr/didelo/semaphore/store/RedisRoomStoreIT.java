@@ -8,6 +8,7 @@ import fr.didelo.semaphore.game.RoomState;
 import fr.didelo.semaphore.game.Unavailable;
 import io.lettuce.core.RedisClient;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -72,13 +73,37 @@ class RedisRoomStoreIT extends RoomStoreContract {
   }
 
   @Test
+  void aPlayerThatAnOlderVersionWroteWithoutAnAccountIsReadAsAGuest() {
+    var room = lobby(newCode());
+    var account = UUID.randomUUID();
+    room.join("bob", account, "replica-1");
+    store.create(room.state());
+    assertThat(store.find(room.code()).orElseThrow().players())
+        .extracting(RoomState.PlayerState::accountId)
+        .contains(account);
+    try (var connection = admin.connect()) {
+      var written =
+          (tools.jackson.databind.node.ObjectNode)
+              JSON.readTree(connection.sync().hget("room:" + room.code(), "state"));
+      written
+          .get("players")
+          .forEach(player -> ((tools.jackson.databind.node.ObjectNode) player).remove("accountId"));
+      connection.sync().hset("room:" + room.code(), "state", JSON.writeValueAsString(written));
+    }
+
+    assertThat(store.find(room.code()).orElseThrow().players())
+        .extracting(RoomState.PlayerState::accountId)
+        .containsOnlyNulls();
+  }
+
+  @Test
   void aRoomExpiresAfterADayAndEverySaveRenewsIt() {
     var room = lobby(newCode());
     var loaded = room.version();
     store.create(room.state());
     try (var connection = admin.connect()) {
       connection.sync().expire("room:" + room.code(), 100);
-      room.join("bob", "replica-1");
+      room.join("bob", null, "replica-1");
 
       store.replace(room.state(), loaded);
 

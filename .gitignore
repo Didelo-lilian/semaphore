@@ -9,3 +9,5 @@ dist/
 *.iml
 .DS_Store
 load/results/
+
+tools/vectors/.cache/

@@ -121,7 +121,7 @@ prison
 puits
 pyramide
 radio
-rateau
+râteau
 requin
 rivière
 robot

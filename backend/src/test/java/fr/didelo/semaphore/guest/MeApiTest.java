@@ -152,6 +152,23 @@ class MeApiTest {
   }
 
   @Test
+  void aPseudoWithAControlCharacterIsRefused() {
+    var browser = new Browser(port);
+    browser.get();
+
+    for (var json :
+        new String[] {
+          "{\"name\":\"an\\u0000a\"}", "{\"name\":\"an\\na\"}", "{\"name\":\"an\\u007fa\"}"
+        }) {
+      var response = browser.put(json);
+      assertThat(response.statusCode()).as(json).isEqualTo(400);
+      assertThat(body(response).get("error").asString())
+          .isEqualTo("a name has no control character");
+    }
+    assertThat(browser.cookie("__Host-session")).isNull();
+  }
+
+  @Test
   void aBodyThatIsNotAnAnswerIsRefusedWithAnErrorBody() {
     var browser = new Browser(port);
     browser.get();

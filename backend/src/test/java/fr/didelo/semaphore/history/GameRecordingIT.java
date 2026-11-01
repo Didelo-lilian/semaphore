@@ -86,6 +86,25 @@ class GameRecordingIT {
   }
 
   @Test
+  void aGameWhoseAccountWasDeletedMeanwhileIsWrittenWithItsSeatAsAGuests() {
+    var account = Postgres.account(jdbc);
+    var code = Moves.startedGame(registry, account);
+    jdbc.sql("DELETE FROM account WHERE id = ?").param(account).update();
+
+    registry.change(code, room -> Moves.win(room, Team.BABORD));
+
+    var id = registry.find(code).orElseThrow().result().orElseThrow().id();
+    await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(games(id)).isOne());
+    assertThat(
+            jdbc.sql(
+                    "SELECT count(*) FROM game_player WHERE game_id = ? AND account_id IS NOT NULL")
+                .param(id)
+                .query(Long.class)
+                .single())
+        .isZero();
+  }
+
+  @Test
   void aGameOfGuestsOnlyIsNotWritten() {
     var code = Moves.startedGame(registry, null);
 

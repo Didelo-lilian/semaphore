@@ -35,7 +35,9 @@ class GameRecorder implements GameEndListener {
             thread.setDaemon(true);
             return thread;
           },
-          (task, pool) -> log.warn("a game result was dropped, the queue of the recorder is full"));
+          (task, pool) ->
+              log.warn(
+                  "a game result was dropped, the queue of the recorder is full or it is stopped"));
 
   @Override
   public void ended(GameResult result) {

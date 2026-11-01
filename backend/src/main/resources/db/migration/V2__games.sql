@@ -7,7 +7,7 @@ CREATE TABLE game (
 
 CREATE TABLE game_player (
   game_id uuid NOT NULL REFERENCES game (id) ON DELETE CASCADE,
-  player_id uuid NOT NULL,
+  player_id text NOT NULL,
   name text NOT NULL,
   team text NOT NULL CHECK (team IN ('BABORD', 'TRIBORD')),
   role text NOT NULL CHECK (role IN ('SIGNALER', 'LOOKOUT')),

@@ -13,7 +13,7 @@ public record GameResult(
     LOOKOUT
   }
 
-  public record Participant(UUID playerId, String name, Team team, Role role, UUID accountId) {}
+  public record Participant(String playerId, String name, Team team, Role role, UUID accountId) {}
 
   /** A game is kept for the accounts that played it (ADR 0012): none, nothing to keep. */
   public boolean hasAccount() {

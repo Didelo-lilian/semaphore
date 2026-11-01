@@ -43,10 +43,13 @@ class GameHistoryIT {
         Team.BABORD,
         EndReason.REEF,
         List.of(
-            new Participant(UUID.randomUUID(), "ana", Team.BABORD, Role.SIGNALER, account),
-            new Participant(UUID.randomUUID(), "bob", Team.BABORD, Role.LOOKOUT, null),
-            new Participant(UUID.randomUUID(), "cleo", Team.TRIBORD, Role.SIGNALER, null),
-            new Participant(UUID.randomUUID(), "dan", Team.TRIBORD, Role.LOOKOUT, null)));
+            new Participant(
+                UUID.randomUUID().toString(), "ana", Team.BABORD, Role.SIGNALER, account),
+            new Participant(UUID.randomUUID().toString(), "bob", Team.BABORD, Role.LOOKOUT, null),
+            new Participant(
+                UUID.randomUUID().toString(), "cleo", Team.TRIBORD, Role.SIGNALER, null),
+            new Participant(
+                UUID.randomUUID().toString(), "dan", Team.TRIBORD, Role.LOOKOUT, null)));
   }
 
   private long count(String table, String column, UUID id) {
@@ -142,7 +145,7 @@ class GameHistoryIT {
   @Test
   void aGameWhosePlayersCannotAllBeWrittenLeavesNothing() {
     var id = UUID.randomUUID();
-    var twice = UUID.randomUUID();
+    var twice = UUID.randomUUID().toString();
     var broken =
         new GameResult(
             id,

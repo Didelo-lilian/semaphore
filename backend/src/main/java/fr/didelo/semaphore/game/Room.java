@@ -156,7 +156,7 @@ public final class Room {
                 .map(
                     p ->
                         new GameResult.Participant(
-                            UUID.fromString(p.getId()),
+                            p.getId(),
                             p.getName(),
                             p.getTeam(),
                             signaler(p.getTeam()) == p

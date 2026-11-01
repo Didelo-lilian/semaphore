@@ -8,6 +8,7 @@ import {
 import { useEffect } from "react";
 import { useCommand, useGame, useRoom } from "./game.tsx";
 import type { Team } from "./protocol.ts";
+import { About } from "./ui/About.tsx";
 import { Home } from "./ui/Home.tsx";
 import { Lobby } from "./ui/Lobby.tsx";
 import { Table } from "./ui/Table.tsx";
@@ -44,14 +45,17 @@ export const HomePage = () => {
     navigate({ to: "/salon/$code", params: { code: joined.code } }),
   );
   return (
-    <Home
-      invited={room ?? null}
-      busy={enter.isPending}
-      error={enter.error?.message ?? snapshot.error}
-      onCreate={(name) => enter.mutate({ type: "createRoom", name })}
-      onJoin={(code, name) => enter.mutate({ type: "joinRoom", code, name })}
-      onWatch={(code) => enter.mutate({ type: "watch", code })}
-    />
+    <>
+      <Home
+        invited={room ?? null}
+        busy={enter.isPending}
+        error={enter.error?.message ?? snapshot.error}
+        onCreate={(name) => enter.mutate({ type: "createRoom", name })}
+        onJoin={(code, name) => enter.mutate({ type: "joinRoom", code, name })}
+        onWatch={(code) => enter.mutate({ type: "watch", code })}
+      />
+      <About />
+    </>
   );
 };
 

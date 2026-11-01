@@ -501,3 +501,60 @@ h2 {
   font-weight: var(--ds-font-weight-semibold);
   color: var(--sem-team);
 }
+
+.sem-about {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-2);
+}
+
+.sem-about h2 {
+  font-size: 1.1rem;
+}
+
+.sem-about ul,
+.sem-legal ul {
+  margin: 0;
+  padding-left: var(--ds-space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-1);
+}
+
+.sem-legal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ds-space-3);
+}
+
+.sem-legal h2 {
+  font-size: 1.25rem;
+  margin-top: var(--ds-space-2);
+}
+
+.sem-legal h3 {
+  font-family: var(--ds-font-family-display);
+  font-size: 1.05rem;
+  margin: 0;
+}
+
+.sem-legal p {
+  margin: 0;
+}
+
+.sem-legal .sem-hint {
+  color: var(--sem-ink);
+}
+
+.sem-legal a,
+.sem-about a {
+  color: var(--sem-ink);
+  text-underline-offset: 0.2em;
+}
+
+.sem-legal-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-space-2) var(--ds-space-4);
+  margin-top: var(--ds-space-2);
+}

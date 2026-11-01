@@ -11,6 +11,9 @@ export type Phase = z.infer<typeof phaseSchema>;
 export const cardKindSchema = z.enum(["BABORD", "TRIBORD", "CALM", "REEF"]);
 export type CardKind = z.infer<typeof cardKindSchema>;
 
+export const levelSchema = z.enum(["EASY", "NORMAL", "HARD"]);
+export type Level = z.infer<typeof levelSchema>;
+
 const playerSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -18,6 +21,8 @@ const playerSchema = z.object({
   connected: z.boolean(),
   host: z.boolean(),
   signaler: z.boolean(),
+  // The level of a bot, null for a person, and absent from a backend that has no bots yet.
+  bot: levelSchema.nullable().default(null),
 });
 export type Player = z.infer<typeof playerSchema>;
 
@@ -78,6 +83,8 @@ export type ClientMessage = (
   | { type: "leave" }
   | { type: "joinTeam"; team: Team }
   | { type: "start" }
+  | { type: "addBot"; team: Team; signaler: boolean; level: Level }
+  | { type: "removeBot"; playerId: string }
   | { type: "signal"; word: string; number: number }
   | { type: "reveal"; index: number }
   | { type: "pass" }

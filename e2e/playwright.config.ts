@@ -17,7 +17,12 @@ export default defineConfig({
     {
       command: "java -jar ../backend/build/libs/semaphore.jar",
       url: "http://localhost:8080/actuator/health",
-      env: { SEMAPHORE_ALLOWED_ORIGINS: FRONT },
+      env: {
+        SEMAPHORE_ALLOWED_ORIGINS: FRONT,
+        // Bots answer in a blink: a game against them lasts seconds (3 s and 2 s by default).
+        SEMAPHORE_BOTS_THINK: "150ms",
+        SEMAPHORE_BOTS_PAUSE: "50ms",
+      },
       reuseExistingServer: !process.env.CI,
     },
     {

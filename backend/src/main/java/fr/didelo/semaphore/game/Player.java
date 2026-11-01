@@ -25,7 +25,15 @@ public final class Player {
   // replica has stopped beating.
   @Setter private String replica;
 
+  // The name of the level of a bot, null for a human (ADR 0016).
+  @Setter private String bot;
+
+  public boolean isBot() {
+    return bot != null;
+  }
+
+  /** A bot has no connection to lose: nobody waits for it and nobody marks it absent. */
   public boolean isConnected() {
-    return absentSince == null;
+    return isBot() || absentSince == null;
   }
 }

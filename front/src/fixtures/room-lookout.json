@@ -20,7 +20,8 @@
         "team": "BABORD",
         "connected": true,
         "host": true,
-        "signaler": true
+        "signaler": true,
+        "bot": null
       },
       {
         "id": "6934d99e-f222-4d75-8789-5448acb54a99",
@@ -28,7 +29,8 @@
         "team": "TRIBORD",
         "connected": true,
         "host": false,
-        "signaler": true
+        "signaler": true,
+        "bot": null
       },
       {
         "id": "adc8775d-19e1-4f6d-985a-dce440c59cd5",
@@ -36,7 +38,8 @@
         "team": "BABORD",
         "connected": true,
         "host": false,
-        "signaler": false
+        "signaler": false,
+        "bot": null
       },
       {
         "id": "9b4c00f2-0f10-48ed-bf6b-c3897222f1f0",
@@ -44,7 +47,8 @@
         "team": "TRIBORD",
         "connected": true,
         "host": false,
-        "signaler": false
+        "signaler": false,
+        "bot": null
       }
     ],
     "spectators": 0,

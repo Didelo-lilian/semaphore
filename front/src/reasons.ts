@@ -15,6 +15,13 @@ const EXACT: Record<string, string> = {
   "spectators cannot play": "Un spectateur regarde sans jouer.",
   "a name has 1 to 20 characters": "Un nom fait de 1 à 20 caractères.",
   "only the host starts the game": "Seul l'hôte lance la partie.",
+  "only the host adds a bot": "Seul l'hôte ajoute un bot.",
+  "only the host removes a bot": "Seul l'hôte retire un bot.",
+  "unknown bot": "Ce bot n'est plus dans le salon.",
+  "the team has a bot as Signaleur already":
+    "Cette équipe a déjà un bot Signaleur.",
+  "the team needs its Signaleur first":
+    "Cette équipe a besoin d'un Signaleur avant un Veilleur.",
   "everyone must pick a team": "Tout le monde doit choisir une équipe.",
   "everyone must be online": "Tout le monde doit être en ligne.",
   "you are already in a room": "Tu es déjà dans un salon.",

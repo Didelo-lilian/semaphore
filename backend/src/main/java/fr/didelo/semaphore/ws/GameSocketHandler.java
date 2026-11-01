@@ -149,6 +149,13 @@ public class GameSocketHandler extends TextWebSocketHandler implements SmartLife
             case ClientMessage.Reveal reveal ->
                 command(session, id, new Command.Reveal(reveal.index()));
             case ClientMessage.Pass pass -> command(session, id, new Command.Pass());
+            case ClientMessage.AddBot add ->
+                command(
+                    session,
+                    id,
+                    new Command.AddBot(add.team(), add.signaler(), add.level().name()));
+            case ClientMessage.RemoveBot remove ->
+                command(session, id, new Command.RemoveBot(remove.playerId()));
           });
     } catch (JacksonException e) {
       deliver(List.of(new Delivery(session, new ServerMessage.Error(id, "unreadable message"))));

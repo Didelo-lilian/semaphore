@@ -86,6 +86,7 @@ public final class Room {
       player.setLeft(p.left());
       player.setReplica(p.replica());
       player.setAccountId(p.accountId());
+      player.setBot(p.bot());
       room.players.put(p.id(), player);
     }
     room.flags.putAll(state.flags());
@@ -127,7 +128,8 @@ public final class Room {
                         p.getAbsentSince(),
                         p.isLeft(),
                         p.getReplica(),
-                        p.getAccountId()))
+                        p.getAccountId(),
+                        p.getBot()))
             .toList(),
         Map.copyOf(spectators),
         lastActivity,
@@ -182,7 +184,7 @@ public final class Room {
   }
 
   public boolean abandonedFor(Duration duration) {
-    return players.values().stream().noneMatch(Player::isConnected)
+    return players.values().stream().filter(p -> !p.isBot()).noneMatch(Player::isConnected)
         && Duration.between(lastActivity, clock.instant()).compareTo(duration) > 0;
   }
 
@@ -278,7 +280,7 @@ public final class Room {
   public boolean dropReplicasNotIn(Set<String> alive) {
     var gone =
         players.values().stream()
-            .filter(p -> p.isConnected() && !alive.contains(p.getReplica()))
+            .filter(p -> !p.isBot() && p.isConnected() && !alive.contains(p.getReplica()))
             .toList();
     gone.forEach(this::absent);
     var lost = spectators.keySet().removeIf(replica -> !alive.contains(replica));
@@ -304,6 +306,7 @@ public final class Room {
       return;
     }
     players.remove(playerId);
+    dropBotsWithoutHuman();
     lastActivity = clock.instant();
     version++;
   }
@@ -321,6 +324,7 @@ public final class Room {
                             && Duration.between(p.getAbsentSince(), now).compareTo(LOBBY_GRACE)
                                 > 0);
     if (dropped) {
+      dropBotsWithoutHuman();
       lastActivity = now;
       version++;
     }
@@ -364,6 +368,8 @@ public final class Room {
     switch (command) {
       case Command.JoinTeam join -> player.setTeam(join.team());
       case Command.Start start -> start(player);
+      case Command.AddBot add -> addBot(player, add);
+      case Command.RemoveBot remove -> removeBot(player, remove.playerId());
       case Command.Signal send -> signal(player, send);
       case Command.Reveal reveal -> reveal(player, reveal.index());
       case Command.Pass pass -> {
@@ -411,7 +417,7 @@ public final class Room {
             && viewer != null
             && viewer.getTeam() != null
             && signaler(viewer.getTeam()) == viewer;
-    var host = players.values().iterator().next();
+    var host = players.values().stream().filter(p -> !p.isBot()).findFirst().orElseThrow();
     return new RoomView(
         code,
         version,
@@ -433,7 +439,8 @@ public final class Room {
                         p.getTeam(),
                         p.isConnected(),
                         p == host,
-                        phase != Phase.LOBBY && p.getTeam() != null && signaler(p.getTeam()) == p))
+                        p.getTeam() != null && signaler(p.getTeam()) == p,
+                        p.getBot()))
             .toList(),
         spectatorCount(),
         board.stream()
@@ -448,7 +455,7 @@ public final class Room {
   }
 
   private void start(Player player) {
-    if (player != players.values().iterator().next()) {
+    if (player != host()) {
       throw new IllegalMove("only the host starts the game");
     }
     if (players.values().stream().anyMatch(p -> p.getTeam() == null)) {
@@ -477,6 +484,81 @@ public final class Room {
     turn = Team.values()[random.nextInt(Team.values().length)];
     gameId = UUID.randomUUID();
     phase = Phase.SIGNAL;
+  }
+
+  private void addBot(Player player, Command.AddBot add) {
+    if (player != host()) {
+      throw new IllegalMove("only the host adds a bot");
+    }
+    if (players.size() >= MAX_PLAYERS) {
+      throw new IllegalMove("the room is full");
+    }
+    var members = members(add.team());
+    if (add.signaler()
+        ? members.stream().findFirst().filter(Player::isBot).isPresent()
+        : members.isEmpty()) {
+      throw new IllegalMove(
+          add.signaler()
+              ? "the team has a bot as Signaleur already"
+              : "the team needs its Signaleur first");
+    }
+    var name =
+        IntStream.iterate(1, i -> i + 1)
+            .mapToObj(i -> "Bot " + i)
+            .filter(
+                candidate ->
+                    players.values().stream().noneMatch(p -> p.getName().equals(candidate)))
+            .findFirst()
+            .orElseThrow();
+    var bot = new Player(UUID.randomUUID().toString(), UUID.randomUUID().toString(), name);
+    bot.setTeam(add.team());
+    bot.setBot(add.level());
+    // The Signaleur is the first of the team in this order: a Signaleur bot goes before everyone.
+    var others = new ArrayList<>(players.values());
+    players.clear();
+    if (add.signaler()) {
+      players.put(bot.getId(), bot);
+    }
+    others.forEach(p -> players.put(p.getId(), p));
+    players.putIfAbsent(bot.getId(), bot);
+  }
+
+  private void removeBot(Player player, String botId) {
+    if (player != host()) {
+      throw new IllegalMove("only the host removes a bot");
+    }
+    var bot = players.get(botId);
+    if (bot == null || !bot.isBot()) {
+      throw new IllegalMove("unknown bot");
+    }
+    players.remove(botId);
+  }
+
+  /** The room has no human left to play with: its bots go, and the room is empty as it was. */
+  private void dropBotsWithoutHuman() {
+    if (players.values().stream().allMatch(Player::isBot)) {
+      players.clear();
+    }
+  }
+
+  /**
+   * The bot the game waits for: the Signaleur of the team in play, or its first lookout when all
+   * its lookouts are bots, since a human lookout plays and a bot does not talk over them. None
+   * while no human is online to see it play.
+   */
+  public Optional<Player> botToAct() {
+    if ((phase != Phase.SIGNAL && phase != Phase.GUESS)
+        || players.values().stream().noneMatch(p -> !p.isBot() && p.isConnected())) {
+      return Optional.empty();
+    }
+    var team = members(turn);
+    var actors = phase == Phase.SIGNAL ? team.subList(0, 1) : team.subList(1, team.size());
+    return actors.stream().allMatch(Player::isBot) ? actors.stream().findFirst() : Optional.empty();
+  }
+
+  /** The host is the first human of the room: a Signaleur bot can be the first of all. */
+  private Player host() {
+    return players.values().stream().filter(p -> !p.isBot()).findFirst().orElseThrow();
   }
 
   private void signal(Player player, Command.Signal send) {

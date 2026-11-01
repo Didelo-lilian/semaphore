@@ -39,7 +39,8 @@ class GameSocketHandlerTest {
   private final LocalCluster cluster = new LocalCluster();
   private final GameSocketHandler handler =
       new GameSocketHandler(json, registry, new InMemoryRoomEvents(), cluster);
-  private final RoomSweeper sweeper = new RoomSweeper(registry, cluster, handler);
+  private final RoomSweeper sweeper =
+      new RoomSweeper(registry, cluster, handler, TestBots.turns(registry, handler, Duration.ZERO));
 
   private WebSocketSession connect(String id) throws Exception {
     var session = mock(WebSocketSession.class);
@@ -99,6 +100,47 @@ class GameSocketHandlerTest {
     assertThat(update.path("type").asString()).isEqualTo("roomUpdated");
     assertThat(update.path("room").path("players").path(0).path("team").asString())
         .isEqualTo("BABORD");
+  }
+
+  @Test
+  void theHostAddsAndRemovesBotsAndEveryoneSeesThem() throws Exception {
+    var host = connect("host");
+    var bob = connect("bob");
+    receive(host, "{\"type\":\"createRoom\",\"name\":\"Ana\"}");
+    var code = json.readTree(lastPayload(host)).path("room").path("code").asString();
+    receive(bob, "{\"type\":\"joinRoom\",\"code\":\"" + code + "\",\"name\":\"Bob\"}");
+    receive(host, "{\"type\":\"joinTeam\",\"team\":\"BABORD\"}");
+
+    receive(
+        host, "{\"type\":\"addBot\",\"team\":\"BABORD\",\"signaler\":false,\"level\":\"HARD\"}");
+
+    var players = json.readTree(lastPayload(bob)).path("room").path("players");
+    assertThat(players).hasSize(3);
+    assertThat(players.path(2).path("name").asString()).isEqualTo("Bot 1");
+    assertThat(players.path(2).path("bot").asString()).isEqualTo("HARD");
+    assertThat(players.path(2).path("connected").asBoolean()).isTrue();
+    var botId = players.path(2).path("id").asString();
+
+    receive(bob, "{\"type\":\"removeBot\",\"playerId\":\"" + botId + "\"}");
+    assertThat(lastPayload(bob)).contains("only the host");
+
+    receive(host, "{\"type\":\"removeBot\",\"playerId\":\"" + botId + "\"}");
+    assertThat(json.readTree(lastPayload(bob)).path("room").path("players")).hasSize(2);
+  }
+
+  @Test
+  void aBotOfALevelThatDoesNotExistIsRefused() throws Exception {
+    var host = connect("host");
+    receive(host, "{\"type\":\"createRoom\",\"name\":\"Ana\"}");
+    receive(host, "{\"type\":\"joinTeam\",\"team\":\"BABORD\"}");
+
+    receive(
+        host, "{\"type\":\"addBot\",\"team\":\"BABORD\",\"signaler\":false,\"level\":\"GENIUS\"}");
+
+    assertThat(lastPayload(host)).contains("\"error\"");
+    assertThat(registry.codes()).hasSize(1);
+    assertThat(registry.find(registry.codes().getFirst()).orElseThrow().state().players())
+        .hasSize(1);
   }
 
   @Test

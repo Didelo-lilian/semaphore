@@ -74,4 +74,29 @@ describe("server messages", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("reads the level of a bot and refuses one that does not exist", () => {
+    const [first, ...others] = signaler.room.players;
+    const withBot = (bot: string) => ({
+      ...signaler,
+      room: { ...signaler.room, players: [{ ...first, bot }, ...others] },
+    });
+    expect(serverMessageSchema.safeParse(withBot("HARD")).success).toBe(true);
+    expect(serverMessageSchema.safeParse(withBot("GENIUS")).success).toBe(
+      false,
+    );
+  });
+
+  it("reads a player of a backend that has no bots as a person", () => {
+    const person = Object.fromEntries(
+      Object.entries(signaler.room.players[0] ?? {}).filter(
+        ([key]) => key !== "bot",
+      ),
+    );
+    const message = serverMessageSchema.parse({
+      ...signaler,
+      room: { ...signaler.room, players: [person] },
+    });
+    expect(message).toMatchObject({ room: { players: [{ bot: null }] } });
+  });
 });

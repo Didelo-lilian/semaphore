@@ -25,4 +25,14 @@ class BotConfig {
       return vectors;
     }
   }
+
+  @Bean
+  ClueGiver clueGiver(WordVectors vectors) {
+    return ClueGiver.of(vectors);
+  }
+
+  @Bean
+  Guesser guesser(WordVectors vectors) {
+    return Guesser.of(vectors);
+  }
 }

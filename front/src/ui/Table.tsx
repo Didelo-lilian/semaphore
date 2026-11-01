@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useListMotion } from "../motion.ts";
 import type { Card, RoomView, Team } from "../protocol.ts";
 import { explain } from "../reasons.ts";
+import { LEVEL_NAME } from "./levels.ts";
 import { Presence } from "./Presence.tsx";
 import { SignalForm } from "./SignalForm.tsx";
 import { TEAM_NAME, TeamMark } from "./TeamMark.tsx";
@@ -222,6 +223,9 @@ export const Table = ({
                     {player.name}
                     {player.id === room.you ? " (toi)" : ""}
                     {player.signaler ? " · Signaleur" : ""}
+                    {player.bot !== null
+                      ? ` · niveau ${LEVEL_NAME[player.bot]}`
+                      : ""}
                     {player.connected ? "" : " · hors ligne"}
                   </li>
                 ))}

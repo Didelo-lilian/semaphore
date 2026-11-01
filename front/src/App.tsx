@@ -124,6 +124,12 @@ export const SalonPage = () => {
       room={room}
       error={error}
       onJoinTeam={(team: Team) => command.mutate({ type: "joinTeam", team })}
+      onAddBot={(team, signaler, level) =>
+        command.mutate({ type: "addBot", team, signaler, level })
+      }
+      onRemoveBot={(playerId) =>
+        command.mutate({ type: "removeBot", playerId })
+      }
       onStart={() => command.mutate({ type: "start" })}
       onLeave={leave}
     />

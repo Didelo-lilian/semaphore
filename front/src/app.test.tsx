@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GameClient } from "./client.ts";
@@ -375,6 +375,66 @@ describe("the game in the browser", () => {
       await screen.findByText("Le Signaleur de Bâbord prépare son signal."),
     ).toBeInTheDocument();
     expect(screen.queryByRole("timer")).toBeNull();
+  });
+
+  it("adds a bot at the chosen level to a team and removes it, from the lobby of the host", async () => {
+    const players = (joined.room as RoomView).players.map((player) =>
+      player.host
+        ? { ...player, team: "BABORD" as const, signaler: true }
+        : player,
+    );
+    const room = {
+      ...(joined.room as RoomView),
+      you: players.find((player) => player.host)?.id ?? null,
+      players,
+    };
+    const socket = await join(room);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Difficile" }),
+    );
+    await userEvent.click(
+      within(screen.getByRole("region", { name: "Équipe Tribord" })).getByRole(
+        "button",
+        { name: "Ajouter un bot Signaleur" },
+      ),
+    );
+    const add = {
+      type: "addBot",
+      team: "TRIBORD",
+      signaler: true,
+      level: "HARD",
+    };
+    await waitFor(() =>
+      expect(socket.sent).toContainEqual(expect.objectContaining(add)),
+    );
+    const bot = {
+      id: "bot-1",
+      name: "Bot 1",
+      team: "TRIBORD" as const,
+      connected: true,
+      host: false,
+      signaler: true,
+      bot: "HARD" as const,
+    };
+    socket.answer({
+      type: "roomUpdated",
+      id: socket.sent.find((m) => m.type === "addBot")?.id,
+      room: {
+        ...room,
+        version: room.version + 1,
+        players: [...room.players, bot],
+      },
+    });
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Retirer Bot 1" }),
+    );
+    await waitFor(() =>
+      expect(socket.sent).toContainEqual(
+        expect.objectContaining({ type: "removeBot", playerId: "bot-1" }),
+      ),
+    );
   });
 
   it("sends the signal of the Signaleur and waits for the lookouts", async () => {

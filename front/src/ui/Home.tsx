@@ -1,14 +1,15 @@
 import { Alert, Button, TextField } from "@didelo/design-system";
 import { useForm } from "@tanstack/react-form";
+import { useEffect } from "react";
 import { z } from "zod";
 import { explain } from "../reasons.ts";
 
 interface Props {
   /** The code of the room a friend's link points to, if any. */
   invited: string | null;
-  /** The pseudo the server remembers for this browser, empty at the first visit. */
+  /** The pseudo the server remembers for this browser: empty at the first visit, and until it answers. */
   initialName: string;
-  /** Whether the server can remember a pseudo, to say so. */
+  /** Whether a guest is remembered, to say so. */
   remembered: boolean;
   busy: boolean;
   error: string | null;
@@ -53,6 +54,13 @@ export const Home = ({
       }
     },
   });
+
+  // The remembered name arrives after the page: it fills the field unless the player already typed.
+  useEffect(() => {
+    if (initialName !== "" && !form.getFieldMeta("name")?.isDirty) {
+      form.setFieldValue("name", initialName, { dontUpdateMeta: true });
+    }
+  }, [form, initialName]);
 
   return (
     <section

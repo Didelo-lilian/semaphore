@@ -1,4 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  queryOptions,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { z } from "zod";
 
 const meSchema = z.discriminatedUnion("kind", [
@@ -13,8 +18,14 @@ export const meKey = ["me"] as const;
 
 const TOKEN_COOKIE = "__Host-XSRF-TOKEN";
 
-// The home page waits for the answer: a server that hangs must not keep the player out of a room.
+// A server that hangs must not keep the player out of a room.
 const TIMEOUT_MS = 5_000;
+
+function timeout() {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), TIMEOUT_MS);
+  return controller.signal;
+}
 
 // GET /api/me hands the cookie out; a browser that refused it (Safari over plain HTTP) has none.
 const csrfToken = () =>
@@ -32,7 +43,7 @@ export async function fetchMe(): Promise<Me | null> {
   try {
     const response = await fetch("/api/me", {
       headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: timeout(),
     });
     return response.ok ? meSchema.parse(await response.json()) : null;
   } catch {
@@ -51,7 +62,7 @@ export async function saveName(name: string): Promise<Me> {
       ...(token === undefined ? {} : { "X-XSRF-TOKEN": token }),
     },
     body: JSON.stringify({ name }),
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+    signal: timeout(),
   });
   if (!response.ok) {
     throw new Error(`PUT /api/me answered ${response.status}`);
@@ -60,13 +71,14 @@ export async function saveName(name: string): Promise<Me> {
 }
 
 /** The query never fails: what cannot be known is null. */
-export const useMe = () =>
-  useQuery({
-    queryKey: meKey,
-    queryFn: fetchMe,
-    staleTime: Number.POSITIVE_INFINITY,
-    retry: false,
-  });
+export const meOptions = queryOptions({
+  queryKey: meKey,
+  queryFn: fetchMe,
+  staleTime: Number.POSITIVE_INFINITY,
+  retry: false,
+});
+
+export const useMe = () => useQuery(meOptions);
 
 export const useSaveName = () => {
   const queryClient = useQueryClient();

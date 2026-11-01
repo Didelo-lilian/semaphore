@@ -13,7 +13,7 @@ test("a guest keeps the pseudo across rooms, tabs and renames, and others see it
 
   await test.step("the first visit asks for a pseudo and the server remembers it", async () => {
     await first.goto("/");
-    await expect(first.getByText(/retenu sur cet appareil/)).toBeVisible();
+    await expect(first.getByText(/retenu sur cet appareil/)).toHaveCount(0);
     await first.getByLabel("Ton nom").fill("Ana");
     await first.getByRole("button", { name: "Créer un salon" }).click();
     await expect(heading(first)).toHaveText("Salon");
@@ -32,7 +32,11 @@ test("a guest keeps the pseudo across rooms, tabs and renames, and others see it
     await second.close();
   });
 
-  await test.step("renaming is remembered too", async () => {
+  await test.step("a rename is remembered, and a tab that read the old name sends what it shows", async () => {
+    const stale = await ana.newPage();
+    await stale.goto("/");
+    await expect(stale.getByLabel("Ton nom")).toHaveValue("Ana");
+    await expect(stale.getByText(/retenu sur cet appareil/)).toBeVisible();
     const third = await ana.newPage();
     await third.goto("/");
     await third.getByLabel("Ton nom").fill("Anna");
@@ -41,6 +45,10 @@ test("a guest keeps the pseudo across rooms, tabs and renames, and others see it
     const me = await ana.request.get("/api/me");
     expect(await me.json()).toMatchObject({ kind: "guest", name: "Anna" });
     await third.close();
+
+    await stale.getByRole("button", { name: "Créer un salon" }).click();
+    await expect(stale.getByText("Ana (toi)")).toBeVisible();
+    await stale.close();
   });
 
   await test.step("a second guest joins the first room by its link and both read each other", async () => {

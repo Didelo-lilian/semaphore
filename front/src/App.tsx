@@ -1,4 +1,5 @@
 import { Alert, Button } from "@didelo/design-system";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   getRouteApi,
   Navigate,
@@ -7,7 +8,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useCommand, useGame, useRoom } from "./game.tsx";
-import { useMe, useSaveName } from "./me.ts";
+import { meOptions, useMe, useSaveName } from "./me.ts";
 import type { ClientMessage, Team } from "./protocol.ts";
 import { About } from "./ui/About.tsx";
 import { Home } from "./ui/Home.tsx";
@@ -43,23 +44,23 @@ export const HomePage = () => {
   const { room } = homeApi.useSearch();
   const navigate = useNavigate();
   const me = useMe();
+  const queryClient = useQueryClient();
   const saveName = useSaveName();
   const enter = useCommand((joined) =>
     navigate({ to: "/salon/$code", params: { code: joined.code } }),
   );
-  if (me.isPending) {
-    return <p className="sem-hint">Chargement…</p>;
-  }
-  const known = me.data?.kind === "guest" ? me.data.name : "";
+  const guest = me.data?.kind === "guest" ? me.data : null;
 
   const go = async (name: string, message: ClientMessage) => {
+    // Always saved, not only when it differs from what this page read: another tab may have
+    // renamed the guest since, and the handshake names the player after the session.
     // A refused PUT (too many, no route yet) is not a lockout: the server then names the player
     // after the message, as it did before guests.
     // shortcut: a guest renamed while the PUT is refused is still named by its session, upgrade
     // when the front can tell the player.
-    if (me.data !== null && name !== known) {
-      await saveName.mutateAsync(name).catch(() => undefined);
-    }
+    // After the first answer of /api/me, which hands out the CSRF cookie the PUT needs.
+    await queryClient.ensureQueryData(meOptions);
+    await saveName.mutateAsync(name).catch(() => undefined);
     enter.mutate(message);
   };
 
@@ -67,8 +68,8 @@ export const HomePage = () => {
     <>
       <Home
         invited={room ?? null}
-        initialName={known}
-        remembered={me.data !== null}
+        initialName={guest?.name ?? ""}
+        remembered={guest !== null}
         busy={enter.isPending || saveName.isPending}
         error={enter.error?.message ?? snapshot.error}
         onCreate={(name) => go(name, { type: "createRoom", name })}

@@ -1,0 +1,1 @@
+-- The schema starts empty: each table comes with the change that writes to it.

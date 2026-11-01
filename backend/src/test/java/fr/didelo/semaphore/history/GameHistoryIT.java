@@ -52,6 +52,15 @@ class GameHistoryIT {
                 UUID.randomUUID().toString(), "dan", Team.TRIBORD, Role.LOOKOUT, null)));
   }
 
+  private UUID account() {
+    var id = UUID.randomUUID();
+    jdbc.sql(
+            "INSERT INTO account (id, provider, subject, display_name) VALUES (?, 'github', ?, 'ana')")
+        .params(id, id.toString())
+        .update();
+    return id;
+  }
+
   private long count(String table, String column, UUID id) {
     return jdbc.sql("SELECT count(*) FROM " + table + " WHERE " + column + " = ?")
         .param(id)
@@ -62,7 +71,7 @@ class GameHistoryIT {
   @Test
   void aGameIsWrittenWithItsPlayersAndWhoTheyAre() {
     var id = UUID.randomUUID();
-    var account = UUID.randomUUID();
+    var account = account();
 
     assertThat(history.record(result(id, account))).isTrue();
 
@@ -103,7 +112,7 @@ class GameHistoryIT {
   @Test
   void aGameThatIsAlreadyThereIsLeftAsItIs() {
     var id = UUID.randomUUID();
-    var late = UUID.randomUUID();
+    var late = account();
     assertThat(history.record(result(id, null))).isTrue();
 
     assertThat(history.record(result(id, late))).isFalse();
@@ -126,7 +135,7 @@ class GameHistoryIT {
                       replicas.submit(
                           () -> {
                             go.await();
-                            return history.record(result(id, UUID.randomUUID()));
+                            return history.record(result(id, account()));
                           }))
               .toList();
       go.countDown();
@@ -140,6 +149,44 @@ class GameHistoryIT {
     assertThat(written).isOne();
     assertThat(count("game", "id", id)).isOne();
     assertThat(count("game_player", "game_id", id)).isEqualTo(4);
+  }
+
+  @Test
+  void forgettingAnAccountKeepsTheTableAndDropsTheGamesNobodyIsLeftIn() {
+    var gone = account();
+    var stays = account();
+    var shared = UUID.randomUUID();
+    var alone = UUID.randomUUID();
+    history.record(
+        new GameResult(
+            shared,
+            Instant.parse("2026-10-25T12:00:00Z"),
+            Team.BABORD,
+            EndReason.COMPLETE,
+            List.of(
+                new Participant("p1", "ana", Team.BABORD, Role.SIGNALER, gone),
+                new Participant("p2", "bob", Team.BABORD, Role.LOOKOUT, stays),
+                new Participant("p3", "cleo", Team.TRIBORD, Role.SIGNALER, null))));
+    history.record(result(alone, gone));
+
+    history.forget(gone);
+
+    assertThat(count("game", "id", alone)).isZero();
+    assertThat(count("game_player", "game_id", alone)).isZero();
+    assertThat(count("game", "id", shared)).isOne();
+    assertThat(
+            jdbc.sql(
+                    "SELECT name || ' ' || coalesce(account_id::text, '-') FROM game_player WHERE game_id = ? ORDER BY player_id")
+                .param(shared)
+                .query(String.class)
+                .list())
+        .containsExactly("a former player -", "bob " + stays, "cleo -");
+    assertThat(count("game_player", "account_id", gone)).isZero();
+  }
+
+  @Test
+  void forgettingAnAccountWithNoGameDoesNothing() {
+    history.forget(account());
   }
 
   @Test

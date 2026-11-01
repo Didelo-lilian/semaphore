@@ -51,13 +51,22 @@ class GameRecordingIT {
   @MockitoSpyBean GameHistory history;
   @Autowired GameRecorder recorder;
 
+  private UUID account() {
+    var id = UUID.randomUUID();
+    jdbc.sql(
+            "INSERT INTO account (id, provider, subject, display_name) VALUES (?, 'github', ?, 'ana')")
+        .params(id, id.toString())
+        .update();
+    return id;
+  }
+
   private long games(UUID id) {
     return jdbc.sql("SELECT count(*) FROM game WHERE id = ?").param(id).query(Long.class).single();
   }
 
   @Test
   void aGameThatEndsWithAnAccountInItIsWrittenOnce() {
-    var code = Moves.startedGame(registry, UUID.randomUUID());
+    var code = Moves.startedGame(registry, account());
 
     registry.change(code, room -> Moves.win(room, Team.TRIBORD));
 
@@ -104,7 +113,7 @@ class GameRecordingIT {
         .doCallRealMethod()
         .when(history)
         .record(any(GameResult.class));
-    var code = Moves.startedGame(registry, UUID.randomUUID());
+    var code = Moves.startedGame(registry, account());
 
     registry.change(code, room -> Moves.win(room, Team.BABORD));
 

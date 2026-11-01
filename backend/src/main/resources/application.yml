@@ -53,3 +53,9 @@ semaphore:
     # The cookie is written once, with the session, and never renewed: whatever happens the browser drops it after this
     # long (ADR 0010).
     cookie-max-age: 30d
+  # Sign in with GitHub or Google (ADR 0011). A provider is on when both of its values are set and not blank, and there is a
+  # database; with none, the game plays for guests only. In production they are files read by configtree
+  # (semaphore.auth.github.client-id, semaphore.auth.github.client-secret, and the same for google); an empty file is blank.
+  #   semaphore.auth.<github|google>.client-id / client-secret
+  # The addresses of the provider are fixed; these replace them (tests, GitHub Enterprise):
+  #   authorization-uri, token-uri, user-info-uri, jwk-set-uri, issuer-uri

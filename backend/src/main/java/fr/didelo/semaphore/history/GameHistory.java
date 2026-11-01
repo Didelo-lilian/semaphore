@@ -4,6 +4,7 @@ import fr.didelo.semaphore.db.WithDatabase;
 import fr.didelo.semaphore.game.GameResult;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
@@ -13,7 +14,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Component
 @WithDatabase
 @RequiredArgsConstructor
-class GameHistory {
+public class GameHistory {
 
   private final JdbcClient jdbc;
   private final TransactionTemplate transaction;
@@ -57,6 +58,38 @@ class GameHistory {
                 .update();
           }
           return true;
+        });
+  }
+
+  /**
+   * Removes the person and keeps the table (ADR 0012), all or nothing: the account's rows lose
+   * their account id and their name, then the games left with no account in them go. The other
+   * players' history does not change.
+   */
+  public void forget(UUID accountId) {
+    transaction.executeWithoutResult(
+        status -> {
+          var games =
+              jdbc.sql(
+                      """
+                      UPDATE game_player SET account_id = NULL, name = 'a former player'
+                      WHERE account_id = ?
+                      RETURNING game_id
+                      """)
+                  .param(accountId)
+                  .query(UUID.class)
+                  .list();
+          if (!games.isEmpty()) {
+            jdbc.sql(
+                    """
+                    DELETE FROM game
+                    WHERE id IN (:games)
+                      AND NOT EXISTS (
+                        SELECT 1 FROM game_player WHERE game_id = game.id AND account_id IS NOT NULL)
+                    """)
+                .param("games", games)
+                .update();
+          }
         });
   }
 }

@@ -38,6 +38,16 @@ class MeApiTest {
   }
 
   @Test
+  void withNoProviderNobodyCanSignIn() {
+    var browser = new Browser(port);
+    var me = body(browser.get());
+
+    assertThat(me.get("providers").size()).isZero();
+    assertThat(browser.request("GET", "/api/auth/login/github").statusCode()).isEqualTo(404);
+    assertThat(browser.request("POST", "/api/auth/logout").statusCode()).isEqualTo(404);
+  }
+
+  @Test
   void aPutWithoutTheTokenIsRefused() {
     var browser = new Browser(port);
     browser.get();

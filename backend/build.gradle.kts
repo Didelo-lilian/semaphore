@@ -22,6 +22,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-websocket")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-security")
+    implementation("org.springframework.boot:spring-boot-starter-security-oauth2-client")
     implementation("org.springframework.session:spring-session-data-redis")
     implementation("io.lettuce:lettuce-core")
     implementation("org.springframework.boot:spring-boot-starter-jdbc")
@@ -34,6 +35,7 @@ dependencies {
     testImplementation("org.testcontainers:testcontainers")
     testImplementation("org.testcontainers:testcontainers-postgresql")
     testImplementation("org.testcontainers:testcontainers-junit-jupiter")
+    testImplementation("no.nav.security:mock-oauth2-server:6.1.2")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

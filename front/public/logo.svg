@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="t">
+  <title id="t">Sémaphore</title>
+  <rect width="128" height="128" rx="28" fill="#0B1B33"/>
+  <rect x="33" y="22" width="7" height="88" rx="3.5" fill="#F4EFE3"/>
+  <circle cx="36.5" cy="19" r="6" fill="#F4EFE3"/>
+  <path d="M40 28H104L91 45L104 62H40Z" fill="#C2411C"/>
+  <path d="M65 35.5L76 55H54Z" fill="#F4EFE3"/>
+  <path d="M40 68H104L91 85L104 102H40Z" fill="#0F7480"/>
+  <circle cx="65" cy="85" r="11" fill="#F4EFE3"/>
+  <rect x="23" y="106" width="27" height="8" rx="4" fill="#D9C9A3"/>
+</svg>

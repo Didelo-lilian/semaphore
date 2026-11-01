@@ -5,6 +5,7 @@ import {
 } from "@tanstack/react-router";
 import { z } from "zod";
 import { HomePage, SalonPage, Shell } from "./App.tsx";
+import { PrivacyPage, TermsPage } from "./ui/Legal.tsx";
 
 const rootRoute = createRootRoute({ component: Shell });
 
@@ -28,8 +29,27 @@ const salonRoute = createRoute({
   component: SalonPage,
 });
 
+const privacyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/privacy",
+  component: PrivacyPage,
+});
+
+const termsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/terms",
+  component: TermsPage,
+});
+
 export const createAppRouter = () =>
-  createRouter({ routeTree: rootRoute.addChildren([homeRoute, salonRoute]) });
+  createRouter({
+    routeTree: rootRoute.addChildren([
+      homeRoute,
+      salonRoute,
+      privacyRoute,
+      termsRoute,
+    ]),
+  });
 
 declare module "@tanstack/react-router" {
   interface Register {

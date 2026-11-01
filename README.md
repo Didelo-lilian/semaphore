@@ -31,11 +31,33 @@ SEMAPHORE_REDIS_URL=redis://:secret@localhost:6379 SERVER_PORT=8080 ./gradlew bo
 SEMAPHORE_REDIS_URL=redis://:secret@localhost:6379 SERVER_PORT=8081 ./gradlew bootRun   # in another terminal
 ```
 
-Without a JDK 25, run Gradle in a container. The Redis tests start their own Valkey with Testcontainers, so the container gets the Docker socket and reaches the published ports through the host (on Linux, add `--add-host host.docker.internal:host-gateway`):
+Without a JDK 25, run Gradle in a container. The Redis and Postgres tests start their own Valkey and Postgres with Testcontainers, so the container gets the Docker socket and reaches the published ports through the host (on Linux, add `--add-host host.docker.internal:host-gateway`):
 
 ```bash
 docker run --rm -v "$PWD/backend:/app" -v semaphore-gradle:/gradle-home -e GRADLE_USER_HOME=/gradle-home -v /var/run/docker.sock:/var/run/docker.sock -e TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal -w /app gradle:9.8.2-jdk25-alpine ./gradlew check
 ```
+
+### Database
+
+There is no database by default. Set `SPRING_DATASOURCE_URL` (`jdbc:postgresql://host:5432/semaphore`, empty means none), `SPRING_DATASOURCE_USERNAME` and `SPRING_DATASOURCE_PASSWORD` to give the backend a Postgres 18: it migrates the schema when it starts with Flyway (`backend/src/main/resources/db/migration`) and keeps a `JdbcClient` for the code that needs it ([ADR 0013](docs/adr/0013-postgres-with-flyway-and-a-plain-jdbc-client.md)). In production the password is a secret file read with `SPRING_CONFIG_IMPORT=configtree:/run/secrets/`, as the Redis address is. A migration only adds, for one release, because the previous version keeps running on the new schema during a rolling deploy. The health of the backend does not include the database.
+
+```bash
+docker run -d --rm --name semaphore-postgres -p 5432:5432 -e POSTGRES_PASSWORD=secret -e POSTGRES_DB=semaphore postgres:18-alpine
+```
+
+```bash
+SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/semaphore SPRING_DATASOURCE_USERNAME=postgres SPRING_DATASOURCE_PASSWORD=secret ./gradlew bootRun
+```
+
+### Guests
+
+A browser can be someone outside any room: `PUT /api/me {"name": "ana"}` makes it a guest, `GET /api/me` says who it is (`anonymous` or `guest`, with its `id` and `name`) and `DELETE /api/me` forgets it. The pseudo follows the rule of a name in a room (1 to 20 characters, no control character). The guest is a session kept in Valkey, so both replicas know it and a deploy signs nobody out; without `SEMAPHORE_REDIS_URL` it is in the memory of the process. The cookie is `__Host-session` (`HttpOnly`, `Secure`, `SameSite=Lax`, written once for 30 days and never renewed), and the server forgets a guest after 7 days without use. The HTTP endpoints are protected against CSRF: the page sends the value of the `__Host-XSRF-TOKEN` cookie, which `GET /api/me` hands out, in `X-XSRF-TOKEN`. The choices are in [ADR 0010](docs/adr/0010-guest-sessions-in-valkey.md).
+
+```bash
+curl -si localhost:8080/api/me   # {"kind":"anonymous"} and the token cookie
+```
+
+A `Secure` cookie is accepted over plain HTTP on `localhost` by Chromium; a browser that refuses it just does not keep the guest. In production Traefik sends only `/ws` to the backend until the router for `/api` is in [infra](https://github.com/Didelo-lilian/infra).
 
 ## Run the front
 
@@ -47,6 +69,20 @@ npm run check   # lint, types, tests, production build
 ```
 
 Start the backend with `SEMAPHORE_ALLOWED_ORIGINS=http://localhost:5173` (a port taken by another server makes Vite refuse to start with `--strictPort`, and the origin must match the port actually used).
+
+## Logo, favicon and legal pages
+
+The logo is `front/public/logo.svg`, in the direction of [ADR 0001](docs/adr/0001-name-rules-and-visual-direction.md): two swallowtail flags on a mast, Bâbord's with the triangle and Tribord's with the circle. The PNGs and the `favicon.ico` next to it are generated from it, not edited by hand:
+
+```bash
+cd tools/brand
+npm ci
+npm run build   # rewrites the PNGs and favicon.ico in front/public
+```
+
+`logo-120.png` is the one Google's consent screen takes (PNG, 120×120, under 1 MB); `branding.test.ts` checks the sizes.
+
+The home page says what the game is and links to `/privacy` and `/terms`, whose text is `front/src/ui/Legal.tsx`. Google asks for the same links on the home page and on the consent screen, so the two paths do not move. The contact for a request about data is the issues page of this repository; `CONTACT_EMAIL` in that file adds an address next to it once there is one.
 
 ## Run the end-to-end test
 
@@ -167,16 +203,19 @@ flowchart LR
       sweeper["RoomSweeper<br/>turn every second, lobby presence every 5 s,<br/>dead replicas every 5 s, idle rooms every minute,<br/>each under a Redis lock"]
       registry["RoomRegistry<br/>load, apply, save if the version is unchanged<br/>(5 tries), 5-character codes"]
       room["Room<br/>the only place that knows the rules"]
+      me["MeController<br/>/api/me: the guest of a browser,<br/>CSRF token, session cookie"]
       words[("words.txt<br/>160 French nouns")]
     end
     other["Replica 2<br/>the same image, its own connections"]
-    redis[("Redis (Valkey)<br/>room:{code}: version + state<br/>channel rooms: changed (code, version),<br/>seat taken (code, player)<br/>replica:{id}: heartbeat 15 s<br/>lock:{name}")]
+    redis[("Redis (Valkey)<br/>room:{code}: version + state<br/>channel rooms: changed (code, version),<br/>seat taken (code, player)<br/>replica:{id}: heartbeat 15 s<br/>lock:{name}<br/>session:sessions:{id}: a guest, 30 days")]
   end
 
   player -->|"HTTPS, WSS"| traefik
   traefik -->|"/"| front
   traefik -->|"/ws"| handler
   traefik -->|"/ws"| other
+  traefik -->|"/api (router to add in infra)"| me
+  me <-->|"session: guest.id, guest.name"| redis
   handler -->|"create, find, change"| registry
   sweeper --> registry
   registry -->|"builds a grid from"| words
@@ -240,6 +279,7 @@ sequenceDiagram
 | Store | `RoomStoreContract`, run by `InMemoryRoomStoreTest` and `RedisRoomStoreIT` | what any store must do (a room comes back as saved, empty lists included, a code taken is refused, a replace or a drop only at the version that was loaded), and for Valkey: a field this version does not know is read, the 24-hour life renewed by each save, a write refused for memory raising "full" while the reads go on, a state it cannot read answered as busy |
 | Replicas | `ReplicasTest` | two handlers over one store with a channel that can lose messages: a player on each, the id kept on the sender's answer only, the key and the tokens never on the channel, a rejoin on the other replica closing the old connection, a lost `seatTaken` or message repaired by the check of versions, a replica judged dead while its connections are fine set right, a close that could not be written tried again unless the player is back, two rejoins of one player on two replicas leaving the one the room holds, a seat made while the room is being read, a connection that closes while its player is marked back, a room that cannot be read not stopping the sweep of the others, a player swept away while connected losing the connection, a replica stopped without losing the room, a heartbeat that runs out, each sweep running on one replica per tick (checked against the store) |
 | Redis | `RedisClusterIT`, `RedisReplicasIT`, `RedisLateStartIT`, `StoreCostIT` | against a real Valkey: the heartbeat that expires, a lock taken by one replica, a channel that subscribes again after a break; two backends started in one test with real WebSocket clients (see each other, hidden cards, rejoin elsewhere, a stopped replica, players marked absent when its heartbeat runs out, a lost message caught up, a write refused for memory); the heartbeat and the locks still taken when Redis is full; a backend started before Redis, healthy and refusing cleanly until Redis arrives; the cost of a command |
+| Database | `NoDatabaseTest`, `DatabaseIT`, `DatabaseDownIT`, `DatabaseHangsIT` | without a URL no `DataSource` and no Flyway (every other test of the backend runs that way), against a real Postgres 18 the migrations ran and a query works with the pool of the settings, the health check stays up, with no database component, once Postgres is stopped, and a statement on a frozen Postgres fails after the socket timeout instead of holding its thread |
 | WebSocket | `WebSocketIT` | the application on a random port, driven by the JDK's WebSocket client: create, join, leaving the lobby on purpose, a dropped lobby player shown offline and coming back with their seat, rejoin with a token, a new connection replacing the old, errors and missing fields, the id of a message echoed on its answer and absent from what goes to the others, a started game, a turn that passes at once when the Signaleur in play leaves, a spectator who watches a game, is counted, never receives the key before the end over a real game played to its last reef, has every command refused, the 21st refused, a connection closed at its 5th unknown room code (join, watch and rejoin counted together, the refusal of the 5th never sent, a success not resetting the count, a valid rejoin never blocked, a seat whose room was swept costing one miss), whatever a closed connection keeps sending ignored, refused origin |
 | Handler | `GameSocketHandlerTest` | a broken connection does not stop the others, a room that could not be entered is not kept, one room per connection, the sweep telling the lobby that an absent player is gone, the sweep passing the turn of a game that waits for an absent Signaleur, a `leave` without a seat refused, the count of unknown room codes going with the connection, a message that arrives after the close ignored, a store that is unavailable answered with an error, and a rejoin answered with a close of both connections that makes the front try again |
 | Protocol | `protocol.test.ts` | the Zod schemas read messages captured from the real backend (lobby join and answered update with their id, Signaleur's view, lookout's view without one, a view with the seconds left before the turn passes, a spectator's view with no player of its own, error with its id) and refuse anything else |
@@ -249,7 +289,7 @@ sequenceDiagram
 | End to end | `e2e/full-game.spec.ts` | the real front and the real backend together, in four browser contexts: Alice creates a room and invites the others with its link, everybody picks a team, the Signaleurs are the first of their team to have arrived, only they see the key, the server refuses a signal that is a word of the grid and the front says why, the Signaleurs signal and the lookouts touch their words and pass until a team has found all of its words, the winner is announced to the four players and each goes back home |
 | Load | `load/game.js` | the same game played over the real protocol by many tables at once against the production image behind nginx: every game ends with a winner in all five views, no refusal, no answer missing, and the round trip of a command (from the message to the answer that carries its id) stays under the threshold; the time for a signal to reach the lookouts' view is measured too |
 
-`./gradlew check` runs the backend ones with the formatting check (the Redis ones start a Valkey with Testcontainers, so they need Docker), `npm run check` the front ones with lint, types and the build. The pull request runs both (JDK 25, Node 24), plays the end-to-end game, builds the two images, lints the workflows, scans for secrets and runs CodeQL. When it touches `backend/` or `load/` it also plays the short load profile, which is not a required check.
+`./gradlew check` runs the backend ones with the formatting check (the Redis and database ones start a Valkey and a Postgres with Testcontainers, so they need Docker), `npm run check` the front ones with lint, types and the build. The pull request runs both (JDK 25, Node 24), plays the end-to-end game, builds the two images, lints the workflows, scans for secrets and runs CodeQL. When it touches `backend/` or `load/` it also plays the short load profile, which is not a required check.
 
 ## Delivery
 

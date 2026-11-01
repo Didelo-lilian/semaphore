@@ -3,16 +3,36 @@ import { useForm } from "@tanstack/react-form";
 import { useEffect } from "react";
 import { z } from "zod";
 import { explain } from "../reasons.ts";
+import {
+  Account,
+  type AccountProps,
+  providerName,
+  SignIn,
+} from "./Account.tsx";
+
+interface SignInOptions {
+  /** The providers the server says are on. */
+  providers: string[];
+  /** Where the sign-in sent the browser back to, if it did (ADR 0011). */
+  returned: "failed" | "pseudo" | null;
+  /** The provider of the login that came back for want of a pseudo. */
+  resume: string | null;
+  failed: boolean;
+  onSignIn: (provider: string, name: string) => void;
+}
 
 interface Props {
   /** The code of the room a friend's link points to, if any. */
   invited: string | null;
   /** The pseudo the server remembers for this browser: empty at the first visit, and until it answers. */
   initialName: string;
-  /** Whether a guest is remembered, to say so. */
+  /** Whether a guest is remembered on this device, to say so. */
   remembered: boolean;
   busy: boolean;
   error: string | null;
+  signIn: SignInOptions;
+  /** Who the browser is signed in as, if it is. */
+  account: AccountProps | null;
   onCreate: (name: string) => void;
   onJoin: (code: string, name: string) => void;
   onWatch: (code: string) => void;
@@ -30,7 +50,7 @@ const codeSchema = z
 const cleanCode = (value: string) =>
   value.replace(/\s/g, "").toUpperCase().slice(0, 5);
 
-type Intent = "create" | "join";
+type Intent = "create" | "join" | { signIn: string };
 
 export const Home = ({
   invited,
@@ -38,6 +58,8 @@ export const Home = ({
   remembered,
   busy,
   error,
+  signIn,
+  account,
   onCreate,
   onJoin,
   onWatch,
@@ -49,8 +71,10 @@ export const Home = ({
       const name = value.name.trim();
       if (meta.intent === "create") {
         onCreate(name);
-      } else {
+      } else if (meta.intent === "join") {
         onJoin(invited ?? value.code, name);
+      } else {
+        signIn.onSignIn(meta.intent.signIn, name);
       }
     },
   });
@@ -75,6 +99,23 @@ export const Home = ({
       </p>
 
       {error !== null && <Alert severity="error">{explain(error)}</Alert>}
+      {signIn.returned === "failed" && (
+        <Alert severity="error">
+          La connexion a échoué. Réessaie, ou joue sans compte.
+        </Alert>
+      )}
+      {signIn.returned === "pseudo" && (
+        <Alert severity="info">
+          Dis-nous comment t'appeler, puis reprends la connexion
+          {signIn.resume !== null && ` avec ${providerName(signIn.resume)}`}.
+        </Alert>
+      )}
+      {signIn.failed && (
+        <Alert severity="error">
+          Ton nom n'a pas pu être enregistré, la connexion n'a pas démarré.
+          Réessaie.
+        </Alert>
+      )}
 
       <form.Field name="name" validators={{ onChange: nameSchema }}>
         {(field) => (
@@ -180,6 +221,25 @@ export const Home = ({
             Regarder la partie
           </Button>
         </>
+      )}
+
+      {account !== null ? (
+        <Account {...account} />
+      ) : (
+        invited === null && (
+          <form.Subscribe selector={(state) => state.values.name.trim() !== ""}>
+            {(named) => (
+              <SignIn
+                providers={signIn.providers}
+                resume={signIn.resume}
+                disabled={!named || busy}
+                onSignIn={(provider) =>
+                  form.handleSubmit({ intent: { signIn: provider } })
+                }
+              />
+            )}
+          </form.Subscribe>
+        )
       )}
     </section>
   );

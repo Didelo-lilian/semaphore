@@ -101,6 +101,13 @@ h2 {
   flex: 1;
 }
 
+.sem-sign-in {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ds-space-3);
+  justify-content: center;
+}
+
 .sem-lobby,
 .sem-table {
   display: flex;

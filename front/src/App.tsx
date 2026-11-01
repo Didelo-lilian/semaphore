@@ -1,5 +1,5 @@
 import { Alert, Button } from "@didelo/design-system";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getRouteApi,
   Navigate,
@@ -8,7 +8,13 @@ import {
 } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useCommand, useGame, useRoom } from "./game.tsx";
-import { meOptions, useMe, useSaveName } from "./me.ts";
+import {
+  meOptions,
+  useDeleteAccount,
+  useMe,
+  useSaveName,
+  useSignOut,
+} from "./me.ts";
 import type { ClientMessage, Team } from "./protocol.ts";
 import { About } from "./ui/About.tsx";
 import { Home } from "./ui/Home.tsx";
@@ -41,7 +47,7 @@ const homeApi = getRouteApi("/");
 
 export const HomePage = () => {
   const { snapshot } = useGame();
-  const { room } = homeApi.useSearch();
+  const { room, login, provider } = homeApi.useSearch();
   const navigate = useNavigate();
   const me = useMe();
   const queryClient = useQueryClient();
@@ -49,8 +55,12 @@ export const HomePage = () => {
   const enter = useCommand((joined) =>
     navigate({ to: "/salon/$code", params: { code: joined.code } }),
   );
+  const signOut = useSignOut();
+  const deleteAccount = useDeleteAccount();
   const named =
     me.data == null || me.data.kind === "anonymous" ? null : me.data;
+  const providers =
+    me.data == null || me.data.kind === "account" ? [] : me.data.providers;
 
   const go = async (name: string, message: ClientMessage) => {
     // Always saved, not only when it differs from what this page read: another tab may have
@@ -65,14 +75,48 @@ export const HomePage = () => {
     enter.mutate(message);
   };
 
+  // The login needs the pseudo in the session: a name the server refused must not start one that
+  // would only come back asking for it.
+  const signIn = useMutation({
+    mutationFn: async ({
+      provider,
+      name,
+    }: {
+      provider: string;
+      name: string;
+    }) => {
+      await queryClient.ensureQueryData(meOptions);
+      await saveName.mutateAsync(name);
+      window.location.assign(`/api/auth/login/${provider}`);
+    },
+  });
+
   return (
     <>
       <Home
         invited={room ?? null}
         initialName={named?.name ?? ""}
-        remembered={named !== null}
-        busy={enter.isPending || saveName.isPending}
+        remembered={named?.kind === "guest"}
+        busy={enter.isPending || saveName.isPending || signIn.isPending}
         error={enter.error?.message ?? snapshot.error}
+        signIn={{
+          providers,
+          returned: login ?? null,
+          resume: login === "pseudo" ? (provider ?? null) : null,
+          failed: signIn.isError,
+          onSignIn: (provider, name) => signIn.mutate({ provider, name }),
+        }}
+        account={
+          me.data?.kind === "account"
+            ? {
+                name: me.data.name,
+                busy: signOut.isPending || deleteAccount.isPending,
+                failed: signOut.isError || deleteAccount.isError,
+                onSignOut: () => signOut.mutate(),
+                onDelete: () => deleteAccount.mutate(),
+              }
+            : null
+        }
         onCreate={(name) => go(name, { type: "createRoom", name })}
         onJoin={(code, name) => go(name, { type: "joinRoom", code, name })}
         onWatch={(code) => enter.mutate({ type: "watch", code })}

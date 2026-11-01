@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GameClient } from "./client.ts";
@@ -624,6 +624,156 @@ describe("the name of a guest", () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+});
+
+describe("signing in", () => {
+  type Who = Record<string, unknown>;
+  const anonymous: Who = { kind: "anonymous", providers: ["github", "google"] };
+
+  // The server of /api/me, /api/auth/logout and /api/auth/account: ending the session makes the
+  // browser anonymous again. `refuse` is the status of the PUT of the name, when it is not 200.
+  const server = (start: Who, refuse?: number) => {
+    let who = start;
+    const calls = vi.fn(async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      if (method === "PUT") {
+        who = { kind: "guest", id: "g", name: "Ana", providers: ["github"] };
+        return refuse === undefined ? json(200, who) : json(refuse, {});
+      }
+      if (url !== "/api/me") {
+        who = anonymous;
+        return new Response(null, { status: 204 });
+      }
+      return json(200, who);
+    });
+    vi.stubGlobal("fetch", calls);
+    return calls;
+  };
+
+  const requests = (calls: ReturnType<typeof server>) =>
+    calls.mock.calls.map(([url, init]) => `${init?.method ?? "GET"} ${url}`);
+
+  const leaving = () => {
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+    return assign;
+  };
+
+  it("saves the name, then goes to the provider chosen", async () => {
+    const calls = server(anonymous);
+    await mount("/");
+    await userEvent.type(await screen.findByLabelText("Ton nom"), "Ana");
+    const assign = leaving();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Se connecter avec GitHub" }),
+    );
+    await waitFor(() =>
+      expect(assign).toHaveBeenCalledWith("/api/auth/login/github"),
+    );
+    expect(requests(calls)).toEqual(["GET /api/me", "PUT /api/me"]);
+  });
+
+  it("does not leave when the name was refused, and says so", async () => {
+    server(anonymous, 429);
+    await mount("/");
+    await userEvent.type(await screen.findByLabelText("Ton nom"), "Ana");
+    const assign = leaving();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Se connecter avec Google" }),
+    );
+    expect(
+      await screen.findByText(/n'a pas pu être enregistré/),
+    ).toBeInTheDocument();
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it("offers no button without a provider", async () => {
+    server({ kind: "anonymous", providers: [] });
+    await mount("/");
+    await screen.findByLabelText("Ton nom");
+    expect(screen.queryByRole("button", { name: /Se connecter/ })).toBeNull();
+  });
+
+  it("says that a login failed", async () => {
+    server(anonymous);
+    await mount("/?login=failed");
+    expect(
+      await screen.findByText(/La connexion a échoué/),
+    ).toBeInTheDocument();
+  });
+
+  it("asks for the pseudo, then resumes the login", async () => {
+    const calls = server(anonymous);
+    await mount("/?login=pseudo&provider=google");
+    await userEvent.type(await screen.findByLabelText("Ton nom"), "Ana");
+    const assign = leaving();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Continuer avec Google" }),
+    );
+    await waitFor(() =>
+      expect(assign).toHaveBeenCalledWith("/api/auth/login/google"),
+    );
+    expect(requests(calls)).toContain("PUT /api/me");
+  });
+
+  it("ignores a login that is not one", async () => {
+    server(anonymous);
+    await mount("/?login=elsewhere");
+    await screen.findByLabelText("Ton nom");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  describe("with an account", () => {
+    const account: Who = { kind: "account", id: "a", name: "Ana" };
+
+    it("shows who is signed in and signs out", async () => {
+      const calls = server(account);
+      await mount("/");
+      expect(await screen.findByText(/Connecté en tant que/)).toHaveTextContent(
+        "Ana",
+      );
+      expect(screen.queryByRole("button", { name: /Se connecter/ })).toBeNull();
+      await userEvent.click(
+        screen.getByRole("button", { name: "Se déconnecter" }),
+      );
+      expect(
+        await screen.findByRole("button", { name: "Se connecter avec GitHub" }),
+      ).toBeInTheDocument();
+      expect(requests(calls)).toContain("POST /api/auth/logout");
+      expect(screen.queryByText(/Connecté en tant que/)).toBeNull();
+    });
+
+    it("deletes the account after a confirmation", async () => {
+      const calls = server(account);
+      await mount("/");
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Supprimer mon compte" }),
+      );
+      expect(requests(calls)).not.toContain("DELETE /api/auth/account");
+      await userEvent.click(
+        within(await screen.findByRole("dialog")).getByRole("button", {
+          name: "Supprimer",
+        }),
+      );
+      expect(
+        await screen.findByRole("button", { name: "Se connecter avec GitHub" }),
+      ).toBeInTheDocument();
+      expect(requests(calls)).toContain("DELETE /api/auth/account");
+    });
+
+    it("says when the server did not end the session", async () => {
+      const calls = server(account);
+      calls.mockImplementation(async (url) =>
+        url === "/api/me" ? json(200, account) : json(403, {}),
+      );
+      await mount("/");
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Se déconnecter" }),
+      );
+      expect(await screen.findByText(/n'a pas répondu/)).toBeInTheDocument();
+      expect(screen.getByText(/Connecté en tant que/)).toBeInTheDocument();
     });
   });
 });

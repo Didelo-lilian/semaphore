@@ -1,11 +1,13 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import lookout from "../fixtures/room-lookout.json";
 import signaler from "../fixtures/room-signaler.json";
 import spectator from "../fixtures/room-spectator.json";
 import waiting from "../fixtures/room-waiting.json";
 import type { RoomView } from "../protocol.ts";
+import type { Account } from "./Account.tsx";
 import { Home } from "./Home.tsx";
 import { Lobby } from "./Lobby.tsx";
 import { Table } from "./Table.tsx";
@@ -40,6 +42,17 @@ const player = (
   signaler: false,
 });
 
+const nobody: Pick<ComponentProps<typeof Home>, "signIn" | "account"> = {
+  signIn: {
+    providers: [],
+    returned: null,
+    resume: null,
+    failed: false,
+    onSignIn: vi.fn(),
+  },
+  account: null,
+};
+
 describe("Home", () => {
   it("creates a room with the name typed", async () => {
     const onCreate = vi.fn();
@@ -50,6 +63,7 @@ describe("Home", () => {
         remembered={false}
         busy={false}
         error={null}
+        {...nobody}
         onCreate={onCreate}
         onJoin={vi.fn()}
         onWatch={vi.fn()}
@@ -71,6 +85,7 @@ describe("Home", () => {
         remembered
         busy={false}
         error={null}
+        {...nobody}
         onCreate={onCreate}
         onJoin={vi.fn()}
         onWatch={vi.fn()}
@@ -93,6 +108,7 @@ describe("Home", () => {
         remembered={false}
         busy={false}
         error={null}
+        {...nobody}
         onCreate={vi.fn()}
         onJoin={onJoin}
         onWatch={vi.fn()}
@@ -113,6 +129,7 @@ describe("Home", () => {
         remembered={false}
         busy={false}
         error="no such room"
+        {...nobody}
         onCreate={vi.fn()}
         onJoin={onJoin}
         onWatch={vi.fn()}
@@ -138,6 +155,7 @@ describe("Home", () => {
         remembered={false}
         busy={false}
         error="the game has started"
+        {...nobody}
         onCreate={vi.fn()}
         onJoin={vi.fn()}
         onWatch={onWatch}
@@ -157,6 +175,7 @@ describe("Home", () => {
         remembered={false}
         busy={false}
         error={null}
+        {...nobody}
         onCreate={vi.fn()}
         onJoin={vi.fn()}
         onWatch={onWatch}
@@ -165,6 +184,147 @@ describe("Home", () => {
     expect(
       screen.queryByRole("button", { name: "Regarder la partie" }),
     ).toBeNull();
+  });
+});
+
+describe("Home sign-in", () => {
+  const home = (
+    signIn: Partial<ComponentProps<typeof Home>["signIn"]>,
+    rest: Partial<ComponentProps<typeof Home>> = {},
+  ) =>
+    render(
+      <Home
+        invited={null}
+        initialName=""
+        remembered={false}
+        busy={false}
+        error={null}
+        signIn={{ ...nobody.signIn, ...signIn }}
+        account={null}
+        onCreate={vi.fn()}
+        onJoin={vi.fn()}
+        onWatch={vi.fn()}
+        {...rest}
+      />,
+    );
+
+  it("offers no sign-in when the server lists no provider, or one it does not draw", () => {
+    const { unmount } = home({});
+    expect(screen.queryByRole("button", { name: /Se connecter/ })).toBeNull();
+    unmount();
+
+    home({ providers: ["gitlab"] });
+    expect(screen.queryByRole("button", { name: /Se connecter/ })).toBeNull();
+  });
+
+  it("starts a login with the name typed, for the provider chosen", async () => {
+    const onSignIn = vi.fn();
+    home({ providers: ["github", "google"], onSignIn });
+    const github = screen.getByRole("button", {
+      name: "Se connecter avec GitHub",
+    });
+    expect(github).toBeDisabled();
+    await userEvent.type(screen.getByLabelText("Ton nom"), "Ana");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Se connecter avec Google" }),
+    );
+    await waitFor(() => expect(onSignIn).toHaveBeenCalledWith("google", "Ana"));
+  });
+
+  it("does not offer a login inside an invitation", () => {
+    home({ providers: ["github"] }, { invited: "USQ2H" });
+    expect(screen.queryByRole("button", { name: /Se connecter/ })).toBeNull();
+  });
+
+  it("says when a login failed", () => {
+    home({ providers: ["github"], returned: "failed" });
+    expect(screen.getByText(/La connexion a échoué/)).toBeInTheDocument();
+  });
+
+  it("asks for the pseudo and picks the login up again where it stopped", () => {
+    home({
+      providers: ["github", "google"],
+      returned: "pseudo",
+      resume: "github",
+    });
+    expect(screen.getByText(/Dis-nous comment t'appeler/)).toHaveTextContent(
+      "avec GitHub",
+    );
+    expect(
+      screen.getByRole("button", { name: "Continuer avec GitHub" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Google/ })).toBeNull();
+  });
+
+  it("offers every provider again when the login to resume is not one it draws", () => {
+    home({
+      providers: ["github", "google"],
+      returned: "pseudo",
+      resume: "gitlab",
+    });
+    expect(
+      screen.getByRole("button", { name: "Se connecter avec Google" }),
+    ).toBeInTheDocument();
+  });
+
+  it("says a login did not start when the name was refused", () => {
+    home({ providers: ["github"], failed: true });
+    expect(screen.getByText(/n'a pas pu être enregistré/)).toBeInTheDocument();
+  });
+
+  describe("signed in", () => {
+    const account = (
+      changes: Partial<ComponentProps<typeof Account>> = {},
+    ) => ({
+      name: "Ana",
+      busy: false,
+      failed: false,
+      onSignOut: vi.fn(),
+      onDelete: vi.fn(),
+      ...changes,
+    });
+
+    it("shows the account and signs out", async () => {
+      const onSignOut = vi.fn();
+      home({ providers: ["github"] }, { account: account({ onSignOut }) });
+      expect(screen.getByText(/Connecté en tant que/)).toHaveTextContent("Ana");
+      expect(screen.queryByRole("button", { name: /Se connecter/ })).toBeNull();
+      await userEvent.click(
+        screen.getByRole("button", { name: "Se déconnecter" }),
+      );
+      expect(onSignOut).toHaveBeenCalledOnce();
+    });
+
+    it("deletes the account only once the player confirmed", async () => {
+      const onDelete = vi.fn();
+      home({}, { account: account({ onDelete }) });
+      await userEvent.click(
+        screen.getByRole("button", { name: "Supprimer mon compte" }),
+      );
+      const dialog = await screen.findByRole("dialog");
+      expect(onDelete).not.toHaveBeenCalled();
+
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: "Garder mon compte" }),
+      );
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(onDelete).not.toHaveBeenCalled();
+
+      await userEvent.click(
+        screen.getByRole("button", { name: "Supprimer mon compte" }),
+      );
+      await userEvent.click(
+        within(await screen.findByRole("dialog")).getByRole("button", {
+          name: "Supprimer",
+        }),
+      );
+      expect(onDelete).toHaveBeenCalledOnce();
+    });
+
+    it("says when the server did not answer", () => {
+      home({}, { account: account({ failed: true }) });
+      expect(screen.getByText(/n'a pas répondu/)).toBeInTheDocument();
+    });
   });
 });
 

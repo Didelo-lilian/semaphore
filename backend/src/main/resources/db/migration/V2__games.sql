@@ -1,7 +1,9 @@
-ALTER TABLE game
-  ADD COLUMN end_reason text NOT NULL DEFAULT 'COMPLETE'
-    CHECK (end_reason IN ('COMPLETE', 'REEF', 'FORFEIT'));
-ALTER TABLE game ALTER COLUMN end_reason DROP DEFAULT;
+CREATE TABLE game (
+  id uuid PRIMARY KEY,
+  ended_at timestamptz NOT NULL,
+  winner text NOT NULL CHECK (winner IN ('BABORD', 'TRIBORD')),
+  end_reason text NOT NULL CHECK (end_reason IN ('COMPLETE', 'REEF', 'FORFEIT'))
+);
 
 CREATE TABLE game_player (
   game_id uuid NOT NULL REFERENCES game (id) ON DELETE CASCADE,

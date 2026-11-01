@@ -1,6 +1,6 @@
 # 9. French word vectors for the bots
 
-Date: 2026-10-25 · Status: proposed (the source and its licence wait for Lilian's decision)
+Date: 2026-10-25 · Status: accepted (Lilian chose frWac and its CC BY 3.0 attribution, with the credits in a `NOTICE` and the README and none in the front)
 
 ## Context
 

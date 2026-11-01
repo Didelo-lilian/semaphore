@@ -10,8 +10,14 @@ spring:
     hikari:
       # Two replicas share one Postgres, and a game only writes once, when it ends.
       maximum-pool-size: 4
+      # The pool is idle most of the time: it grows under load and shrinks back to one connection.
+      minimum-idle: 1
       # A database that does not answer must not hold a request for the 30 seconds of the default.
       connection-timeout: 2000
+      data-source-properties:
+        # A connection that went half dead must free its thread (seconds, for any read on the
+        # socket: a migration with a statement longer than this must raise it).
+        socketTimeout: 10
 
 management:
   health:

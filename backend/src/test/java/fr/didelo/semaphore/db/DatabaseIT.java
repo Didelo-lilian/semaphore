@@ -17,10 +17,7 @@ class DatabaseIT {
 
   @DynamicPropertySource
   static void postgres(DynamicPropertyRegistry registry) {
-    var postgres = Postgres.shared();
-    registry.add("spring.datasource.url", postgres::getJdbcUrl);
-    registry.add("spring.datasource.username", postgres::getUsername);
-    registry.add("spring.datasource.password", postgres::getPassword);
+    Postgres.connect(registry, Postgres.shared());
   }
 
   @Autowired Flyway flyway;
@@ -29,13 +26,20 @@ class DatabaseIT {
 
   @Test
   void migratesAtStartAndQueries() {
-    assertThat(flyway.info().current().getVersion().getVersion()).isEqualTo("1");
-    assertThat(jdbc.sql("SELECT count(*) FROM game").query(Long.class).single()).isZero();
+    assertThat(flyway.info().pending()).isEmpty();
+    assertThat(flyway.info().applied()).isNotEmpty();
+    assertThat(
+            jdbc.sql("SELECT count(*) FROM flyway_schema_history WHERE success")
+                .query(Long.class)
+                .single())
+        .isEqualTo(flyway.info().applied().length);
   }
 
   @Test
   void thePoolIsTheOneOfTheSettings() {
     assertThat(pool.getMaximumPoolSize()).isEqualTo(4);
+    assertThat(pool.getMinimumIdle()).isEqualTo(1);
     assertThat(pool.getConnectionTimeout()).isEqualTo(2_000);
+    assertThat(pool.getDataSourceProperties()).containsEntry("socketTimeout", "10");
   }
 }

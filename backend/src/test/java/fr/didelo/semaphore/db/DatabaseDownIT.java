@@ -22,9 +22,7 @@ class DatabaseDownIT {
   @DynamicPropertySource
   static void postgres(DynamicPropertyRegistry registry) {
     POSTGRES.start();
-    registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-    registry.add("spring.datasource.username", POSTGRES::getUsername);
-    registry.add("spring.datasource.password", POSTGRES::getPassword);
+    Postgres.connect(registry, POSTGRES);
   }
 
   @Autowired HealthEndpoint health;

@@ -60,6 +60,20 @@ npm run check   # lint, types, tests, production build
 
 Start the backend with `SEMAPHORE_ALLOWED_ORIGINS=http://localhost:5173` (a port taken by another server makes Vite refuse to start with `--strictPort`, and the origin must match the port actually used).
 
+## Logo, favicon and legal pages
+
+The logo is `front/public/logo.svg`, in the direction of [ADR 0001](docs/adr/0001-name-rules-and-visual-direction.md): two swallowtail flags on a mast, Bâbord's with the triangle and Tribord's with the circle. The PNGs and the `favicon.ico` next to it are generated from it, not edited by hand:
+
+```bash
+cd tools/brand
+npm ci
+npm run build   # rewrites the PNGs and favicon.ico in front/public
+```
+
+`logo-120.png` is the one Google's consent screen takes (PNG, 120×120, under 1 MB); `branding.test.ts` checks the sizes.
+
+The home page says what the game is and links to `/privacy` and `/terms`, whose text is `front/src/ui/Legal.tsx`. Google asks for the same links on the home page and on the consent screen, so the two paths do not move. The contact for a request about data is the issues page of this repository; `CONTACT_EMAIL` in that file adds an address next to it once there is one.
+
 ## Run the end-to-end test
 
 One game, four players in four browser contexts, against the real backend and the built front ([ADR 0007](docs/adr/0007-an-end-to-end-test-of-a-whole-game.md)).

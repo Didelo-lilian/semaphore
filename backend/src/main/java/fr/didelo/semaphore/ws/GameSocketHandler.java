@@ -356,9 +356,10 @@ public class GameSocketHandler extends TextWebSocketHandler implements SmartLife
    */
   private static Who who(WebSocketSession session, String asked) {
     var attributes = session.getAttributes();
-    var account = (String) attributes.get(Identity.ACCOUNT_ID);
+    // toString: a session kept in memory holds what was put in it (a UUID), Valkey gives a string.
+    var account = Objects.toString(attributes.get(Identity.ACCOUNT_ID), null);
     return new Who(
-        (String) attributes.getOrDefault(Identity.NAME, asked),
+        Objects.toString(attributes.get(Identity.NAME), asked),
         account == null ? null : UUID.fromString(account));
   }
 

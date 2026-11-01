@@ -6,13 +6,14 @@ import java.net.http.WebSocket;
 import java.util.List;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.TimeUnit;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
  * A player's connection to a replica: what the server sends is parsed, kept, the latest room too.
  */
-public final class GameClient {
+public final class GameClient implements AutoCloseable {
 
   private static final HttpClient HTTP = HttpClient.newHttpClient();
   private static final JsonMapper JSON = JsonMapper.builder().build();
@@ -68,6 +69,8 @@ public final class GameClient {
                     return null;
                   }
                 })
+            // A handshake that never answers must fail the test, not hang the build.
+            .orTimeout(5, TimeUnit.SECONDS)
             .join();
   }
 
@@ -100,7 +103,7 @@ public final class GameClient {
                     && m.path("reason").asString().equals(reason));
   }
 
-  Integer closeCode() {
+  public Integer closeCode() {
     return closeCode;
   }
 
@@ -109,6 +112,11 @@ public final class GameClient {
   }
 
   void abort() {
+    socket.abort();
+  }
+
+  @Override
+  public void close() {
     socket.abort();
   }
 }

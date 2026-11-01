@@ -1,15 +1,23 @@
 package fr.didelo.semaphore.guest;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
+import fr.didelo.semaphore.GameClient;
 import fr.didelo.semaphore.SemaphoreApplication;
 import fr.didelo.semaphore.Valkey;
 import io.lettuce.core.RedisClient;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.Socket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.WebSocket;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -74,6 +82,98 @@ class SessionsInValkeyIT {
       assertThat(valkey.hget(key, "sessionAttr:guest.id")).contains(made.get("id").asString());
       // Seven days without use, not the thirty of the cookie.
       assertThat(valkey.ttl(key)).isBetween(7 * 86_400L - 60, 7 * 86_400L);
+    }
+  }
+
+  private static String firstPlayerName(GameClient client) {
+    await().atMost(Duration.ofSeconds(5)).until(() -> client.room() != null);
+    return client.room().path("players").path(0).path("name").asString();
+  }
+
+  private static String cookieOf(Browser browser) {
+    return "__Host-session=" + browser.cookie("__Host-session");
+  }
+
+  @Test
+  void aGuestMadeOnOneReplicaNamesItsPlayerOnTheOther() {
+    var one = replica(Valkey.url());
+    var other = replica(Valkey.url());
+    var browser = new Browser(one);
+    browser.get();
+    browser.put("{\"name\":\"ana\"}");
+
+    try (var client = new GameClient(other, cookieOf(browser))) {
+      client.send("{\"type\":\"createRoom\",\"name\":\"mallory\"}");
+
+      assertThat(firstPlayerName(client)).isEqualTo("ana");
+    }
+  }
+
+  @Test
+  void aSessionThatCannotBeReadStillGivesAHandshakeAndTheNameOfTheMessage() {
+    var port = replica(Valkey.url());
+    try (var client = RedisClient.create(Valkey.url());
+        var connection = client.connect()) {
+      connection
+          .sync()
+          .hset(
+              "session:sessions:damaged",
+              Map.of("creationTime", "not json", "sessionAttr:guest.name", "\"ana\""));
+      var cookie = "__Host-session=" + Base64.getEncoder().encodeToString("damaged".getBytes());
+
+      try (var player = new GameClient(port, cookie)) {
+        player.send("{\"type\":\"createRoom\",\"name\":\"bob\"}");
+
+        assertThat(firstPlayerName(player)).isEqualTo("bob");
+      }
+    }
+  }
+
+  @Test
+  void aHandshakeWithoutACookieCreatesNoSession() throws IOException {
+    try (GenericContainer<?> valkey = Valkey.container(null)) {
+      valkey.start();
+      var port = replica(Valkey.url(valkey));
+      var request =
+          "GET /ws HTTP/1.1\r\nHost: localhost:%d\r\nOrigin: https://play.didelo.fr\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: %s\r\n\r\n"
+              .formatted(port, Base64.getEncoder().encodeToString(new byte[16]));
+      try (var socket = new Socket("localhost", port);
+          var client = RedisClient.create(Valkey.url(valkey));
+          var connection = client.connect()) {
+        socket.setSoTimeout(5_000);
+        socket.getOutputStream().write(request.getBytes(StandardCharsets.US_ASCII));
+        var status =
+            new BufferedReader(
+                    new InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII))
+                .readLine();
+        assertThat(status).contains("101");
+
+        // The session is saved when the answer is committed: give it the time it would need.
+        await()
+            .during(Duration.ofMillis(500))
+            .atMost(Duration.ofSeconds(5))
+            .untilAsserted(
+                () -> assertThat(connection.sync().keys("session:sessions:*")).isEmpty());
+      }
+    }
+  }
+
+  @Test
+  void withValkeyFullAKnownGuestStillGetsAHandshake() {
+    try (GenericContainer<?> valkey = Valkey.container(null)) {
+      valkey.start();
+      var port = replica(Valkey.url(valkey));
+      var browser = new Browser(port);
+      browser.get();
+      browser.put("{\"name\":\"ana\"}");
+      try (var client = RedisClient.create(Valkey.url(valkey));
+          var connection = client.connect()) {
+        connection.sync().configSet("maxmemory", "1");
+
+        try (var player = new GameClient(port, cookieOf(browser))) {
+          assertThat(player.closeCode()).isNull();
+        }
+      }
     }
   }
 

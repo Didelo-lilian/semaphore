@@ -12,4 +12,9 @@ public sealed interface Command {
   record Reveal(int index) implements Command {}
 
   record Pass() implements Command {}
+
+  /** A bot of the named level in a team, as the Signaleur or as a lookout; the host only. */
+  record AddBot(Team team, boolean signaler, String level) implements Command {}
+
+  record RemoveBot(String playerId) implements Command {}
 }

@@ -56,6 +56,23 @@ abstract class RoomStoreContract {
   }
 
   @Test
+  void aRoomWithBotsComesBackWithTheirLevels() {
+    var room = lobby(newCode());
+    var host = room.state().players().getFirst().id();
+    room.apply(host, new Command.JoinTeam(Team.BABORD));
+    room.apply(host, new Command.AddBot(Team.TRIBORD, true, "HARD"));
+    room.apply(host, new Command.AddBot(Team.TRIBORD, false, "EASY"));
+
+    store().create(room.state());
+
+    var found = store().find(room.code()).orElseThrow();
+    assertThat(found).isEqualTo(room.state());
+    assertThat(found.players())
+        .extracting(RoomState.PlayerState::bot)
+        .containsExactly("HARD", null, "EASY");
+  }
+
+  @Test
   void aRoomWithEmptyListsComesBackWithEmptyLists() {
     // A Lua script that decoded and encoded the JSON would turn each [] into {}.
     var empty =

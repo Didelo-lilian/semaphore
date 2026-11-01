@@ -4,7 +4,12 @@ import java.util.Set;
 
 /** The legal transitions of a room live here: a command is only ever allowed in these phases. */
 public enum Phase {
-  LOBBY(Set.of(Command.JoinTeam.class, Command.Start.class)),
+  LOBBY(
+      Set.of(
+          Command.JoinTeam.class,
+          Command.Start.class,
+          Command.AddBot.class,
+          Command.RemoveBot.class)),
   SIGNAL(Set.of(Command.Signal.class)),
   GUESS(Set.of(Command.Reveal.class, Command.Pass.class)),
   ENDED(Set.of());

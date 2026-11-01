@@ -13,9 +13,9 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * What time and absence do to the rooms. Each sweep runs on one replica per tick, the one that
- * takes the lock, and may run twice without harm: it loads each room again and saves its change
- * only if nobody saved another meanwhile.
+ * What time and absence do to the rooms, and the turns of the bots they find waiting. Each sweep
+ * runs on one replica per tick, the one that takes the lock, and may run twice without harm: it
+ * loads each room again and saves its change only if nobody saved another meanwhile.
  */
 @Component
 @RequiredArgsConstructor
@@ -30,17 +30,18 @@ public class RoomSweeper {
   private final RoomRegistry rooms;
   private final Cluster cluster;
   private final GameSocketHandler handler;
+  private final BotTurns bots;
 
   /** The turn passes, or the game ends, when the game has waited long enough for someone away. */
   @Scheduled(fixedDelay = 1_000)
   void expire() {
-    sweep("expire", EXPIRE_LOCK, Room::expire);
+    sweep("expire", EXPIRE_LOCK, Room::expire, bots::consider);
   }
 
   /** The lobby keeps an absent player for a while: once it is over, the others see them go. */
   @Scheduled(fixedDelay = 5_000)
   void dropAbsent() {
-    sweep("dropAbsent", DROP_ABSENT_LOCK, Room::dropAbsent);
+    sweep("dropAbsent", DROP_ABSENT_LOCK, Room::dropAbsent, room -> {});
   }
 
   /**
@@ -53,7 +54,7 @@ public class RoomSweeper {
     try {
       var alive = cluster.alive();
       if (alive.contains(cluster.id())) {
-        sweep("replicas", REPLICAS_LOCK, room -> room.dropReplicasNotIn(alive));
+        sweep("replicas", REPLICAS_LOCK, room -> room.dropReplicasNotIn(alive), room -> {});
       }
     } catch (Unavailable e) {
       // Nothing can be told apart from a replica that died while the store is out of reach.
@@ -71,7 +72,8 @@ public class RoomSweeper {
     }
   }
 
-  private void sweep(String name, Duration lock, Consumer<Room> change) {
+  /** {@code after} sees each room as it is saved, changed or not. */
+  private void sweep(String name, Duration lock, Consumer<Room> change, Consumer<Room> after) {
     try {
       if (!cluster.lock(name, lock)) {
         return;
@@ -82,6 +84,7 @@ public class RoomSweeper {
           if (swept.changed()) {
             handler.roomChanged(swept.room());
           }
+          after.accept(swept.room());
         } catch (IllegalMove | Unavailable e) {
           // The room was dropped since the list was made, or cannot be read or saved now: the next
           // tick tries again, and the other rooms go on.

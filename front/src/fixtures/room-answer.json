@@ -21,7 +21,8 @@
         "team": "BABORD",
         "connected": true,
         "host": true,
-        "signaler": false
+        "signaler": true,
+        "bot": null
       },
       {
         "id": "c64485fa-bece-4901-befc-7686ea6038e4",
@@ -29,7 +30,8 @@
         "team": null,
         "connected": true,
         "host": false,
-        "signaler": false
+        "signaler": false,
+        "bot": null
       }
     ],
     "spectators": 0,

@@ -26,6 +26,7 @@ import fr.didelo.semaphore.game.Unavailable;
 import fr.didelo.semaphore.game.WordList;
 import fr.didelo.semaphore.store.InMemoryRoomEvents;
 import fr.didelo.semaphore.store.InMemoryRoomStore;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -76,8 +77,10 @@ class ReplicasTest {
   private final FakeCluster cluster2 = new FakeCluster("replica-2", shared);
   private final GameSocketHandler first = new GameSocketHandler(json, registry, channel, cluster1);
   private final GameSocketHandler second = new GameSocketHandler(json, registry, channel, cluster2);
-  private final RoomSweeper sweeper1 = new RoomSweeper(registry, cluster1, first);
-  private final RoomSweeper sweeper2 = new RoomSweeper(registry, cluster2, second);
+  private final RoomSweeper sweeper1 =
+      new RoomSweeper(registry, cluster1, first, TestBots.turns(registry, first, Duration.ZERO));
+  private final RoomSweeper sweeper2 =
+      new RoomSweeper(registry, cluster2, second, TestBots.turns(registry, second, Duration.ZERO));
 
   ReplicasTest() {
     first.start();

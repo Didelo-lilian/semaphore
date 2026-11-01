@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import fr.didelo.semaphore.Valkey;
+import fr.didelo.semaphore.game.Command;
 import fr.didelo.semaphore.game.RoomState;
+import fr.didelo.semaphore.game.Team;
 import fr.didelo.semaphore.game.Unavailable;
 import io.lettuce.core.RedisClient;
 import java.util.List;
@@ -93,6 +95,27 @@ class RedisRoomStoreIT extends RoomStoreContract {
 
     assertThat(store.find(room.code()).orElseThrow().players())
         .extracting(RoomState.PlayerState::accountId)
+        .containsOnlyNulls();
+  }
+
+  @Test
+  void aPlayerThatAnOlderVersionWroteWithoutABotIsReadAsAPerson() {
+    var room = lobby(newCode());
+    var host = room.state().players().getFirst().id();
+    room.apply(host, new Command.AddBot(Team.BABORD, true, "HARD"));
+    store.create(room.state());
+    try (var connection = admin.connect()) {
+      var written =
+          (tools.jackson.databind.node.ObjectNode)
+              JSON.readTree(connection.sync().hget("room:" + room.code(), "state"));
+      written
+          .get("players")
+          .forEach(player -> ((tools.jackson.databind.node.ObjectNode) player).remove("bot"));
+      connection.sync().hset("room:" + room.code(), "state", JSON.writeValueAsString(written));
+    }
+
+    assertThat(store.find(room.code()).orElseThrow().players())
+        .extracting(RoomState.PlayerState::bot)
         .containsOnlyNulls();
   }
 

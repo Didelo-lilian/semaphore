@@ -1,18 +1,22 @@
 import { Alert, Button, Chip } from "@didelo/design-system";
 import { useState } from "react";
 import { type Motion, useListMotion } from "../motion.ts";
-import type { Player, RoomView, Team } from "../protocol.ts";
+import type { Level, Player, RoomView, Team } from "../protocol.ts";
 import { explain } from "../reasons.ts";
+import { LEVEL_NAME, LEVELS } from "./levels.ts";
 import { Presence } from "./Presence.tsx";
 import { TEAM_NAME, TeamMark } from "./TeamMark.tsx";
 
 const MIN_PER_TEAM = 2;
+const MAX_PLAYERS = 12;
 const TEAMS: Team[] = ["BABORD", "TRIBORD"];
 
 interface Props {
   room: RoomView;
   error: string | null;
   onJoinTeam: (team: Team) => void;
+  onAddBot: (team: Team, signaler: boolean, level: Level) => void;
+  onRemoveBot: (playerId: string) => void;
   onStart: () => void;
   onLeave: () => void;
 }
@@ -23,11 +27,13 @@ export const PlayerChip = ({
   you,
   motion,
   onSettle,
+  onRemove,
 }: {
   player: Player;
   you: boolean;
   motion?: Motion;
   onSettle?: () => void;
+  onRemove?: () => void;
 }) => (
   <li
     data-online={player.connected}
@@ -40,17 +46,38 @@ export const PlayerChip = ({
         player.name,
         you ? "(toi)" : "",
         player.host ? "· hôte" : "",
+        player.team !== null && player.signaler ? "· Signaleur" : "",
+        player.bot ? `· niveau ${LEVEL_NAME[player.bot]}` : "",
         player.connected ? "" : "· hors ligne",
       ]
         .filter(Boolean)
         .join(" ")}
       variant={you ? "filled" : "outlined"}
     />
+    {onRemove !== undefined && (
+      <Button
+        variant="text"
+        size="small"
+        aria-label={`Retirer ${player.name}`}
+        onClick={onRemove}
+      >
+        Retirer
+      </Button>
+    )}
   </li>
 );
 
-export const Lobby = ({ room, error, onJoinTeam, onStart, onLeave }: Props) => {
+export const Lobby = ({
+  room,
+  error,
+  onJoinTeam,
+  onAddBot,
+  onRemoveBot,
+  onStart,
+  onLeave,
+}: Props) => {
   const [copied, setCopied] = useState(false);
+  const [level, setLevel] = useState<Level>("NORMAL");
   const me = room.players.find((player) => player.id === room.you);
   const link = `${window.location.origin}/?room=${room.code}`;
   const { shown, motionOf, settle } = useListMotion(
@@ -68,6 +95,11 @@ export const Lobby = ({ room, error, onJoinTeam, onStart, onLeave }: Props) => {
         room.players.filter((p) => p.team === team).length >= MIN_PER_TEAM,
     );
 
+  const isHost = me?.host === true;
+  // A backend that has no bots sends no `bot` at all: it would refuse the messages that seat one.
+  const canAddBots = isHost && room.players.every((p) => p.bot !== undefined);
+  const full = room.players.length >= MAX_PLAYERS;
+
   const chips = (players: Player[]) =>
     players.map((player) => (
       <PlayerChip
@@ -76,6 +108,9 @@ export const Lobby = ({ room, error, onJoinTeam, onStart, onLeave }: Props) => {
         you={player.id === room.you}
         motion={motionOf(player.id)}
         onSettle={() => settle(player.id)}
+        onRemove={
+          canAddBots && player.bot ? () => onRemoveBot(player.id) : undefined
+        }
       />
     ));
 
@@ -105,6 +140,24 @@ export const Lobby = ({ room, error, onJoinTeam, onStart, onLeave }: Props) => {
 
       {error !== null && <Alert severity="error">{explain(error)}</Alert>}
 
+      {canAddBots && (
+        <div className="sem-bot-level">
+          <span id="bot-level">Niveau des bots</span>
+          <fieldset className="sem-numbers" aria-labelledby="bot-level">
+            {LEVELS.map((choice) => (
+              <Button
+                key={choice}
+                variant={level === choice ? "contained" : "outlined"}
+                aria-pressed={level === choice}
+                onClick={() => setLevel(choice)}
+              >
+                {LEVEL_NAME[choice]}
+              </Button>
+            ))}
+          </fieldset>
+        </div>
+      )}
+
       <div className="sem-teams">
         {TEAMS.map((team) => {
           const members = room.players.filter((player) => player.team === team);
@@ -130,6 +183,26 @@ export const Lobby = ({ room, error, onJoinTeam, onStart, onLeave }: Props) => {
                   Rejoindre {TEAM_NAME[team]}
                 </Button>
               )}
+              {canAddBots && (
+                <div className="sem-actions">
+                  <Button
+                    variant="text"
+                    disabled={
+                      full || members.find((p) => p.signaler)?.bot != null
+                    }
+                    onClick={() => onAddBot(team, true, level)}
+                  >
+                    Ajouter un bot Signaleur
+                  </Button>
+                  <Button
+                    variant="text"
+                    disabled={full || members.length === 0}
+                    onClick={() => onAddBot(team, false, level)}
+                  >
+                    Ajouter un bot Veilleur
+                  </Button>
+                </div>
+              )}
             </section>
           );
         })}
@@ -143,7 +216,7 @@ export const Lobby = ({ room, error, onJoinTeam, onStart, onLeave }: Props) => {
       )}
 
       <footer className="sem-start">
-        {me?.host ? (
+        {isHost ? (
           <>
             <Button
               variant="contained"

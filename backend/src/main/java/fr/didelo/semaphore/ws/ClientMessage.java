@@ -4,6 +4,7 @@ import static java.util.Objects.requireNonNull;
 
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import fr.didelo.semaphore.bot.Level;
 import fr.didelo.semaphore.game.Team;
 
 /**
@@ -22,7 +23,9 @@ import fr.didelo.semaphore.game.Team;
   @JsonSubTypes.Type(value = ClientMessage.Start.class, name = "start"),
   @JsonSubTypes.Type(value = ClientMessage.Signal.class, name = "signal"),
   @JsonSubTypes.Type(value = ClientMessage.Reveal.class, name = "reveal"),
-  @JsonSubTypes.Type(value = ClientMessage.Pass.class, name = "pass")
+  @JsonSubTypes.Type(value = ClientMessage.Pass.class, name = "pass"),
+  @JsonSubTypes.Type(value = ClientMessage.AddBot.class, name = "addBot"),
+  @JsonSubTypes.Type(value = ClientMessage.RemoveBot.class, name = "removeBot")
 })
 public sealed interface ClientMessage {
 
@@ -76,4 +79,18 @@ public sealed interface ClientMessage {
   record Reveal(String id, int index) implements ClientMessage {}
 
   record Pass(String id) implements ClientMessage {}
+
+  /** A bot of a level in a team, as its Signaleur or as a lookout. */
+  record AddBot(String id, Team team, boolean signaler, Level level) implements ClientMessage {
+    public AddBot {
+      requireNonNull(team);
+      requireNonNull(level);
+    }
+  }
+
+  record RemoveBot(String id, String playerId) implements ClientMessage {
+    public RemoveBot {
+      requireNonNull(playerId);
+    }
+  }
 }

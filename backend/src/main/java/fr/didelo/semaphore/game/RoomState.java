@@ -46,5 +46,6 @@ public record RoomState(
       Instant absentSince,
       boolean left,
       String replica,
-      UUID accountId) {}
+      UUID accountId,
+      String bot) {}
 }

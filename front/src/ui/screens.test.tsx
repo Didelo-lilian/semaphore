@@ -38,6 +38,7 @@ const player = (
   connected: true,
   host,
   signaler: false,
+  bot: null,
 });
 
 describe("Home", () => {
@@ -182,6 +183,8 @@ describe("Lobby", () => {
         room={room}
         error={null}
         onJoinTeam={onJoinTeam}
+        onAddBot={vi.fn()}
+        onRemoveBot={vi.fn()}
         onStart={noop}
         onLeave={noop}
       />,
@@ -211,6 +214,8 @@ describe("Lobby", () => {
         room={lobby({ players })}
         error={null}
         onJoinTeam={noop}
+        onAddBot={vi.fn()}
+        onRemoveBot={vi.fn()}
         onStart={onStart}
         onLeave={noop}
       />,
@@ -223,6 +228,8 @@ describe("Lobby", () => {
         room={lobby({ players: [...players, player("d", "TRIBORD")] })}
         error={null}
         onJoinTeam={noop}
+        onAddBot={vi.fn()}
+        onRemoveBot={vi.fn()}
         onStart={onStart}
         onLeave={noop}
       />,
@@ -231,6 +238,139 @@ describe("Lobby", () => {
       screen.getByRole("button", { name: "Lancer la partie" }),
     );
     expect(onStart).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Lobby with bots", () => {
+  const bot = (
+    id: string,
+    team: "BABORD" | "TRIBORD",
+    level: "EASY" | "NORMAL" | "HARD",
+    signaler = false,
+  ) => ({ ...player(id, team), signaler, bot: level });
+
+  const renderLobby = (players: RoomView["players"], you = "a") => {
+    const handlers = { onAddBot: vi.fn(), onRemoveBot: vi.fn() };
+    render(
+      <Lobby
+        room={lobby({ players }, you)}
+        error={null}
+        onJoinTeam={vi.fn()}
+        onStart={vi.fn()}
+        onLeave={vi.fn()}
+        {...handlers}
+      />,
+    );
+    return handlers;
+  };
+
+  const team = (name: string) =>
+    within(screen.getByRole("region", { name: `Équipe ${name}` }));
+
+  it("lets the host add a bot of the chosen level, as Signaleur or as Veilleur", async () => {
+    const { onAddBot } = renderLobby([
+      { ...player("a", "BABORD", true), signaler: true },
+    ]);
+    expect(screen.getByRole("button", { name: "Normal" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Difficile" }));
+    await userEvent.click(
+      team("Bâbord").getByRole("button", { name: "Ajouter un bot Veilleur" }),
+    );
+    expect(onAddBot).toHaveBeenLastCalledWith("BABORD", false, "HARD");
+
+    await userEvent.click(screen.getByRole("button", { name: "Facile" }));
+    await userEvent.click(
+      team("Tribord").getByRole("button", { name: "Ajouter un bot Signaleur" }),
+    );
+    expect(onAddBot).toHaveBeenLastCalledWith("TRIBORD", true, "EASY");
+  });
+
+  it("only offers what the room accepts", () => {
+    renderLobby([
+      { ...player("a", "BABORD", true), signaler: true },
+      bot("b", "TRIBORD", "NORMAL", true),
+    ]);
+
+    expect(
+      team("Tribord").getByRole("button", { name: "Ajouter un bot Signaleur" }),
+    ).toBeDisabled();
+    expect(
+      team("Tribord").getByRole("button", { name: "Ajouter un bot Veilleur" }),
+    ).toBeEnabled();
+    expect(
+      team("Bâbord").getByRole("button", { name: "Ajouter un bot Signaleur" }),
+    ).toBeEnabled();
+  });
+
+  it("waits for a Signaleur before a Veilleur, and stops when the room is full", () => {
+    const people = Array.from({ length: 12 }, (_, i) =>
+      i === 0 ? player("a", "BABORD", true) : player(`p${i}`, "TRIBORD"),
+    );
+    renderLobby(people);
+
+    for (const name of ["Bâbord", "Tribord"]) {
+      expect(
+        team(name).getByRole("button", { name: "Ajouter un bot Signaleur" }),
+      ).toBeDisabled();
+      expect(
+        team(name).getByRole("button", { name: "Ajouter un bot Veilleur" }),
+      ).toBeDisabled();
+    }
+  });
+
+  it("shows the level and the role of a bot, which the host removes", async () => {
+    const { onRemoveBot } = renderLobby([
+      player("a", "BABORD", true),
+      bot("Bot 1", "TRIBORD", "HARD", true),
+    ]);
+
+    expect(
+      screen.getByText("Bot 1 · Signaleur · niveau Difficile"),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Retirer Bot 1" }),
+    );
+    expect(onRemoveBot).toHaveBeenCalledWith("Bot 1");
+  });
+
+  it("shows the bots to the others without letting them change anything", () => {
+    renderLobby(
+      [
+        player("a", "BABORD", true),
+        bot("Bot 1", "BABORD", "EASY"),
+        player("b", null),
+      ],
+      "b",
+    );
+
+    expect(screen.getByText("Bot 1 · niveau Facile")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Retirer/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Ajouter un bot/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Difficile" })).toBeNull();
+  });
+
+  it("offers no bot when the backend sends no `bot` field at all", () => {
+    const people = [player("a", "BABORD", true), player("b", "TRIBORD")].map(
+      ({ bot: _bot, ...person }) => person,
+    );
+    renderLobby(people);
+
+    expect(screen.queryByRole("button", { name: /Ajouter un bot/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Difficile" })).toBeNull();
+    expect(screen.getByText("a (toi) · hôte")).toBeInTheDocument();
+  });
+
+  it("does not count a bot among the people online", () => {
+    renderLobby([
+      player("a", "BABORD", true),
+      bot("Bot 1", "TRIBORD", "NORMAL", true),
+    ]);
+
+    expect(screen.getByText("1 en ligne")).toBeInTheDocument();
   });
 });
 
@@ -249,6 +389,8 @@ describe("Presence", () => {
         room={lobby({ players })}
         error={null}
         onJoinTeam={noop}
+        onAddBot={vi.fn()}
+        onRemoveBot={vi.fn()}
         onStart={noop}
         onLeave={noop}
       />,
@@ -284,6 +426,8 @@ describe("Presence", () => {
         room={lobby({ players })}
         error={null}
         onJoinTeam={noop}
+        onAddBot={vi.fn()}
+        onRemoveBot={vi.fn()}
         onStart={noop}
         onLeave={noop}
       />,

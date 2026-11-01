@@ -72,6 +72,7 @@ describe("a player coming and going in the lobby", () => {
     connected: true,
     host: id === "a",
     signaler: false,
+    bot: null,
   });
   const room = (players: RoomView["players"]): RoomView => ({
     code: "USQ2H",
@@ -93,6 +94,8 @@ describe("a player coming and going in the lobby", () => {
       room={room(players)}
       error={null}
       onJoinTeam={vi.fn()}
+      onAddBot={vi.fn()}
+      onRemoveBot={vi.fn()}
       onStart={vi.fn()}
       onLeave={vi.fn()}
     />

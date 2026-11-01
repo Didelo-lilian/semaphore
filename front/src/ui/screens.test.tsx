@@ -46,6 +46,8 @@ describe("Home", () => {
     render(
       <Home
         invited={null}
+        initialName=""
+        remembered={false}
         busy={false}
         error={null}
         onCreate={onCreate}
@@ -60,11 +62,35 @@ describe("Home", () => {
     await waitFor(() => expect(onCreate).toHaveBeenCalledWith("Ana"));
   });
 
+  it("starts from the name the server remembers and says so", async () => {
+    const onCreate = vi.fn();
+    render(
+      <Home
+        invited={null}
+        initialName="Ana"
+        remembered
+        busy={false}
+        error={null}
+        onCreate={onCreate}
+        onJoin={vi.fn()}
+        onWatch={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("Ton nom")).toHaveValue("Ana");
+    expect(screen.getByText(/retenu sur cet appareil/)).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Créer un salon" }),
+    );
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith("Ana"));
+  });
+
   it("joins by code, upper-cased", async () => {
     const onJoin = vi.fn();
     render(
       <Home
         invited={null}
+        initialName=""
+        remembered={false}
         busy={false}
         error={null}
         onCreate={vi.fn()}
@@ -83,6 +109,8 @@ describe("Home", () => {
     render(
       <Home
         invited="USQ2H"
+        initialName=""
+        remembered={false}
         busy={false}
         error="no such room"
         onCreate={vi.fn()}
@@ -106,6 +134,8 @@ describe("Home", () => {
     const { unmount } = render(
       <Home
         invited="USQ2H"
+        initialName=""
+        remembered={false}
         busy={false}
         error="the game has started"
         onCreate={vi.fn()}
@@ -123,6 +153,8 @@ describe("Home", () => {
     render(
       <Home
         invited={null}
+        initialName=""
+        remembered={false}
         busy={false}
         error={null}
         onCreate={vi.fn()}

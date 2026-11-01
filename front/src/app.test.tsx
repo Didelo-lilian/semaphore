@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GameClient } from "./client.ts";
 import { FakeSocket } from "./fake-socket.ts";
 import joined from "./fixtures/joined-lobby.json";
@@ -52,6 +52,27 @@ const mount = async (path: string, store: SessionStore = memoryStore()) => {
 beforeEach(() => {
   FakeSocket.all = [];
 });
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+const json = (status: number, body: unknown) =>
+  new Response(JSON.stringify(body), { status });
+
+// The server of /api/me: `me` answers the GET, `put` the PUT (the name is echoed when it is 200).
+const api = (me: Response, put?: Response) => {
+  const calls = vi.fn(async (_url: string, init?: RequestInit) =>
+    init?.method === "PUT"
+      ? (put ?? json(200, { kind: "guest", id: "g", name: "?" }))
+      : me.clone(),
+  );
+  vi.stubGlobal("fetch", calls);
+  return calls;
+};
+
+const methods = (calls: ReturnType<typeof api>) =>
+  calls.mock.calls.map(([, init]) => init?.method ?? "GET");
 
 const join = async (room: RoomView) => {
   const seat = { code: room.code, token: "t" };
@@ -438,5 +459,78 @@ describe("the game in the browser", () => {
     FakeSocket.last().accept();
     FakeSocket.last().answer(joined);
     expect(await screen.findByText("Salon")).toBeInTheDocument();
+  });
+});
+
+describe("the name of a guest", () => {
+  const create = async () => {
+    await userEvent.click(
+      screen.getByRole("button", { name: "Créer un salon" }),
+    );
+    await waitFor(() => expect(FakeSocket.all).toHaveLength(1));
+    FakeSocket.last().accept();
+  };
+
+  it("comes back from the server and enters a room without asking it again", async () => {
+    const calls = api(json(200, { kind: "guest", id: "g", name: "Ana" }));
+    await mount("/");
+    expect(await screen.findByLabelText("Ton nom")).toHaveValue("Ana");
+    expect(screen.getByText(/retenu sur cet appareil/)).toBeInTheDocument();
+    await create();
+    expect(FakeSocket.last().sent).toEqual([
+      { type: "createRoom", id: "1", name: "Ana" },
+    ]);
+    expect(methods(calls)).toEqual(["GET"]);
+  });
+
+  it("is saved before the room is entered at the first visit", async () => {
+    const calls = api(
+      json(200, { kind: "anonymous" }),
+      json(200, { kind: "guest", id: "g", name: "Ben" }),
+    );
+    await mount("/");
+    await userEvent.type(await screen.findByLabelText("Ton nom"), "Ben");
+    await create();
+    expect(methods(calls)).toEqual(["GET", "PUT"]);
+    expect(calls.mock.calls[1]?.[1]?.body).toBe('{"name":"Ben"}');
+    expect(FakeSocket.last().sent).toEqual([
+      { type: "createRoom", id: "1", name: "Ben" },
+    ]);
+  });
+
+  it("is saved again when it changed", async () => {
+    const calls = api(json(200, { kind: "guest", id: "g", name: "Ana" }));
+    await mount("/");
+    const field = await screen.findByLabelText("Ton nom");
+    await userEvent.clear(field);
+    await userEvent.type(field, "Zoé");
+    await create();
+    expect(methods(calls)).toEqual(["GET", "PUT"]);
+    expect(calls.mock.calls[1]?.[1]?.body).toBe('{"name":"Zoé"}');
+  });
+
+  it.each([404, 429])(
+    "is asked in each room when /api/me answers %i",
+    async (status) => {
+      const calls = api(json(status, { error: "no" }));
+      await mount("/");
+      await userEvent.type(await screen.findByLabelText("Ton nom"), "Ana");
+      expect(screen.queryByText(/retenu sur cet appareil/)).toBeNull();
+      await create();
+      expect(FakeSocket.last().sent).toEqual([
+        { type: "createRoom", id: "1", name: "Ana" },
+      ]);
+      expect(methods(calls)).toEqual(["GET"]);
+    },
+  );
+
+  it("does not keep the player out of a room when the server refuses to save it", async () => {
+    api(json(200, { kind: "anonymous" }), json(429, { error: "slow down" }));
+    await mount("/");
+    await userEvent.type(await screen.findByLabelText("Ton nom"), "Ben");
+    await create();
+    expect(FakeSocket.last().sent).toEqual([
+      { type: "createRoom", id: "1", name: "Ben" },
+    ]);
   });
 });

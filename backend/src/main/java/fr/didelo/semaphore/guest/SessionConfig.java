@@ -23,14 +23,14 @@ class SessionConfig {
 
   @Bean
   DefaultCookieSerializer cookieSerializer(
-      @Value("${semaphore.session.lifetime}") Duration lifetime) {
+      @Value("${semaphore.session.cookie-max-age}") Duration maxAge) {
     var cookie = new DefaultCookieSerializer();
     cookie.setCookieName("__Host-session");
     cookie.setCookiePath("/");
     cookie.setUseHttpOnlyCookie(true);
     cookie.setUseSecureCookie(true);
     cookie.setSameSite("Lax");
-    cookie.setCookieMaxAge((int) lifetime.toSeconds());
+    cookie.setCookieMaxAge((int) maxAge.toSeconds());
     return cookie;
   }
 

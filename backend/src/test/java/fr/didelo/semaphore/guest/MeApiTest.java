@@ -2,6 +2,7 @@ package fr.didelo.semaphore.guest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Base64;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -30,7 +31,9 @@ class MeApiTest {
     assertThat(response.headers().firstValue("Cache-Control").orElse("")).contains("no-store");
     assertThat(browser.setCookies).hasSize(1);
     assertThat(browser.setCookies.getFirst()).startsWith("__Host-XSRF-TOKEN=");
-    assertThat(browser.setCookies.getFirst()).contains("Secure", "Path=/").doesNotContain("Domain");
+    assertThat(browser.setCookies.getFirst())
+        .contains("Secure", "Path=/", "SameSite=Lax")
+        .doesNotContain("Domain");
     assertThat(browser.setCookies.getFirst()).doesNotContain("HttpOnly");
   }
 
@@ -39,7 +42,18 @@ class MeApiTest {
     var browser = new Browser(port);
     browser.get();
 
-    var response = browser.send("PUT", "{\"name\":\"ana\"}", false);
+    var response = browser.send("PUT", "{\"name\":\"ana\"}", null);
+
+    assertThat(response.statusCode()).isEqualTo(403);
+    assertThat(browser.cookie("__Host-session")).isNull();
+  }
+
+  @Test
+  void aPutWithAnotherTokenThanTheCookieIsRefused() {
+    var browser = new Browser(port);
+    browser.get();
+
+    var response = browser.send("PUT", "{\"name\":\"ana\"}", "not-the-token");
 
     assertThat(response.statusCode()).isEqualTo(403);
     assertThat(browser.cookie("__Host-session")).isNull();
@@ -83,6 +97,32 @@ class MeApiTest {
   }
 
   @Test
+  void theSessionCookieIsWrittenOnceAndNeverRenewed() {
+    var browser = new Browser(port);
+    browser.get();
+    browser.put("{\"name\":\"ana\"}");
+
+    browser.get();
+    assertThat(browser.setCookies).noneMatch(c -> c.startsWith("__Host-session="));
+    browser.put("{\"name\":\"bea\"}");
+    assertThat(browser.setCookies).noneMatch(c -> c.startsWith("__Host-session="));
+  }
+
+  @Test
+  void aCookieTheBrowserInventsIsNotAdoptedByThePut() {
+    var browser = new Browser(port);
+    browser.get();
+    var forged = Base64.getEncoder().encodeToString("an-id-nobody-issued".getBytes());
+    browser.setCookie("__Host-session", forged);
+
+    var response = browser.put("{\"name\":\"ana\"}");
+
+    assertThat(response.statusCode()).isEqualTo(200);
+    assertThat(browser.cookie("__Host-session")).isNotEqualTo(forged);
+    assertThat(body(browser.get()).get("kind").asString()).isEqualTo("guest");
+  }
+
+  @Test
   void twoBrowsersAreTwoGuests() {
     var ana = new Browser(port);
     var bea = new Browser(port);
@@ -109,7 +149,18 @@ class MeApiTest {
       assertThat(body(response).get("error").asString()).isEqualTo("a name has 1 to 20 characters");
     }
     assertThat(browser.put("{\"name\":\"" + "x".repeat(20) + "\"}").statusCode()).isEqualTo(200);
-    assertThat(browser.put("{}").statusCode()).isEqualTo(400);
+  }
+
+  @Test
+  void aBodyThatIsNotAnAnswerIsRefusedWithAnErrorBody() {
+    var browser = new Browser(port);
+    browser.get();
+
+    for (var json : new String[] {"{}", "{\"name\":null}", "{\"name\":", "not json", "[]"}) {
+      var response = browser.put(json);
+      assertThat(response.statusCode()).as(json).isEqualTo(400);
+      assertThat(body(response).get("error").asString()).contains("{\"name\":\"ana\"}");
+    }
   }
 
   @Test

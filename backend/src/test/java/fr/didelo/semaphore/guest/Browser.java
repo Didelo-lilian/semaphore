@@ -41,18 +41,19 @@ final class Browser {
   }
 
   HttpResponse<String> get() {
-    return send("GET", null, true);
+    return send("GET", null, cookie("__Host-XSRF-TOKEN"));
   }
 
   HttpResponse<String> put(String json) {
-    return send("PUT", json, true);
+    return send("PUT", json, cookie("__Host-XSRF-TOKEN"));
   }
 
   HttpResponse<String> delete() {
-    return send("DELETE", null, true);
+    return send("DELETE", null, cookie("__Host-XSRF-TOKEN"));
   }
 
-  HttpResponse<String> send(String method, String json, boolean withToken) {
+  /** Sends {@code token} as the header, as the page does with the one it read from the cookie. */
+  HttpResponse<String> send(String method, String json, String token) {
     var request =
         HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/me"))
             .method(
@@ -68,8 +69,7 @@ final class Browser {
               .map(cookie -> cookie.getKey() + "=" + cookie.getValue())
               .collect(Collectors.joining("; ")));
     }
-    var token = cookies.get("__Host-XSRF-TOKEN");
-    if (withToken && token != null && !method.equals("GET")) {
+    if (token != null && !method.equals("GET")) {
       request.header("X-XSRF-TOKEN", token);
     }
     try {

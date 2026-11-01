@@ -9,6 +9,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -42,9 +43,7 @@ class MeController {
   @GetMapping
   Me get(HttpServletRequest request) {
     var session = request.getSession(false);
-    return session == null || session.getAttribute(ID) == null
-        ? new Me("anonymous", null, null)
-        : guest(session);
+    return session == null ? new Me("anonymous", null, null) : guest(session);
   }
 
   @PutMapping
@@ -74,5 +73,11 @@ class MeController {
   @ExceptionHandler(IllegalMove.class)
   ResponseEntity<Problem> refused(IllegalMove e) {
     return ResponseEntity.badRequest().body(new Problem(e.getMessage()));
+  }
+
+  @ExceptionHandler(HttpMessageNotReadableException.class)
+  ResponseEntity<Problem> unreadable() {
+    return ResponseEntity.badRequest()
+        .body(new Problem("a body like {\"name\":\"ana\"} is expected"));
   }
 }

@@ -9,8 +9,12 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.WebSocket;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.builder.SpringApplicationBuilder;
@@ -43,6 +47,11 @@ class SessionsInValkeyIT {
     return JSON.readTree(response.body());
   }
 
+  /** The cookie holds the id of the session, in Base64. */
+  private static String sessionId(Browser browser) {
+    return new String(Base64.getDecoder().decode(browser.cookie("__Host-session")));
+  }
+
   @Test
   void aGuestMadeOnOneReplicaIsKnownToTheOther() {
     var one = replica(Valkey.url());
@@ -57,9 +66,14 @@ class SessionsInValkeyIT {
     assertThat(found.get("kind").asString()).isEqualTo("guest");
     assertThat(found.get("id").asString()).isEqualTo(made.get("id").asString());
     assertThat(found.get("name").asString()).isEqualTo("ana");
+    var key = "session:sessions:" + sessionId(browser);
     try (var client = RedisClient.create(Valkey.url());
         var connection = client.connect()) {
-      assertThat(connection.sync().keys("session:*")).isNotEmpty();
+      var valkey = connection.sync();
+      assertThat(valkey.hget(key, "sessionAttr:guest.name")).isEqualTo("\"ana\"");
+      assertThat(valkey.hget(key, "sessionAttr:guest.id")).contains(made.get("id").asString());
+      // Seven days without use, not the thirty of the cookie.
+      assertThat(valkey.ttl(key)).isBetween(7 * 86_400L - 60, 7 * 86_400L);
     }
   }
 
@@ -70,15 +84,57 @@ class SessionsInValkeyIT {
     var browser = new Browser(one);
     browser.get();
     browser.put("{\"name\":\"ana\"}");
-    var cookie = browser.cookie("__Host-session");
-
-    browser.delete();
     var replay = new Browser(other);
     replay.get();
-    replay.setCookie("__Host-session", cookie);
-    var response = replay.get();
+    replay.setCookie("__Host-session", browser.cookie("__Host-session"));
+    assertThat(body(replay.get()).get("kind").asString()).isEqualTo("guest");
 
-    assertThat(body(response).get("kind").asString()).isEqualTo("anonymous");
+    browser.delete();
+
+    assertThat(body(replay.get()).get("kind").asString()).isEqualTo("anonymous");
+  }
+
+  @Test
+  void aSessionThatCannotBeReadIsNoneAndIsDropped() {
+    var port = replica(Valkey.url());
+    var browser = new Browser(port);
+    browser.get();
+    browser.setCookie("__Host-session", Base64.getEncoder().encodeToString("broken".getBytes()));
+    try (var client = RedisClient.create(Valkey.url());
+        var connection = client.connect()) {
+      connection
+          .sync()
+          .hset(
+              "session:sessions:broken",
+              Map.of("creationTime", "not json", "sessionAttr:guest.name", "\"ana\""));
+
+      var response = browser.get();
+
+      assertThat(response.statusCode()).isEqualTo(200);
+      assertThat(body(response).get("kind").asString()).isEqualTo("anonymous");
+      assertThat(connection.sync().exists("session:sessions:broken")).isZero();
+    }
+  }
+
+  @Test
+  void withValkeyFullAGuestIsToldTheServerIsFull() {
+    try (GenericContainer<?> valkey = Valkey.container(null)) {
+      valkey.start();
+      var port = replica(Valkey.url(valkey));
+      var browser = new Browser(port);
+      browser.get();
+      try (var client = RedisClient.create(Valkey.url(valkey));
+          var connection = client.connect()) {
+        connection.sync().configSet("maxmemory", "1");
+
+        var response = browser.put("{\"name\":\"ana\"}");
+
+        assertThat(response.statusCode()).isEqualTo(503);
+        assertThat(body(response).get("error").asString())
+            .isEqualTo("the server is full, try again later");
+        assertThat(browser.get().statusCode()).isEqualTo(200);
+      }
+    }
   }
 
   @Test
@@ -101,14 +157,14 @@ class SessionsInValkeyIT {
       assertThat(creating.statusCode()).isEqualTo(503);
       assertThat(body(creating).get("error").asString()).isEqualTo("the server is busy, try again");
       // A WebSocket handshake that carries the cookie must not fail on a session it cannot read.
-      var handshake =
+      var socket =
           HttpClient.newHttpClient()
-              .send(
-                  HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/ws"))
-                      .header("Cookie", "__Host-session=" + browser.cookie("__Host-session"))
-                      .build(),
-                  HttpResponse.BodyHandlers.ofString());
-      assertThat(handshake.statusCode()).isLessThan(500);
+              .newWebSocketBuilder()
+              .header("Origin", "https://play.didelo.fr")
+              .header("Cookie", "__Host-session=" + browser.cookie("__Host-session"))
+              .buildAsync(URI.create("ws://localhost:" + port + "/ws"), new WebSocket.Listener() {})
+              .get(5, TimeUnit.SECONDS);
+      socket.sendClose(WebSocket.NORMAL_CLOSURE, "").get(5, TimeUnit.SECONDS);
       var health =
           HttpClient.newHttpClient()
               .send(

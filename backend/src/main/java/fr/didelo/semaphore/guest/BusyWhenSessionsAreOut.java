@@ -1,5 +1,6 @@
 package fr.didelo.semaphore.guest;
 
+import io.lettuce.core.RedisCommandExecutionException;
 import io.lettuce.core.RedisException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -17,12 +18,17 @@ import org.springframework.web.filter.OncePerRequestFilter;
 /**
  * The sessions are in Valkey, and the request reads and writes them in several places (the
  * controller, the end of the response, Spring Security): a Valkey that cannot be reached would come
- * out as a 500 from any of them. This turns it into the 503 the rooms answer with, for the HTTP
- * API; the WebSocket handshake goes on without a session instead (ADR 0010).
+ * out as a 500 from any of them. This turns it into the 503 the rooms answer with ("busy", or
+ * "full" when Valkey has no memory left), for the HTTP API; the WebSocket handshake goes on without
+ * a session instead (ADR 0010).
  */
 @Component
 @Order(SessionRepositoryFilter.DEFAULT_ORDER - 1)
 class BusyWhenSessionsAreOut extends OncePerRequestFilter {
+
+  // The sentences of the rooms (RedisLink).
+  private static final String BUSY = "the server is busy, try again";
+  private static final String FULL = "the server is full, try again later";
 
   @Override
   protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -36,20 +42,23 @@ class BusyWhenSessionsAreOut extends OncePerRequestFilter {
     try {
       chain.doFilter(request, response);
     } catch (ServletException | RuntimeException e) {
+      var redis = false;
+      var full = false;
       for (Throwable cause = e; cause != null; cause = cause.getCause()) {
-        if ((cause instanceof RedisException || cause instanceof DataAccessException)
-            && !response.isCommitted()) {
-          response.resetBuffer();
-          response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
-          response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-          response
-              .getOutputStream()
-              .write(
-                  "{\"error\":\"the server is busy, try again\"}".getBytes(StandardCharsets.UTF_8));
-          return;
-        }
+        redis |= cause instanceof RedisException || cause instanceof DataAccessException;
+        // With maxmemory and noeviction, OOM is a write Valkey has no room for.
+        full |=
+            cause instanceof RedisCommandExecutionException && cause.getMessage().startsWith("OOM");
       }
-      throw e;
+      if (!redis || response.isCommitted()) {
+        throw e;
+      }
+      response.resetBuffer();
+      response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+      response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+      response
+          .getOutputStream()
+          .write(("{\"error\":\"" + (full ? FULL : BUSY) + "\"}").getBytes(StandardCharsets.UTF_8));
     }
   }
 }

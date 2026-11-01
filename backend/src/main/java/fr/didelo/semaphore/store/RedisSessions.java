@@ -11,7 +11,9 @@ import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.serializer.JacksonJsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializer;
+import org.springframework.session.SessionRepository;
 import org.springframework.session.data.redis.RedisSessionRepository;
 
 /**
@@ -45,18 +47,20 @@ class RedisSessions {
   }
 
   @Bean
-  RedisSessionRepository sessions(
+  SessionRepository<?> sessions(
       RedisConnectionFactory connections,
-      @Value("${semaphore.session.lifetime}") Duration lifetime) {
+      @Value("${semaphore.session.idle-timeout}") Duration idleTimeout) {
     var redis = new RedisTemplate<String, Object>();
     redis.setConnectionFactory(connections);
     redis.setKeySerializer(RedisSerializer.string());
     redis.setHashKeySerializer(RedisSerializer.string());
-    redis.setDefaultSerializer(RedisSerializer.java(getClass().getClassLoader()));
+    // JSON, not Java serialization: what Valkey holds never becomes an object graph, and a session
+    // written by one version is read by the next.
+    redis.setDefaultSerializer(new JacksonJsonRedisSerializer<>(Object.class));
     redis.afterPropertiesSet();
     var sessions = new RedisSessionRepository(redis);
-    sessions.setDefaultMaxInactiveInterval(lifetime);
+    sessions.setDefaultMaxInactiveInterval(idleTimeout);
     sessions.setRedisKeyNamespace("session");
-    return sessions;
+    return new TolerantSessions<>(sessions);
   }
 }

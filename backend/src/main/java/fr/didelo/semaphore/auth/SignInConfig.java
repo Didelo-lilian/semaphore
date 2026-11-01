@@ -35,13 +35,17 @@ import org.springframework.security.oauth2.jwt.JwtDecoderFactory;
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.csrf.CsrfTokenRepository;
+import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestTemplate;
 
 /**
  * Spring Security's OAuth2 login for the two providers (ADR 0011), on a chain of its own that only
  * the login and callback routes of the providers that are on reach; every other route, the unknown
- * providers' included, stays with the chain of ADR 0010. The authorization-code flow with {@code
+ * providers' included, stays with the chain of ADR 0010. The CSRF protection of ADR 0010 stays on
+ * here too: a {@code GET}, which is all a login and its callback are, never needs the token, and
+ * anything else sent to these routes is refused without it. The authorization-code flow with {@code
  * state} and PKCE runs on the backend, and nothing the provider returns is kept: the token goes
  * unstored, and the session is written by {@link LoginOutcome}. The calls to the providers time out
  * at 3 seconds to connect and 5 to read, since Spring's default has no limit and a provider that
@@ -66,6 +70,7 @@ class SignInConfig {
       Providers providers,
       CookieLoginRequests requests,
       LoginOutcome outcome,
+      CsrfTokenRepository tokens,
       JwtDecoderFactory<ClientRegistration> idTokens) {
     var authorize =
         new DefaultOAuth2AuthorizationRequestResolver(providers.repository(), Providers.LOGIN);
@@ -99,7 +104,10 @@ class SignInConfig {
         .securityContext(AbstractHttpConfigurer::disable)
         .requestCache(AbstractHttpConfigurer::disable)
         .anonymous(AbstractHttpConfigurer::disable)
-        .csrf(AbstractHttpConfigurer::disable)
+        .csrf(
+            csrf ->
+                csrf.csrfTokenRepository(tokens)
+                    .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler()))
         .oauth2Login(
             login ->
                 login

@@ -387,6 +387,30 @@ class SignInIT {
   }
 
   @Test
+  void deletingTheAccountNeedsTheToken() throws Exception {
+    var subject = FakeProvider.newSubject();
+    var browser = guest("ana");
+    signIn(browser, "github", subject);
+    var forged = new Browser(port);
+    forged.setCookie("__Host-session", browser.cookie("__Host-session"));
+
+    assertThat(forged.request("DELETE", "/api/auth/account").statusCode()).isEqualTo(403);
+    assertThat(accountsOf("github", subject)).hasSize(1);
+    assertThat(browser.request("DELETE", "/api/auth/account").statusCode()).isEqualTo(204);
+  }
+
+  @Test
+  void aLoginIsStartedByGetAndAnythingElseNeedsTheToken() {
+    var browser = guest("ana");
+    var forged = new Browser(port);
+    forged.setCookie("__Host-session", browser.cookie("__Host-session"));
+
+    assertThat(forged.request("POST", "/api/auth/login/github").statusCode()).isEqualTo(403);
+    assertThat(forged.setCookies).noneMatch(cookie -> cookie.startsWith("__Host-login="));
+    assertThat(browser.request("GET", "/api/auth/login/github").statusCode()).isEqualTo(302);
+  }
+
+  @Test
   void aGuestHasNoAccountToDelete() {
     assertThat(guest("ana").request("DELETE", "/api/auth/account").statusCode()).isEqualTo(401);
   }

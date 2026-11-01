@@ -1,6 +1,6 @@
 # 10. Guest sessions in Valkey
 
-Date: 2026-10-25 · Status: accepted, the session built; the handshake and the front follow (what becomes of a guest who signs in later is Lilian's call, at the end)
+Date: 2026-10-25 · Status: accepted, the session built; the handshake and the front follow (a guest who signs in later is never merged with the account, Lilian's decision of 2026-11-01)
 
 ## Context
 
@@ -50,15 +50,15 @@ sequenceDiagram
 
 ### What becomes of a guest who signs in later
 
-This is the decision for Lilian. The code is #54 and #55; this ADR only has to keep the options open, which `guest.id` does.
+Lilian decided on 2026-11-01: **a guest and an account are never merged** ([ADR 0011](0011-sign-in-with-github-or-google.md)). The games of a guest are not stored ([ADR 0012](0012-finished-games-profiles-and-the-leaderboard.md)), so an account would have nothing to adopt. The options were:
 
 | Option | What happens | Cost |
 |---|---|---|
-| **Fresh** | Signing in creates an account named after the provider; the guest session ends. The games of the guest stay under its id and are out of reach once it expires. | Nothing to build. The player loses their pseudo and their history. |
-| **Adopt** (recommended) | The first sign-in creates the account with the guest's pseudo, which the player can change, and records `guest.id` as claimed by it: the games stored under that id (what is stored for guests is the choice of #55) become the account's. A guest id is claimed once. Signing in on a second device uses the account that exists; that device's guest games are claimed too if their id is still free. | One column and one update, in #54 and #55. Only the games of the browser that signs in are brought over. |
+| **Fresh** (chosen, with the pseudo of the session offered to the new account) | Signing in creates an account named after the provider; the guest session ends. The games of the guest stay under its id and are out of reach once it expires. | Nothing to build. The player loses their pseudo and their history. |
+| **Adopt** (rejected: nothing stored to adopt) | The first sign-in creates the account with the guest's pseudo, which the player can change, and records `guest.id` as claimed by it: the games stored under that id (what is stored for guests is the choice of #55) become the account's. A guest id is claimed once. Signing in on a second device uses the account that exists; that device's guest games are claimed too if their id is still free. | One column and one update, in #54 and #55. Only the games of the browser that signs in are brought over. |
 | **Choose** | The player picks which pseudo and which history to merge. | A screen and rules for conflicts, for a thing that happens once per player. |
 
-**Recommendation: adopt.** It costs a stable `guest.id` kept through the session id change that Spring Security makes at login (attributes survive it), which this ADR already provides.
+`guest.id` stays stable through the session id change that Spring Security makes at login (attributes survive it), so adopting would still be possible later if guest games were ever stored.
 
 ## Consequences
 

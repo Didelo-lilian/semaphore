@@ -93,7 +93,8 @@ class StoreCostIT {
         s.lastActivity(),
         s.lastMove(),
         s.gameId(),
-        s.endedAt());
+        s.endedAt(),
+        s.endReason());
   }
 
   @Test

@@ -26,8 +26,23 @@ class RoomStateTest {
     assertThat(state.spectators()).isEmpty();
     assertThat(state.gameId()).isNull();
     assertThat(state.endedAt()).isNull();
+    assertThat(state.endReason()).isNull();
     var room = Room.restore(state, new MutableClock(), new Random(1), 2, List.of("voile", "ancre"));
     assertThat(room.code()).isEqualTo("ABCDE");
+  }
+
+  @Test
+  void aGameThatEndedBeforeTheHistoryExistedHasNoResult() {
+    var state =
+        JSON.readValue(
+            "{\"code\":\"ABCDE\",\"version\":9,\"phase\":\"ENDED\",\"winner\":\"BABORD\","
+                + "\"revealsLeft\":0}",
+            RoomState.class);
+
+    var room = Room.restore(state, new MutableClock(), new Random(1), 2, List.of("voile", "ancre"));
+
+    assertThat(room.phase()).isEqualTo(Phase.ENDED);
+    assertThat(room.result()).isEmpty();
   }
 
   @Test

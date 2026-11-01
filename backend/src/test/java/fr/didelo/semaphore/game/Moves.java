@@ -13,54 +13,47 @@ public final class Moves {
   public static final List<String> POOL =
       IntStream.range(0, 26).mapToObj(i -> (char) ('a' + i) + "voile" + (char) ('a' + i)).toList();
 
-  private static final String REPLICA = "replica-1";
+  public static final String REPLICA = "replica-1";
 
   private Moves() {}
 
   /**
-   * A game of BABORD against TRIBORD, two players each (p0 to p3, the first of each team the
-   * Signaleur), that BABORD has won. {@code account}, if not null, is the account of p1.
+   * A started game of BABORD against TRIBORD, two players each (p0 to p3, the first of each team
+   * the Signaleur). {@code account}, if not null, is the account of p1.
    */
-  public static RoomState ended(UUID account) {
-    var room = new Room("ABCDE", Clock.systemUTC(), new Random(7), 2, POOL);
-    var players = IntStream.range(0, 4).mapToObj(i -> room.join("p" + i, REPLICA)).toList();
-    players.get(1).setAccountId(account);
-    players.forEach(
-        player ->
-            room.apply(
-                player.getId(),
-                new Command.JoinTeam(players.indexOf(player) < 2 ? Team.BABORD : Team.TRIBORD)));
-    room.apply(players.get(0).getId(), new Command.Start());
-    win(room, Team.BABORD);
-    return room.state();
+  public static Room startedRoom(Clock clock, UUID account) {
+    var room = new Room("ABCDE", clock, new Random(7), 2, POOL);
+    room.join("p0", REPLICA);
+    start(room, account);
+    return room;
   }
 
-  /**
-   * The code of a started game that {@code registry} holds, with the same four players as {@link
-   * #ended}; {@code account}, if not null, is the account of p1.
-   */
+  /** The result of a {@link #startedRoom} that BABORD has won. */
+  public static GameResult ended(UUID account) {
+    var room = startedRoom(Clock.systemUTC(), account);
+    win(room, Team.BABORD);
+    return room.result().orElseThrow();
+  }
+
+  /** The code of a game like {@link #startedRoom} that {@code registry} holds. */
   public static String startedGame(RoomRegistry registry, UUID account) {
     var code = registry.create("p0", REPLICA).room().code();
-    registry.change(
-        code,
-        room -> {
-          room.join("p1", REPLICA).setAccountId(account);
-          room.join("p2", REPLICA);
-          room.join("p3", REPLICA);
-        });
-    registry.change(
-        code,
-        room -> {
-          var players = room.state().players();
-          IntStream.range(0, 4)
-              .forEach(
-                  i ->
-                      room.apply(
-                          players.get(i).id(),
-                          new Command.JoinTeam(i < 2 ? Team.BABORD : Team.TRIBORD)));
-          room.apply(players.get(0).id(), new Command.Start());
-        });
+    registry.change(code, room -> start(room, account));
     return code;
+  }
+
+  /** Starts the game of a room where p0 sits alone: p1 to p3 join and the teams are made. */
+  private static void start(Room room, UUID account) {
+    room.join("p1", REPLICA).setAccountId(account);
+    room.join("p2", REPLICA);
+    room.join("p3", REPLICA);
+    var players = room.state().players();
+    IntStream.range(0, 4)
+        .forEach(
+            i ->
+                room.apply(
+                    players.get(i).id(), new Command.JoinTeam(i < 2 ? Team.BABORD : Team.TRIBORD)));
+    room.apply(players.get(0).id(), new Command.Start());
   }
 
   /** The nth member of a team, in the order they joined: the first one is the Signaleur. */

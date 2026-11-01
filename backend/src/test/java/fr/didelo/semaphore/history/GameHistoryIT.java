@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import fr.didelo.semaphore.Postgres;
+import fr.didelo.semaphore.game.EndReason;
 import fr.didelo.semaphore.game.GameResult;
-import fr.didelo.semaphore.game.GameResult.EndReason;
 import fr.didelo.semaphore.game.GameResult.Participant;
 import fr.didelo.semaphore.game.GameResult.Role;
 import fr.didelo.semaphore.game.Team;
@@ -13,6 +13,10 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -26,10 +30,7 @@ class GameHistoryIT {
 
   @DynamicPropertySource
   static void postgres(DynamicPropertyRegistry registry) {
-    var postgres = Postgres.shared();
-    registry.add("spring.datasource.url", postgres::getJdbcUrl);
-    registry.add("spring.datasource.username", postgres::getUsername);
-    registry.add("spring.datasource.password", postgres::getPassword);
+    Postgres.connect(registry, Postgres.shared());
   }
 
   @Autowired GameHistory history;
@@ -99,13 +100,43 @@ class GameHistoryIT {
   @Test
   void aGameThatIsAlreadyThereIsLeftAsItIs() {
     var id = UUID.randomUUID();
+    var late = UUID.randomUUID();
     assertThat(history.record(result(id, null))).isTrue();
 
-    assertThat(history.record(result(id, UUID.randomUUID()))).isFalse();
+    assertThat(history.record(result(id, late))).isFalse();
 
     assertThat(count("game", "id", id)).isOne();
     assertThat(count("game_player", "game_id", id)).isEqualTo(4);
-    assertThat(count("game_player", "account_id", UUID.randomUUID())).isZero();
+    assertThat(count("game_player", "account_id", late)).isZero();
+  }
+
+  @Test
+  void twoReplicasWritingTheSameGameAtOnceWriteItOnce() throws Exception {
+    var id = UUID.randomUUID();
+    var go = new CountDownLatch(1);
+    var written = 0;
+    try (var replicas = Executors.newFixedThreadPool(4)) {
+      var writes =
+          IntStream.range(0, 4)
+              .mapToObj(
+                  i ->
+                      replicas.submit(
+                          () -> {
+                            go.await();
+                            return history.record(result(id, UUID.randomUUID()));
+                          }))
+              .toList();
+      go.countDown();
+      for (var write : writes) {
+        if (write.get(10, TimeUnit.SECONDS)) {
+          written++;
+        }
+      }
+    }
+
+    assertThat(written).isOne();
+    assertThat(count("game", "id", id)).isOne();
+    assertThat(count("game_player", "game_id", id)).isEqualTo(4);
   }
 
   @Test

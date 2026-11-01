@@ -188,10 +188,11 @@ class RoomRegistryTest {
 
   @Test
   void aGameThatEndsIsAnnouncedOnceAndAgainWhenItsAbandonedRoomIsDropped() {
-    var ended = new ArrayList<RoomState>();
+    var ended = new ArrayList<GameResult>();
     var registry = new RoomRegistry(store, clock, new WordList(), 2, List.of(ended::add));
     var code = Moves.startedGame(registry, null);
     var players = registry.find(code).orElseThrow().state().players();
+    var gameId = registry.find(code).orElseThrow().state().gameId();
     var turn = registry.find(code).orElseThrow().state().turn();
     var away = players.get(turn.other() == Team.BABORD ? 0 : 2).id();
     registry.change(code, room -> room.disconnect(away, REPLICA));
@@ -204,19 +205,23 @@ class RoomRegistryTest {
 
     assertThat(ended)
         .singleElement()
-        .satisfies(state -> assertThat(state.phase()).isEqualTo(Phase.ENDED));
+        .satisfies(
+            result -> {
+              assertThat(result.id()).isEqualTo(gameId);
+              assertThat(result.endReason()).isEqualTo(EndReason.FORFEIT);
+            });
 
     registry.change(code, room -> players.forEach(p -> room.disconnect(p.id(), REPLICA)));
     clock.advance(Duration.ofMinutes(31));
     registry.dropAbandoned();
 
-    assertThat(ended).hasSize(2).allSatisfy(state -> assertThat(state.code()).isEqualTo(code));
+    assertThat(ended).hasSize(2).allSatisfy(result -> assertThat(result.id()).isEqualTo(gameId));
     assertThat(registry.find(code)).isEmpty();
   }
 
   @Test
   void aRoomThatNeverEndedIsDroppedWithoutAnAnnouncement() {
-    var ended = new ArrayList<RoomState>();
+    var ended = new ArrayList<GameResult>();
     var registry = new RoomRegistry(store, clock, new WordList(), 2, List.of(ended::add));
     var code = Moves.startedGame(registry, null);
     var players = registry.find(code).orElseThrow().state().players();
@@ -231,7 +236,7 @@ class RoomRegistryTest {
 
   @Test
   void aListenerThatFailsDoesNotUndoTheEndOfTheGame() {
-    var told = new ArrayList<RoomState>();
+    var told = new ArrayList<GameResult>();
     var registry =
         new RoomRegistry(
             store,

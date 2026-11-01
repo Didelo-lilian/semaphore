@@ -66,10 +66,11 @@ public final class Room {
   private Instant lastActivity;
   // The last command or pass of the turn: the wait for someone away starts again after each one.
   private Instant lastMove;
-  // Made when the game starts and kept in the state: what the history knows the game by, once,
-  // whichever replica ends it. A game that started before it existed has none.
+  // Kept in the state for the history, so that whichever replica ends the game writes the same
+  // result, once. A game that started before the history existed has no id.
   private UUID gameId;
   private Instant endedAt;
+  private EndReason endReason;
 
   /** The room as {@code state} left it, with the settings of this application. */
   public static Room restore(
@@ -101,6 +102,7 @@ public final class Room {
     room.lastMove = state.lastMove();
     room.gameId = state.gameId();
     room.endedAt = state.endedAt();
+    room.endReason = state.endReason();
     return room;
   }
 
@@ -132,7 +134,36 @@ public final class Room {
         lastActivity,
         lastMove,
         gameId,
-        endedAt);
+        endedAt,
+        endReason);
+  }
+
+  /**
+   * What the history keeps of the game once it has ended. Empty for a game that started before the
+   * history existed, which has no id.
+   */
+  public Optional<GameResult> result() {
+    if (phase != Phase.ENDED || gameId == null) {
+      return Optional.empty();
+    }
+    return Optional.of(
+        new GameResult(
+            gameId,
+            endedAt,
+            winner,
+            endReason,
+            players.values().stream()
+                .map(
+                    p ->
+                        new GameResult.Participant(
+                            UUID.fromString(p.getId()),
+                            p.getName(),
+                            p.getTeam(),
+                            signaler(p.getTeam()) == p
+                                ? GameResult.Role.SIGNALER
+                                : GameResult.Role.LOOKOUT,
+                            p.getAccountId()))
+                .toList()));
   }
 
   public String code() {
@@ -308,7 +339,7 @@ public final class Room {
             .filter(s -> !s.isConnected() && !now.isBefore(s.getAbsentSince().plus(SIGNALER_LIMIT)))
             .min(Comparator.comparing(Player::getAbsentSince));
     if (abandoned.isPresent()) {
-      end(abandoned.get().getTeam().other());
+      end(abandoned.get().getTeam().other(), EndReason.FORFEIT);
     } else if (passesAt().filter(at -> !now.isBefore(at)).isPresent()) {
       endTurn();
       // The turn may have reached a team whose Signaleur left: it passes again at once.
@@ -486,14 +517,14 @@ public final class Room {
     revealsLeft--;
     for (var team : Team.values()) {
       if (board.stream().filter(c -> c.kind() == team.kind()).allMatch(Card::revealed)) {
-        end(team);
+        end(team, EndReason.COMPLETE);
         return;
       }
     }
     if (card.kind() == CardKind.REEF) {
       flags.merge(turn, -1, Integer::sum);
       if (flags.get(turn) == 0) {
-        end(turn.other());
+        end(turn.other(), EndReason.REEF);
         return;
       }
     }
@@ -524,10 +555,11 @@ public final class Room {
     return Optional.of(since.plus(atOnce ? Duration.ZERO : TURN_GRACE));
   }
 
-  private void end(Team winner) {
+  private void end(Team winner, EndReason reason) {
     this.winner = winner;
     phase = Phase.ENDED;
     endedAt = clock.instant();
+    endReason = reason;
   }
 
   private void endTurn() {

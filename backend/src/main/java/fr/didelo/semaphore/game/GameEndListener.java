@@ -7,5 +7,5 @@ package fr.didelo.semaphore.game;
 public interface GameEndListener {
 
   /** Must not throw and must not wait: the room has been saved, and the players are waiting. */
-  void ended(RoomState state);
+  void ended(GameResult result);
 }

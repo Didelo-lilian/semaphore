@@ -27,7 +27,8 @@ public record RoomState(
     Instant lastActivity,
     Instant lastMove,
     UUID gameId,
-    Instant endedAt) {
+    Instant endedAt,
+    EndReason endReason) {
 
   /** A room saved before a collection existed has none of it in its JSON: it reads as empty. */
   public RoomState {

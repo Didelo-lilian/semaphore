@@ -74,6 +74,7 @@ abstract class RoomStoreContract {
             Instant.parse("2026-10-25T10:00:00.123456789Z"),
             null,
             null,
+            null,
             null);
 
     store().create(empty);

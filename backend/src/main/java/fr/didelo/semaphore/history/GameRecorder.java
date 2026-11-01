@@ -3,11 +3,11 @@ package fr.didelo.semaphore.history;
 import fr.didelo.semaphore.db.WithDatabase;
 import fr.didelo.semaphore.game.GameEndListener;
 import fr.didelo.semaphore.game.GameResult;
-import fr.didelo.semaphore.game.RoomState;
 import jakarta.annotation.PreDestroy;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -19,6 +19,7 @@ import org.springframework.stereotype.Component;
 @Slf4j
 @Component
 @WithDatabase
+@RequiredArgsConstructor
 class GameRecorder implements GameEndListener {
 
   private final GameHistory history;
@@ -36,30 +37,23 @@ class GameRecorder implements GameEndListener {
           },
           (task, pool) -> log.warn("a game result was dropped, the queue of the recorder is full"));
 
-  GameRecorder(GameHistory history) {
-    this.history = history;
-  }
-
   @Override
-  public void ended(RoomState state) {
-    // A game started by the version before the history has no id.
-    if (state.gameId() == null) {
+  public void ended(GameResult result) {
+    if (!result.hasAccount()) {
       return;
     }
-    var result = GameResult.of(state);
-    if (result.hasAccount()) {
-      executor.execute(() -> write(result));
-    }
-  }
-
-  void write(GameResult result) {
-    try {
-      if (history.record(result)) {
-        log.info("game {} recorded", result.id());
-      }
-    } catch (RuntimeException e) {
-      log.warn("game {} could not be recorded: {}", result.id(), e.toString());
-    }
+    executor.execute(
+        () -> {
+          // Caught here, not left to the pool: a thread that dies is replaced, but with a stack
+          // trace on stderr instead of a line in the log.
+          try {
+            if (history.record(result)) {
+              log.info("game {} recorded", result.id());
+            }
+          } catch (RuntimeException e) {
+            log.warn("game {} could not be recorded: {}", result.id(), e.toString());
+          }
+        });
   }
 
   @PreDestroy

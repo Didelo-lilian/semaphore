@@ -15,7 +15,12 @@ const json = (body: unknown) => ({
 createServer((request, response) => {
   const url = new URL(request.url ?? "/", `http://localhost:${PORT}`);
   if (url.pathname === "/authorize") {
-    const back = new URL(url.searchParams.get("redirect_uri") ?? "");
+    const redirect = url.searchParams.get("redirect_uri");
+    if (redirect === null) {
+      response.writeHead(400).end();
+      return;
+    }
+    const back = new URL(redirect);
     back.searchParams.set("code", "e2e");
     back.searchParams.set("state", url.searchParams.get("state") ?? "");
     response.writeHead(302, { Location: back.toString() }).end();

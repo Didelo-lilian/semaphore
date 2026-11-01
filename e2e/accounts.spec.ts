@@ -19,9 +19,20 @@ test("a player signed in with GitHub plays with three guests, and the game is re
 }) => {
   const db = new pg.Client(POSTGRES);
   await db.connect();
+  const rows = async (sql: string, ...params: unknown[]) =>
+    (await db.query(sql, params)).rows;
+  // The fake GitHub signs everybody in as one person: what an earlier run left of her is cleared, before and after,
+  // so that "one account" and "one game" mean this run's. The games first: their seats point at the account.
+  const purge = async () => {
+    await rows(
+      `DELETE FROM game WHERE id IN (
+         SELECT game_id FROM game_player WHERE account_id IN (
+           SELECT id FROM account WHERE provider = 'github'))`,
+    );
+    await rows("DELETE FROM account WHERE provider = 'github'");
+  };
   try {
-    const rows = async (sql: string, ...params: unknown[]) =>
-      (await db.query(sql, params)).rows;
+    await purge();
     const player = async (name: string): Promise<Player> => {
       const context = await browser.newContext({
         permissions: ["clipboard-read", "clipboard-write"],
@@ -43,8 +54,12 @@ test("a player signed in with GitHub plays with three guests, and the game is re
     };
     const githubAccounts = () =>
       rows("SELECT id FROM account WHERE provider = 'github'");
-    // The games are dated by the clock of the database, not the one of this machine.
-    const [{ since }] = await rows("SELECT now() AS since");
+    const meId = async () =>
+      (
+        (await (await alice.page.request.get("/api/me")).json()) as {
+          id: string;
+        }
+      ).id;
 
     await test.step("Alice signs in with the provider and the server says who she is", async () => {
       await alice.page.goto("/");
@@ -57,24 +72,20 @@ test("a player signed in with GitHub plays with three guests, and the game is re
       expect(await githubAccounts()).toHaveLength(1);
     });
 
+    const accountId = await meId();
+    expect(await githubAccounts()).toEqual([{ id: accountId }]);
+
     await test.step("she signs out, signs in again, and it is the same account", async () => {
       await alice.page.getByRole("button", { name: "Se déconnecter" }).click();
       await expect(
         alice.page.getByRole("button", { name: "Se connecter avec GitHub" }),
       ).toBeVisible();
       await signIn();
-      expect(await githubAccounts()).toHaveLength(1);
+      expect(await meId()).toBe(accountId);
+      expect(await githubAccounts()).toEqual([{ id: accountId }]);
     });
 
-    const [{ id: accountId }] = await githubAccounts();
-    const recorded = () =>
-      rows(
-        `SELECT id, winner, end_reason FROM game
-         WHERE ended_at >= $1 AND EXISTS (
-           SELECT 1 FROM game_player WHERE game_id = game.id AND account_id = $2)`,
-        since,
-        accountId,
-      );
+    let gameId = "";
 
     await test.step("she opens a room, three guests join it, and they play to the end", async () => {
       await alice.page.getByRole("button", { name: "Créer un salon" }).click();
@@ -94,8 +105,15 @@ test("a player signed in with GitHub plays with three guests, and the game is re
       await expect(heading(alice.page)).toHaveText(`${won} gagne`);
 
       // The game is written when it ends, off the players' path: it may come a moment after the screen says so.
+      const recorded = () =>
+        rows(
+          `SELECT id, winner, end_reason FROM game WHERE EXISTS (
+             SELECT 1 FROM game_player WHERE game_id = game.id AND account_id = $1)`,
+          accountId,
+        );
       await expect.poll(async () => (await recorded()).length).toBe(1);
       const [game] = await recorded();
+      gameId = game.id;
       expect(game).toMatchObject({
         winner: WINNER[won],
         end_reason: "COMPLETE",
@@ -133,9 +151,13 @@ test("a player signed in with GitHub plays with three guests, and the game is re
         alice.page.getByRole("button", { name: "Se connecter avec GitHub" }),
       ).toBeVisible();
       expect(await githubAccounts()).toHaveLength(0);
-      expect(await recorded()).toHaveLength(0);
+      // The seats lose their account before the game is judged, so the game is looked up by its own id.
+      expect(
+        await rows("SELECT 1 FROM game WHERE id = $1", gameId),
+      ).toHaveLength(0);
     });
   } finally {
+    await purge();
     await db.end();
   }
 });

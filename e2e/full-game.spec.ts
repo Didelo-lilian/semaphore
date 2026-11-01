@@ -162,4 +162,12 @@ test("four players play a whole game", async ({ browser }) => {
       await expect(page).toHaveURL("/");
     }
   });
+
+  await test.step("each of them is a guest the server remembers", async () => {
+    for (const { name, page } of [alice, bob, carol, dave]) {
+      // A reload: the name must come from the server, not from this page's memory.
+      await page.reload();
+      await expect(page.getByLabel("Ton nom")).toHaveValue(name);
+    }
+  });
 });

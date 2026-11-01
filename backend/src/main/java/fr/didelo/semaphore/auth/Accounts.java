@@ -33,18 +33,25 @@ public class Accounts {
    */
   public Optional<UUID> signedIn(HttpSession session) {
     var id = (String) session.getAttribute(SessionKeys.ACCOUNT_ID);
+    var account = signedIn(id, (String) session.getAttribute(SessionKeys.ACCOUNT_AT));
+    if (id != null && account.isEmpty()) {
+      session.removeAttribute(SessionKeys.ACCOUNT_ID);
+      session.removeAttribute(SessionKeys.ACCOUNT_AT);
+    }
+    return account;
+  }
+
+  /**
+   * The same rule for what a session holds, for a reader that must not write it back (the WebSocket
+   * handshake): {@code id} is null for a guest, {@code at} is the login time in epoch seconds.
+   */
+  public Optional<UUID> signedIn(String id, String at) {
     if (id == null) {
       return Optional.empty();
     }
-    var at =
-        Instant.ofEpochSecond(
-            Long.parseLong((String) session.getAttribute(SessionKeys.ACCOUNT_AT)));
-    if (at.plus(sessionLife).isAfter(Instant.now())) {
-      return Optional.of(UUID.fromString(id));
-    }
-    session.removeAttribute(SessionKeys.ACCOUNT_ID);
-    session.removeAttribute(SessionKeys.ACCOUNT_AT);
-    return Optional.empty();
+    return Instant.ofEpochSecond(Long.parseLong(at)).plus(sessionLife).isAfter(Instant.now())
+        ? Optional.of(UUID.fromString(id))
+        : Optional.empty();
   }
 
   /**

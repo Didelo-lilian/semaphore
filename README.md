@@ -59,7 +59,9 @@ A browser can be someone outside any room: `PUT /api/me {"name": "ana"}` makes i
 curl -si localhost:8080/api/me   # {"kind":"anonymous"} and the token cookie
 ```
 
-A `Secure` cookie is accepted over plain HTTP on `localhost` by Chromium; a browser that refuses it just does not keep the guest. In production Traefik sends `/ws` and `/api` to the backend ([infra](https://github.com/Didelo-lilian/infra)).
+A `Secure` cookie is accepted over plain HTTP on `localhost` by Chromium; a browser that refuses it just does not keep the guest. In production Traefik sends `/ws` and `/api/` to the backend, with a stricter limit on `PUT /api/me` ([infra](https://github.com/Didelo-lilian/infra)).
+
+The WebSocket handshake carries the same cookie. A player's id and pseudo come from the session, never from a message: `createRoom` and `joinRoom` still send `name`, which an older server needs, and it is only used when the connection has no session. A player's `accountId` is `null` for a guest, and the account of the session (`account.id`, when the login is not older than the cookie) for someone who signed in; a client cannot send it. The handshake reads the session without writing it back, so a Valkey that is full or out of reach never refuses or hangs it. The room in Valkey already has the field for the history, and a replica that does not know it ignores it, so a rolling deploy needs no coordination. The front shows its form at once and asks `GET /api/me` once; the pseudo it answers fills the name field unless the player already typed, and `PUT /api/me` saves the pseudo each time a room is entered. When `/api/me` answers 404, 429, 503 or not JSON, or nothing in 5 seconds, the name is asked in each room as before.
 
 ### Sign-in
 
@@ -93,7 +95,7 @@ The guesser (`bot/Guesser`) picks cards from a signal, knowing only the hidden w
 ```bash
 cd front
 npm ci
-npm run dev     # http://localhost:5173, /ws goes to a backend on :8080
+npm run dev     # http://localhost:5173, /ws and /api go to a backend on :8080
 npm run check   # lint, types, tests, production build
 ```
 
@@ -115,7 +117,7 @@ The home page says what the game is and links to `/privacy` and `/terms`, whose 
 
 ## Run the end-to-end test
 
-One game, four players in four browser contexts, against the real backend and the built front ([ADR 0007](docs/adr/0007-an-end-to-end-test-of-a-whole-game.md)).
+One game, four players in four browser contexts, against the real backend and the built front ([ADR 0007](docs/adr/0007-an-end-to-end-test-of-a-whole-game.md)); the four are guests, and a second spec follows two guests through pseudo, rename and a shared room, and the home page when `/api/me` is out.
 
 ```bash
 (cd backend && ./gradlew bootJar)                          # needs a JDK 25, builds build/libs/semaphore.jar

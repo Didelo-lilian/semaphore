@@ -1,6 +1,6 @@
 # 11. Sign in with GitHub or Google
 
-Date: 2026-10-25 · Status: proposed (the account model and the data kept are defaults for Lilian to change)
+Date: 2026-10-25 · Status: accepted (the account model and the data kept were confirmed by Lilian on 2026-11-01)
 
 ## Context
 

@@ -5,7 +5,13 @@ import static org.awaitility.Awaitility.await;
 
 import fr.didelo.semaphore.GameClient;
 import fr.didelo.semaphore.game.RoomRegistry;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -55,6 +61,29 @@ class GuestIdentityIT {
     client.send("{\"type\":\"createRoom\",\"name\":\"bob\"}");
 
     assertThat(firstPlayerName(client)).isEqualTo("bob");
+  }
+
+  @Test
+  void aHandshakeWithoutACookieCreatesNoSession() throws IOException {
+    var request =
+        "GET /ws HTTP/1.1\r\nHost: localhost:%d\r\nOrigin: https://play.didelo.fr\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: %s\r\n\r\n"
+            .formatted(port, Base64.getEncoder().encodeToString(new byte[16]));
+    try (var socket = new Socket("localhost", port)) {
+      socket.getOutputStream().write(request.getBytes(StandardCharsets.US_ASCII));
+      var reader =
+          new BufferedReader(
+              new InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII));
+      var head = new ArrayList<String>();
+      for (var line = reader.readLine();
+          line != null && !line.isEmpty();
+          line = reader.readLine()) {
+        head.add(line);
+      }
+
+      assertThat(head.get(0)).contains("101");
+      assertThat(head)
+          .noneMatch(line -> line.toLowerCase().startsWith("set-cookie: __host-session"));
+    }
   }
 
   @Test

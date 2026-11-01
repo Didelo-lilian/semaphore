@@ -1,6 +1,7 @@
 package fr.didelo.semaphore.game;
 
 import java.time.Instant;
+import java.util.UUID;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
@@ -14,6 +15,8 @@ public final class Player {
   private final String name;
 
   @Setter private Team team;
+  // The account the player signed in with, null for a guest.
+  @Setter private UUID accountId;
   // Null while the player is connected.
   @Setter private Instant absentSince;
   // Absent on purpose (`leave`): the game does not wait for them.

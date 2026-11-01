@@ -24,7 +24,35 @@ class RoomStateTest {
     assertThat(state.board()).isEmpty();
     assertThat(state.players()).isEmpty();
     assertThat(state.spectators()).isEmpty();
+    assertThat(state.gameId()).isNull();
+    assertThat(state.endedAt()).isNull();
+    assertThat(state.endReason()).isNull();
     var room = Room.restore(state, new MutableClock(), new Random(1), 2, List.of("voile", "ancre"));
     assertThat(room.code()).isEqualTo("ABCDE");
+  }
+
+  @Test
+  void aGameThatEndedBeforeTheHistoryExistedHasNoResult() {
+    var state =
+        JSON.readValue(
+            "{\"code\":\"ABCDE\",\"version\":9,\"phase\":\"ENDED\",\"winner\":\"BABORD\","
+                + "\"revealsLeft\":0}",
+            RoomState.class);
+
+    var room = Room.restore(state, new MutableClock(), new Random(1), 2, List.of("voile", "ancre"));
+
+    assertThat(room.phase()).isEqualTo(Phase.ENDED);
+    assertThat(room.result()).isEmpty();
+  }
+
+  @Test
+  void aPlayerSavedBeforeAccountsExistedIsAGuest() {
+    var state =
+        JSON.readValue(
+            "{\"code\":\"ABCDE\",\"version\":3,\"phase\":\"LOBBY\",\"revealsLeft\":0,"
+                + "\"players\":[{\"id\":\"a\",\"token\":\"t\",\"name\":\"Ana\",\"left\":false}]}",
+            RoomState.class);
+
+    assertThat(state.players()).singleElement().satisfies(p -> assertThat(p.accountId()).isNull());
   }
 }

@@ -68,7 +68,8 @@ class ReplicasTest {
   private final JsonMapper json = JsonMapper.builder().build();
   private final MutableClock clock = new MutableClock();
   private final InMemoryRoomStore store = spy(new InMemoryRoomStore());
-  private final RoomRegistry registry = new RoomRegistry(store, clock, new WordList(), 2);
+  private final RoomRegistry registry =
+      new RoomRegistry(store, clock, new WordList(), 2, List.of());
   private final Channel channel = new Channel();
   private final FakeCluster.Shared shared = new FakeCluster.Shared();
   private final FakeCluster cluster1 = new FakeCluster("replica-1", shared);

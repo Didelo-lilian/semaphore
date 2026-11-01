@@ -25,10 +25,10 @@ class StoreCostIT {
 
   /** A started room of four players: the biggest state a room has, a 25-card board. */
   private static String startedRoom(RoomRegistry registry) {
-    var code = registry.create("p0", "replica").room().code();
+    var code = registry.create("p0", null, "replica").room().code();
     for (var i = 1; i < 4; i++) {
       var name = "p" + i;
-      registry.update(code, room -> room.join(name, "replica"));
+      registry.update(code, room -> room.join(name, null, "replica"));
     }
     var ids =
         registry.find(code).orElseThrow().state().players().stream().map(p -> p.id()).toList();

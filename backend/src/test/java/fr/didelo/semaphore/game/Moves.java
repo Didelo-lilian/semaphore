@@ -23,7 +23,7 @@ public final class Moves {
    */
   public static Room startedRoom(Clock clock, UUID account) {
     var room = new Room("ABCDE", clock, new Random(7), 2, POOL);
-    room.join("p0", REPLICA);
+    room.join("p0", null, REPLICA);
     start(room, account);
     return room;
   }
@@ -37,16 +37,16 @@ public final class Moves {
 
   /** The code of a game like {@link #startedRoom} that {@code registry} holds. */
   public static String startedGame(RoomRegistry registry, UUID account) {
-    var code = registry.create("p0", REPLICA).room().code();
+    var code = registry.create("p0", null, REPLICA).room().code();
     registry.change(code, room -> start(room, account));
     return code;
   }
 
   /** Starts the game of a room where p0 sits alone: p1 to p3 join and the teams are made. */
   private static void start(Room room, UUID account) {
-    room.join("p1", REPLICA).setAccountId(account);
-    room.join("p2", REPLICA);
-    room.join("p3", REPLICA);
+    room.join("p1", account, REPLICA);
+    room.join("p2", null, REPLICA);
+    room.join("p3", null, REPLICA);
     var players = room.state().players();
     IntStream.range(0, 4)
         .forEach(

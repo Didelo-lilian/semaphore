@@ -186,8 +186,11 @@ public final class Room {
         && Duration.between(lastActivity, clock.instant()).compareTo(duration) > 0;
   }
 
-  /** {@code replica} is the one that holds the new player's connection. */
-  public Player join(String name, String replica) {
+  /**
+   * {@code replica} is the one that holds the new player's connection; {@code accountId} is null
+   * for a guest.
+   */
+  public Player join(String name, UUID accountId, String replica) {
     if (phase != Phase.LOBBY) {
       throw new IllegalMove("the game has started");
     }
@@ -196,6 +199,7 @@ public final class Room {
     }
     var player =
         new Player(UUID.randomUUID().toString(), UUID.randomUUID().toString(), PlayerName.of(name));
+    player.setAccountId(accountId);
     player.setReplica(replica);
     players.put(player.getId(), player);
     lastActivity = clock.instant();

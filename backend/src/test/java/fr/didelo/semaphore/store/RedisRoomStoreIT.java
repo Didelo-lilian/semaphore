@@ -78,7 +78,7 @@ class RedisRoomStoreIT extends RoomStoreContract {
     store.create(room.state());
     try (var connection = admin.connect()) {
       connection.sync().expire("room:" + room.code(), 100);
-      room.join("bob", "replica-1");
+      room.join("bob", null, "replica-1");
 
       store.replace(room.state(), loaded);
 

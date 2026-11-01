@@ -40,7 +40,9 @@ class RoomTest {
     Game(List<String> pool, Clock clock, int teamSize) {
       room = new Room("ABCDE", clock, new Random(7), 2, pool);
       players =
-          IntStream.range(0, 2 * teamSize).mapToObj(i -> room.join("p" + i, REPLICA)).toList();
+          IntStream.range(0, 2 * teamSize)
+              .mapToObj(i -> room.join("p" + i, null, REPLICA))
+              .toList();
       players.forEach(
           p ->
               room.apply(
@@ -115,7 +117,7 @@ class RoomTest {
     var room = new Room("ABCDE", Clock.systemUTC(), new Random(7), 2, POOL);
 
     for (var name : new String[] {"an\u0000a", "an\na", "an\u007fa", "an\u0085a", "an‮a", "an​a"}) {
-      assertThatThrownBy(() -> room.join(name, REPLICA))
+      assertThatThrownBy(() -> room.join(name, null, REPLICA))
           .isInstanceOf(IllegalMove.class)
           .hasMessage("a name has no control or format character");
     }
@@ -125,25 +127,25 @@ class RoomTest {
   void lobbyAcceptsPlayersWithValidNamesOnly() {
     var room = new Room("ABCDE", Clock.systemUTC(), new Random(1), 2, POOL);
 
-    assertThat(room.join("  Ana ", REPLICA).getName()).isEqualTo("Ana");
-    refuses(() -> room.join("   ", REPLICA), "name");
-    refuses(() -> room.join("x".repeat(21), REPLICA), "name");
+    assertThat(room.join("  Ana ", null, REPLICA).getName()).isEqualTo("Ana");
+    refuses(() -> room.join("   ", null, REPLICA), "name");
+    refuses(() -> room.join("x".repeat(21), null, REPLICA), "name");
   }
 
   @Test
   void aRoomHoldsAtMostTwelvePlayers() {
     var room = new Room("ABCDE", Clock.systemUTC(), new Random(1), 2, POOL);
-    IntStream.range(0, Room.MAX_PLAYERS).forEach(i -> room.join("p" + i, REPLICA));
+    IntStream.range(0, Room.MAX_PLAYERS).forEach(i -> room.join("p" + i, null, REPLICA));
 
-    refuses(() -> room.join("one too many", REPLICA), "full");
+    refuses(() -> room.join("one too many", null, REPLICA), "full");
   }
 
   @Test
   void onlyTheHostStartsAndEveryoneNeedsATeamOfEnoughPlayers() {
     var room = new Room("ABCDE", Clock.systemUTC(), new Random(1), 2, POOL);
-    var host = room.join("host", REPLICA);
-    var other = room.join("other", REPLICA);
-    var third = room.join("third", REPLICA);
+    var host = room.join("host", null, REPLICA);
+    var other = room.join("other", null, REPLICA);
+    var third = room.join("third", null, REPLICA);
 
     refuses(() -> room.apply(other.getId(), new Command.Start()), "host");
     refuses(() -> room.apply(host.getId(), new Command.Start()), "pick a team");
@@ -156,7 +158,7 @@ class RoomTest {
 
   @Test
   void nobodyJoinsOnceTheGameHasStarted() {
-    refuses(() -> new Game().room.join("late", REPLICA), "started");
+    refuses(() -> new Game().room.join("late", null, REPLICA), "started");
   }
 
   @Test
@@ -496,7 +498,7 @@ class RoomTest {
   @Test
   void aLobbyHasNothingToWatch() {
     var room = new Room("ABCDE", Clock.systemUTC(), new Random(1), 2, POOL);
-    room.join("host", REPLICA);
+    room.join("host", null, REPLICA);
 
     refuses(() -> room.watch(REPLICA), "not started");
   }
@@ -546,8 +548,8 @@ class RoomTest {
   @Test
   void aPlayerWhoLeavesTheLobbyIsGoneAtOnceAndTheHostSeatMovesOn() {
     var room = new Room("ABCDE", Clock.systemUTC(), new Random(1), 2, POOL);
-    var host = room.join("host", REPLICA);
-    var other = room.join("other", REPLICA);
+    var host = room.join("host", null, REPLICA);
+    var other = room.join("other", null, REPLICA);
 
     room.leave(host.getId());
 
@@ -561,8 +563,8 @@ class RoomTest {
   void aPlayerWhoDropsFromTheLobbyIsKeptOfflineForTheGracePeriodAndComesBackWithTheirTeam() {
     var clock = new MutableClock();
     var room = new Room("ABCDE", clock, new Random(1), 2, POOL);
-    var host = room.join("host", REPLICA);
-    var other = room.join("other", REPLICA);
+    var host = room.join("host", null, REPLICA);
+    var other = room.join("other", null, REPLICA);
     room.apply(host.getId(), new Command.JoinTeam(Team.BABORD));
 
     room.disconnect(host.getId(), REPLICA);
@@ -585,8 +587,8 @@ class RoomTest {
   void aLobbyDropsThePlayersAbsentForLongerThanTheGracePeriodAndTheHostSeatMovesOn() {
     var clock = new MutableClock();
     var room = new Room("ABCDE", clock, new Random(1), 2, POOL);
-    var host = room.join("host", REPLICA);
-    var other = room.join("other", REPLICA);
+    var host = room.join("host", null, REPLICA);
+    var other = room.join("other", null, REPLICA);
     room.disconnect(host.getId(), REPLICA);
     var before = room.viewFor(other.getId()).version();
 
@@ -606,16 +608,16 @@ class RoomTest {
     var room = new Room("ABCDE", Clock.systemUTC(), new Random(1), 2, POOL);
     var players =
         List.of(
-            room.join("a1", REPLICA),
-            room.join("a2", REPLICA),
-            room.join("b1", REPLICA),
-            room.join("b2", REPLICA));
+            room.join("a1", null, REPLICA),
+            room.join("a2", null, REPLICA),
+            room.join("b1", null, REPLICA),
+            room.join("b2", null, REPLICA));
     players.forEach(
         p ->
             room.apply(
                 p.getId(),
                 new Command.JoinTeam(players.indexOf(p) < 2 ? Team.BABORD : Team.TRIBORD)));
-    var ghost = room.join("ghost", REPLICA);
+    var ghost = room.join("ghost", null, REPLICA);
     refuses(() -> room.apply(players.get(0).getId(), new Command.Start()), "pick a team");
 
     room.leave(ghost.getId());
@@ -629,10 +631,10 @@ class RoomTest {
     var room = new Room("ABCDE", Clock.systemUTC(), new Random(1), 2, POOL);
     var players =
         List.of(
-            room.join("a1", REPLICA),
-            room.join("a2", REPLICA),
-            room.join("b1", REPLICA),
-            room.join("b2", REPLICA));
+            room.join("a1", null, REPLICA),
+            room.join("a2", null, REPLICA),
+            room.join("b1", null, REPLICA),
+            room.join("b2", null, REPLICA));
     players.forEach(
         p ->
             room.apply(

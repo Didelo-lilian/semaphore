@@ -12,6 +12,7 @@ import fr.didelo.semaphore.game.RoomRegistry;
 import fr.didelo.semaphore.game.RoomState;
 import fr.didelo.semaphore.game.RoomView;
 import fr.didelo.semaphore.game.Unavailable;
+import fr.didelo.semaphore.guest.Identity;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -19,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Queue;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.Function;
@@ -345,15 +347,33 @@ public class GameSocketHandler extends TextWebSocketHandler implements SmartLife
     }
   }
 
+  private record Who(String name, UUID accountId) {}
+
+  /**
+   * Who the connection speaks for: the session's name when the handshake found one, else the one
+   * the client asked for (a browser without a session, or an older front); the account only ever
+   * comes from the session.
+   */
+  private static Who who(WebSocketSession session, String asked) {
+    var attributes = session.getAttributes();
+    var account = (String) attributes.get(Identity.ACCOUNT_ID);
+    return new Who(
+        (String) attributes.getOrDefault(Identity.NAME, asked),
+        account == null ? null : UUID.fromString(account));
+  }
+
   private List<Delivery> create(WebSocketSession session, String id, String name) {
     requireToEnter(session);
-    var created = rooms.create(name, cluster.id());
+    var who = who(session, name);
+    var created = rooms.create(who.name(), who.accountId(), cluster.id());
     return welcome(session, id, created.room(), created.result());
   }
 
   private List<Delivery> enter(WebSocketSession session, String id, Room found, String name) {
     requireToEnter(session);
-    var joined = rooms.update(found.code(), room -> room.join(name, cluster.id()));
+    var who = who(session, name);
+    var joined =
+        rooms.update(found.code(), room -> room.join(who.name(), who.accountId(), cluster.id()));
     return welcome(session, id, joined.room(), joined.result());
   }
 

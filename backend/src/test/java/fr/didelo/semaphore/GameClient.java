@@ -12,7 +12,7 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * A player's connection to a replica: what the server sends is parsed, kept, the latest room too.
  */
-final class GameClient {
+public final class GameClient {
 
   private static final HttpClient HTTP = HttpClient.newHttpClient();
   private static final JsonMapper JSON = JsonMapper.builder().build();
@@ -23,10 +23,18 @@ final class GameClient {
   private volatile Integer closeCode;
   private volatile String closeReason;
 
-  GameClient(int port) {
+  public GameClient(int port) {
+    this(port, null);
+  }
+
+  /** {@code cookie} is a whole {@code name=value} the browser would send, null for none. */
+  public GameClient(int port, String cookie) {
+    var builder = HTTP.newWebSocketBuilder().header("Origin", "https://play.didelo.fr");
+    if (cookie != null) {
+      builder.header("Cookie", cookie);
+    }
     socket =
-        HTTP.newWebSocketBuilder()
-            .header("Origin", "https://play.didelo.fr")
+        builder
             .buildAsync(
                 URI.create("ws://localhost:" + port + "/ws"),
                 new WebSocket.Listener() {
@@ -63,16 +71,16 @@ final class GameClient {
             .join();
   }
 
-  void send(String message) {
+  public void send(String message) {
     socket.sendText(message, true).join();
   }
 
-  JsonNode room() {
+  public JsonNode room() {
     return room;
   }
 
   /** The first {@code joined} message, which holds the token. */
-  JsonNode joined() {
+  public JsonNode joined() {
     return history.stream()
         .filter(m -> m.path("type").asString().equals("joined"))
         .findFirst()

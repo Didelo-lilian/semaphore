@@ -128,6 +128,27 @@ class GameSocketHandlerTest {
     assertThat(json.readTree(lastPayload(bob)).path("room").path("players")).hasSize(2);
   }
 
+  /** What a replica that has no bots answers to the message of one that has. */
+  @Test
+  void aMessageOfATypeThisReplicaDoesNotKnowIsAnsweredWithAnErrorAndChangesNothing()
+      throws Exception {
+    var host = connect("host");
+    receive(host, "{\"type\":\"createRoom\",\"name\":\"Ana\"}");
+    var code = json.readTree(lastPayload(host)).path("room").path("code").asString();
+    var before = registry.find(code).orElseThrow().state();
+
+    receive(
+        host,
+        "{\"id\":\"7\",\"type\":\"summonBot\",\"team\":\"BABORD\",\"signaler\":true,\"level\":\"HARD\"}");
+
+    assertThat(json.readTree(lastPayload(host)).path("reason").asString())
+        .isEqualTo("unreadable message");
+    verify(host, never()).close(any());
+    assertThat(registry.find(code).orElseThrow().state()).isEqualTo(before);
+    receive(host, "{\"type\":\"joinTeam\",\"team\":\"BABORD\"}");
+    assertThat(json.readTree(lastPayload(host)).path("type").asString()).isEqualTo("roomUpdated");
+  }
+
   @Test
   void aBotOfALevelThatDoesNotExistIsRefused() throws Exception {
     var host = connect("host");

@@ -353,6 +353,17 @@ describe("Lobby with bots", () => {
     expect(screen.queryByRole("button", { name: "Difficile" })).toBeNull();
   });
 
+  it("offers no bot when the backend sends no `bot` field at all", () => {
+    const people = [player("a", "BABORD", true), player("b", "TRIBORD")].map(
+      ({ bot: _bot, ...person }) => person,
+    );
+    renderLobby(people);
+
+    expect(screen.queryByRole("button", { name: /Ajouter un bot/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Difficile" })).toBeNull();
+    expect(screen.getByText("a (toi) · hôte")).toBeInTheDocument();
+  });
+
   it("does not count a bot among the people online", () => {
     renderLobby([
       player("a", "BABORD", true),

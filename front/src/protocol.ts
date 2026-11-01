@@ -21,8 +21,8 @@ const playerSchema = z.object({
   connected: z.boolean(),
   host: z.boolean(),
   signaler: z.boolean(),
-  // The level of a bot, null for a person, and absent from a backend that has no bots yet.
-  bot: levelSchema.nullable().default(null),
+  // The level of a bot, null for a person. Absent from a backend that has no bots: the lobby then offers none.
+  bot: levelSchema.nullable().optional(),
 });
 export type Player = z.infer<typeof playerSchema>;
 

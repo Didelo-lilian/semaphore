@@ -87,7 +87,7 @@ describe("server messages", () => {
     );
   });
 
-  it("reads a player of a backend that has no bots as a person", () => {
+  it("reads a player of a backend that has no bots, with no `bot` at all", () => {
     const person = Object.fromEntries(
       Object.entries(signaler.room.players[0] ?? {}).filter(
         ([key]) => key !== "bot",
@@ -97,6 +97,9 @@ describe("server messages", () => {
       ...signaler,
       room: { ...signaler.room, players: [person] },
     });
-    expect(message).toMatchObject({ room: { players: [{ bot: null }] } });
+    expect(message).toMatchObject({ room: { players: [{ name: "Ana" }] } });
+    expect(
+      message.type === "roomUpdated" ? message.room.players[0] : undefined,
+    ).not.toHaveProperty("bot");
   });
 });

@@ -223,9 +223,7 @@ export const Table = ({
                     {player.name}
                     {player.id === room.you ? " (toi)" : ""}
                     {player.signaler ? " · Signaleur" : ""}
-                    {player.bot !== null
-                      ? ` · niveau ${LEVEL_NAME[player.bot]}`
-                      : ""}
+                    {player.bot ? ` · niveau ${LEVEL_NAME[player.bot]}` : ""}
                     {player.connected ? "" : " · hors ligne"}
                   </li>
                 ))}

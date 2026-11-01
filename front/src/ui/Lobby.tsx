@@ -47,7 +47,7 @@ export const PlayerChip = ({
         you ? "(toi)" : "",
         player.host ? "· hôte" : "",
         player.team !== null && player.signaler ? "· Signaleur" : "",
-        player.bot !== null ? `· niveau ${LEVEL_NAME[player.bot]}` : "",
+        player.bot ? `· niveau ${LEVEL_NAME[player.bot]}` : "",
         player.connected ? "" : "· hors ligne",
       ]
         .filter(Boolean)
@@ -96,6 +96,8 @@ export const Lobby = ({
     );
 
   const isHost = me?.host === true;
+  // A backend that has no bots sends no `bot` at all: it would refuse the messages that seat one.
+  const canAddBots = isHost && room.players.every((p) => p.bot !== undefined);
   const full = room.players.length >= MAX_PLAYERS;
 
   const chips = (players: Player[]) =>
@@ -107,9 +109,7 @@ export const Lobby = ({
         motion={motionOf(player.id)}
         onSettle={() => settle(player.id)}
         onRemove={
-          isHost && player.bot !== null
-            ? () => onRemoveBot(player.id)
-            : undefined
+          canAddBots && player.bot ? () => onRemoveBot(player.id) : undefined
         }
       />
     ));
@@ -140,7 +140,7 @@ export const Lobby = ({
 
       {error !== null && <Alert severity="error">{explain(error)}</Alert>}
 
-      {isHost && (
+      {canAddBots && (
         <div className="sem-bot-level">
           <span id="bot-level">Niveau des bots</span>
           <fieldset className="sem-numbers" aria-labelledby="bot-level">
@@ -183,7 +183,7 @@ export const Lobby = ({
                   Rejoindre {TEAM_NAME[team]}
                 </Button>
               )}
-              {isHost && (
+              {canAddBots && (
                 <div className="sem-actions">
                   <Button
                     variant="text"

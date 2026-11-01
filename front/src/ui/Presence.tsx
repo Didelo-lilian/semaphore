@@ -8,7 +8,7 @@ export const Presence = ({
   players: Player[];
   spectators?: number;
 }) => {
-  const people = players.filter((player) => player.bot === null);
+  const people = players.filter((player) => !player.bot);
   const online = people.filter((player) => player.connected).length;
   const watching =
     spectators === 1

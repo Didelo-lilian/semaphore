@@ -859,6 +859,30 @@ describe("signing in", () => {
       );
     });
 
+    it("tells the refusal of the last attempt, not of an earlier one", async () => {
+      const calls = server(account);
+      calls.mockImplementation(async (url, init) =>
+        url === "/api/me"
+          ? json(200, account)
+          : new Response(null, {
+              status: init?.method === "DELETE" ? 403 : 500,
+            }),
+      );
+      await mount("/");
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Se déconnecter" }),
+      );
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        /code 500\) : tu es toujours connecté/,
+      );
+      await deleteAccount();
+      await waitFor(() =>
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          /code 403\) : ton compte n'est pas supprimé/,
+        ),
+      );
+    });
+
     it("says the server did not answer when it did not", async () => {
       const calls = server(account);
       calls.mockImplementation(async (url) => {

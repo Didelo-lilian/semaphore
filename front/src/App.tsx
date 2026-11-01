@@ -149,8 +149,15 @@ export const HomePage = () => {
                 failure:
                   failureOf("signOut", signOut.error) ??
                   failureOf("delete", deleteAccount.error),
-                onSignOut: () => signOut.mutate(),
-                onDelete: () => deleteAccount.mutate(),
+                // The message is the one of the last attempt, not of an earlier refusal of the other action.
+                onSignOut: () => {
+                  deleteAccount.reset();
+                  signOut.mutate();
+                },
+                onDelete: () => {
+                  signOut.reset();
+                  deleteAccount.mutate();
+                },
               }
             : null
         }

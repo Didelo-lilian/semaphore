@@ -1,5 +1,7 @@
 package fr.didelo.semaphore;
 
+import java.util.UUID;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
@@ -21,6 +23,16 @@ public final class Postgres {
 
   public static PostgreSQLContainer shared() {
     return CONTAINER;
+  }
+
+  /** A row of {@code account}, for the tests that need a seat to point at one. */
+  public static UUID account(JdbcClient jdbc) {
+    var id = UUID.randomUUID();
+    jdbc.sql(
+            "INSERT INTO account (id, provider, subject, display_name) VALUES (?, 'github', ?, 'ana')")
+        .params(id, id.toString())
+        .update();
+    return id;
   }
 
   /** Points the backend of a test at a Postgres that is started. */

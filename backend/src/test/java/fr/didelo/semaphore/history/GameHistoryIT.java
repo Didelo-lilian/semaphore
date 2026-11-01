@@ -62,7 +62,7 @@ class GameHistoryIT {
   @Test
   void aGameIsWrittenWithItsPlayersAndWhoTheyAre() {
     var id = UUID.randomUUID();
-    var account = UUID.randomUUID();
+    var account = Postgres.account(jdbc);
 
     assertThat(history.record(result(id, account))).isTrue();
 
@@ -103,7 +103,7 @@ class GameHistoryIT {
   @Test
   void aGameThatIsAlreadyThereIsLeftAsItIs() {
     var id = UUID.randomUUID();
-    var late = UUID.randomUUID();
+    var late = Postgres.account(jdbc);
     assertThat(history.record(result(id, null))).isTrue();
 
     assertThat(history.record(result(id, late))).isFalse();
@@ -126,7 +126,7 @@ class GameHistoryIT {
                       replicas.submit(
                           () -> {
                             go.await();
-                            return history.record(result(id, UUID.randomUUID()));
+                            return history.record(result(id, Postgres.account(jdbc)));
                           }))
               .toList();
       go.countDown();
@@ -140,6 +140,94 @@ class GameHistoryIT {
     assertThat(written).isOne();
     assertThat(count("game", "id", id)).isOne();
     assertThat(count("game_player", "game_id", id)).isEqualTo(4);
+  }
+
+  @Test
+  void forgettingAnAccountKeepsTheTableAndDropsTheGamesNobodyIsLeftIn() {
+    var gone = Postgres.account(jdbc);
+    var stays = Postgres.account(jdbc);
+    var shared = UUID.randomUUID();
+    var alone = UUID.randomUUID();
+    history.record(
+        new GameResult(
+            shared,
+            Instant.parse("2026-10-25T12:00:00Z"),
+            Team.BABORD,
+            EndReason.COMPLETE,
+            List.of(
+                new Participant("p1", "ana", Team.BABORD, Role.SIGNALER, gone),
+                new Participant("p2", "bob", Team.BABORD, Role.LOOKOUT, stays),
+                new Participant("p3", "cleo", Team.TRIBORD, Role.SIGNALER, null))));
+    history.record(result(alone, gone));
+
+    history.forget(gone);
+
+    assertThat(count("game", "id", alone)).isZero();
+    assertThat(count("game_player", "game_id", alone)).isZero();
+    assertThat(count("game", "id", shared)).isOne();
+    assertThat(
+            jdbc.sql(
+                    "SELECT name || ' ' || coalesce(account_id::text, '-') FROM game_player WHERE game_id = ? ORDER BY player_id")
+                .param(shared)
+                .query(String.class)
+                .list())
+        .containsExactly("a former player -", "bob " + stays, "cleo -");
+    assertThat(count("game_player", "account_id", gone)).isZero();
+  }
+
+  @Test
+  void aSeatWhoseAccountWasDeletedMeanwhileIsWrittenAsAGuestAndTheGameIsKept() {
+    var id = UUID.randomUUID();
+    var deleted = UUID.randomUUID();
+
+    assertThat(history.record(result(id, deleted))).isTrue();
+
+    assertThat(count("game", "id", id)).isOne();
+    assertThat(count("game_player", "game_id", id)).isEqualTo(4);
+    assertThat(count("game_player", "account_id", deleted)).isZero();
+  }
+
+  @Test
+  void twoPeopleOfOneGameForgottenAtOnceDropTheGame() throws Exception {
+    try (var forgetters = Executors.newFixedThreadPool(2)) {
+      for (var round = 0; round < 20; round++) {
+        var first = Postgres.account(jdbc);
+        var second = Postgres.account(jdbc);
+        var id = UUID.randomUUID();
+        history.record(
+            new GameResult(
+                id,
+                Instant.parse("2026-10-25T12:00:00Z"),
+                Team.BABORD,
+                EndReason.COMPLETE,
+                List.of(
+                    new Participant("p1", "ana", Team.BABORD, Role.SIGNALER, first),
+                    new Participant("p2", "bob", Team.TRIBORD, Role.SIGNALER, second))));
+        var go = new CountDownLatch(1);
+        var forgets =
+            List.of(first, second).stream()
+                .map(
+                    account ->
+                        forgetters.submit(
+                            () -> {
+                              go.await();
+                              history.forget(account);
+                              return null;
+                            }))
+                .toList();
+        go.countDown();
+        for (var forget : forgets) {
+          forget.get(10, TimeUnit.SECONDS);
+        }
+
+        assertThat(count("game", "id", id)).as("round " + round).isZero();
+      }
+    }
+  }
+
+  @Test
+  void forgettingAnAccountWithNoGameDoesNothing() {
+    history.forget(Postgres.account(jdbc));
   }
 
   @Test

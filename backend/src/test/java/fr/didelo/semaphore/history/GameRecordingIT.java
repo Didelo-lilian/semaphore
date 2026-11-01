@@ -57,7 +57,7 @@ class GameRecordingIT {
 
   @Test
   void aGameThatEndsWithAnAccountInItIsWrittenOnce() {
-    var code = Moves.startedGame(registry, UUID.randomUUID());
+    var code = Moves.startedGame(registry, Postgres.account(jdbc));
 
     registry.change(code, room -> Moves.win(room, Team.TRIBORD));
 
@@ -104,7 +104,7 @@ class GameRecordingIT {
         .doCallRealMethod()
         .when(history)
         .record(any(GameResult.class));
-    var code = Moves.startedGame(registry, UUID.randomUUID());
+    var code = Moves.startedGame(registry, Postgres.account(jdbc));
 
     registry.change(code, room -> Moves.win(room, Team.BABORD));
 

@@ -53,13 +53,26 @@ SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/semaphore SPRING_DATASOUR
 
 ### Guests
 
-A browser can be someone outside any room: `PUT /api/me {"name": "ana"}` makes it a guest, `GET /api/me` says who it is (`anonymous` or `guest`, with its `id` and `name`) and `DELETE /api/me` forgets it. The pseudo follows the rule of a name in a room (1 to 20 characters, no control character). The guest is a session kept in Valkey, so both replicas know it and a deploy signs nobody out; without `SEMAPHORE_REDIS_URL` it is in the memory of the process. The cookie is `__Host-session` (`HttpOnly`, `Secure`, `SameSite=Lax`, written once for 30 days and never renewed), and the server forgets a guest after 7 days without use. The HTTP endpoints are protected against CSRF: the page sends the value of the `__Host-XSRF-TOKEN` cookie, which `GET /api/me` hands out, in `X-XSRF-TOKEN`. The choices are in [ADR 0010](docs/adr/0010-guest-sessions-in-valkey.md).
+A browser can be someone outside any room: `PUT /api/me {"name": "ana"}` makes it a guest, `GET /api/me` says who it is (`anonymous`, `guest` or `account`, with its `id` and `name`) and `DELETE /api/me` forgets it. The pseudo follows the rule of a name in a room (1 to 20 characters, no control or format character). The guest is a session kept in Valkey, so both replicas know it and a deploy signs nobody out; without `SEMAPHORE_REDIS_URL` it is in the memory of the process. The cookie is `__Host-session` (`HttpOnly`, `Secure`, `SameSite=Lax`, written once for 30 days and never renewed), and the server forgets a guest after 7 days without use. The HTTP endpoints are protected against CSRF: the page sends the value of the `__Host-XSRF-TOKEN` cookie, which `GET /api/me` hands out, in `X-XSRF-TOKEN`. The choices are in [ADR 0010](docs/adr/0010-guest-sessions-in-valkey.md).
 
 ```bash
 curl -si localhost:8080/api/me   # {"kind":"anonymous"} and the token cookie
 ```
 
-A `Secure` cookie is accepted over plain HTTP on `localhost` by Chromium; a browser that refuses it just does not keep the guest. In production Traefik sends only `/ws` to the backend until the router for `/api` is in [infra](https://github.com/Didelo-lilian/infra).
+A `Secure` cookie is accepted over plain HTTP on `localhost` by Chromium; a browser that refuses it just does not keep the guest. In production Traefik sends `/ws` and `/api` to the backend ([infra](https://github.com/Didelo-lilian/infra)).
+
+### Sign-in
+
+A guest can sign in with GitHub or Google: `GET /api/auth/login/github` (or `google`) sends the browser to the provider, `GET /api/auth/callback/{provider}` brings it back, `POST /api/auth/logout` ends the session and `DELETE /api/auth/account` deletes the account. The front starts a login from the home page, once the player has a pseudo (without one the browser lands on `/?login=pseudo`); a login that fails for any reason lands on `/?login=failed`. `GET /api/me` then answers `account`, and lists the `providers` that are on (the front draws their buttons) when the browser is not signed in. The flow is the authorization code with `state` and PKCE, kept in Valkey for ten minutes under the cookie `__Host-login`; nothing the provider returns is stored, not even its token: an account is one row, `(provider, subject, display_name)`, with no e-mail and no avatar. A guest and an account are never merged. The choices are in [ADR 0011](docs/adr/0011-sign-in-with-github-or-google.md).
+
+There is no sign-in by default: a provider is on when its client id and its secret are both set, and it needs a database for the accounts. In production the four values are secret files read by `configtree` (`semaphore.auth.github.client-id`, `.client-secret`, and the same for `google`); locally, with applications of your own whose callback is `http://localhost:8080/api/auth/callback/github` (or `google`):
+
+```bash
+SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/semaphore SPRING_DATASOURCE_USERNAME=postgres SPRING_DATASOURCE_PASSWORD=secret \
+SEMAPHORE_AUTH_GITHUB_CLIENT_ID=... SEMAPHORE_AUTH_GITHUB_CLIENT_SECRET=... ./gradlew bootRun
+```
+
+The tests never reach a provider: they play GitHub and Google with `mock-oauth2-server`.
 
 ### Word vectors for the bots
 
@@ -217,21 +230,29 @@ flowchart LR
       sweeper["RoomSweeper<br/>turn every second, lobby presence every 5 s,<br/>dead replicas every 5 s, idle rooms every minute,<br/>each under a Redis lock"]
       registry["RoomRegistry<br/>load, apply, save if the version is unchanged<br/>(5 tries), 5-character codes"]
       room["Room<br/>the only place that knows the rules"]
-      me["MeController<br/>/api/me: the guest of a browser,<br/>CSRF token, session cookie"]
+      me["MeController<br/>/api/me: the guest or account of a browser,<br/>CSRF token, session cookie"]
+      auth["SignInConfig, AuthController<br/>/api/auth: login and callback with state and PKCE,<br/>logout, delete the account"]
       words[("words.txt<br/>160 French nouns")]
       recorder["GameRecorder (only with a database)<br/>its own thread, writes a game that has ended<br/>with an account in it, once"]
     end
     other["Replica 2<br/>the same image, its own connections"]
-    redis[("Redis (Valkey)<br/>room:{code}: version + state<br/>channel rooms: changed (code, version),<br/>seat taken (code, player)<br/>replica:{id}: heartbeat 15 s<br/>lock:{name}<br/>session:sessions:{id}: a guest, 30 days")]
-    postgres[("Postgres (optional)<br/>game, game_player<br/>migrated by Flyway at start")]
+    redis[("Redis (Valkey)<br/>room:{code}: version + state<br/>channel rooms: changed (code, version),<br/>seat taken (code, player)<br/>replica:{id}: heartbeat 15 s<br/>lock:{name}<br/>session:sessions:{id}: a guest or an account, 30 days<br/>login:{id}: a login in flight, 10 minutes")]
+    postgres[("Postgres (optional)<br/>account, game, game_player<br/>migrated by Flyway at start")]
   end
+  idp([GitHub, Google])
 
   player -->|"HTTPS, WSS"| traefik
   traefik -->|"/"| front
   traefik -->|"/ws"| handler
   traefik -->|"/ws"| other
-  traefik -->|"/api (router to add in infra)"| me
-  me <-->|"session: guest.id, guest.name"| redis
+  traefik -->|"/api"| me
+  traefik -->|"/api/auth"| auth
+  me <-->|"session: guest.id, guest.name, account.id"| redis
+  me -->|"read, rename the account"| postgres
+  auth <-->|"the login in flight, the new session"| redis
+  auth -->|"find or create the account"| postgres
+  auth -->|"code exchange, 3 s to connect, 5 s to read"| idp
+  player -.->|"consent"| idp
   handler -->|"create, find, change"| registry
   sweeper --> registry
   registry -->|"builds a grid from"| words
@@ -299,6 +320,7 @@ sequenceDiagram
 | Redis | `RedisClusterIT`, `RedisReplicasIT`, `RedisLateStartIT`, `StoreCostIT` | against a real Valkey: the heartbeat that expires, a lock taken by one replica, a channel that subscribes again after a break; two backends started in one test with real WebSocket clients (see each other, hidden cards, rejoin elsewhere, a stopped replica, players marked absent when its heartbeat runs out, a lost message caught up, a write refused for memory); the heartbeat and the locks still taken when Redis is full; a backend started before Redis, healthy and refusing cleanly until Redis arrives; the cost of a command |
 | History | `GameResultTest`, `GameHistoryIT`, `GameRecorderTest`, `GameRecordingIT` | how a game ended and who it was played by (all the words of a team, even the last one revealed by the other team, a second reef, a forfeit, the Signaleur of each team, the accounts, no result before the game is over), a game written with its players and who they are, a game that is already there left as it is (also when four replicas write it at once), a write that fails halfway leaving nothing, a game of guests only not written, a write that fails logged without killing the thread of the recorder, and the whole path from a game ended in the registry to its rows, written once, including a first write that fails and the sweep that writes it |
 | Database | `NoDatabaseTest`, `DatabaseIT`, `DatabaseDownIT`, `DatabaseHangsIT` | without a URL no `DataSource` and no Flyway (every other test of the backend runs that way), against a real Postgres 18 the migrations ran and a query works with the pool of the settings, the health check stays up, with no database component, once Postgres is stopped, and a statement on a frozen Postgres fails after the socket timeout instead of holding its thread |
+| Sign-in | `ProvidersTest`, `SignInWithoutDatabaseTest`, `SignInIT`, `SignInTimeoutIT`, `SignInInValkeyIT`, `MeApiTest` | a provider is on only with its id and its secret and a database, GitHub with no scope and Google with `openid` alone; against `mock-oauth2-server` playing both and a real Postgres: the redirect carries `state`, the PKCE challenge and, for Google, the nonce, and the code is exchanged with the verifier of that challenge; a login with no pseudo, an unknown provider, a wrong `state`, a missing login cookie, a replayed callback and a refused consent never create an account; an account is created once per identity (two at two providers), the session id changes and the old one is dead, the account is renamed and deleted (another browser learns it at its next call), logout and deletion need the CSRF token, and so does anything but a `GET` on the login routes; a code exchange whose headers never come fails after five seconds; a login that meets Valkey or the database out of reach lands on `/?login=failed`; an account session older than the cookie is a guest's; over a real Valkey a login started on one replica ends on the other, and the session in Valkey holds its four plain attributes and nothing of the provider, the id it had before the login being gone |
 | WebSocket | `WebSocketIT` | the application on a random port, driven by the JDK's WebSocket client: create, join, leaving the lobby on purpose, a dropped lobby player shown offline and coming back with their seat, rejoin with a token, a new connection replacing the old, errors and missing fields, the id of a message echoed on its answer and absent from what goes to the others, a started game, a turn that passes at once when the Signaleur in play leaves, a spectator who watches a game, is counted, never receives the key before the end over a real game played to its last reef, has every command refused, the 21st refused, a connection closed at its 5th unknown room code (join, watch and rejoin counted together, the refusal of the 5th never sent, a success not resetting the count, a valid rejoin never blocked, a seat whose room was swept costing one miss), whatever a closed connection keeps sending ignored, refused origin |
 | Handler | `GameSocketHandlerTest` | a broken connection does not stop the others, a room that could not be entered is not kept, one room per connection, the sweep telling the lobby that an absent player is gone, the sweep passing the turn of a game that waits for an absent Signaleur, a `leave` without a seat refused, the count of unknown room codes going with the connection, a message that arrives after the close ignored, a store that is unavailable answered with an error, and a rejoin answered with a close of both connections that makes the front try again |
 | Protocol | `protocol.test.ts` | the Zod schemas read messages captured from the real backend (lobby join and answered update with their id, Signaleur's view, lookout's view without one, a view with the seconds left before the turn passes, a spectator's view with no player of its own, error with its id) and refuse anything else |

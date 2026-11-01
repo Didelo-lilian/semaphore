@@ -13,6 +13,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfToken;
+import org.springframework.security.web.csrf.CsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -28,11 +29,17 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Configuration
 class SecurityConfig {
 
+  /** The double submit of ADR 0010, shared with the chain of the sign-in (ADR 0011). */
   @Bean
-  SecurityFilterChain filters(HttpSecurity http) {
+  CsrfTokenRepository csrfTokens() {
     var tokens = CookieCsrfTokenRepository.withHttpOnlyFalse();
     tokens.setCookieName("__Host-XSRF-TOKEN");
     tokens.setCookieCustomizer(cookie -> cookie.secure(true).path("/").sameSite("Lax"));
+    return tokens;
+  }
+
+  @Bean
+  SecurityFilterChain filters(HttpSecurity http, CsrfTokenRepository tokens) {
     return http.authorizeHttpRequests(requests -> requests.anyRequest().permitAll())
         .sessionManagement(AbstractHttpConfigurer::disable)
         .securityContext(AbstractHttpConfigurer::disable)

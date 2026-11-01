@@ -150,7 +150,7 @@ class SignInIT {
     var response = browser.request("GET", "/api/auth/login/github");
 
     assertThat(response.statusCode()).isEqualTo(302);
-    assertThat(landing(response)).isEqualTo("/?login=pseudo");
+    assertThat(landing(response)).isEqualTo("/?login=pseudo&provider=github");
     assertThat(browser.cookie("__Host-login")).isNull();
   }
 
@@ -378,7 +378,7 @@ class SignInIT {
 
     var back = browser.request("GET", callback);
 
-    assertThat(landing(back)).isEqualTo("/?login=pseudo");
+    assertThat(landing(back)).isEqualTo("/?login=pseudo&provider=github");
     assertThat(accountsOf("github", subject)).isEmpty();
   }
 

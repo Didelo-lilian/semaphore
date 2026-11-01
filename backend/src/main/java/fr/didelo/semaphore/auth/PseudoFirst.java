@@ -31,7 +31,9 @@ final class PseudoFirst extends OncePerRequestFilter {
       throws ServletException, IOException {
     var session = request.getSession(false);
     if (session == null || session.getAttribute(SessionKeys.GUEST_NAME) == null) {
-      response.sendRedirect("/?login=pseudo");
+      response.sendRedirect(
+          "/?login=pseudo&provider="
+              + request.getRequestURI().substring(Providers.LOGIN.length() + 1));
     } else if (accounts.signedIn(session).isPresent()) {
       response.sendRedirect("/");
     } else {

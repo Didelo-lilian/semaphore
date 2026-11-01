@@ -35,12 +35,12 @@ class LoginOutcome implements AuthenticationSuccessHandler, AuthenticationFailur
       throws IOException {
     var session = request.getSession(false);
     var pseudo = session == null ? null : (String) session.getAttribute(SessionKeys.GUEST_NAME);
+    var login = (OAuth2AuthenticationToken) authentication;
     if (pseudo == null) {
       // The session ended while the player was at the provider's.
-      response.sendRedirect("/?login=pseudo");
+      response.sendRedirect("/?login=pseudo&provider=" + login.getAuthorizedClientRegistrationId());
       return;
     }
-    var login = (OAuth2AuthenticationToken) authentication;
     Accounts.Account account;
     try {
       account =

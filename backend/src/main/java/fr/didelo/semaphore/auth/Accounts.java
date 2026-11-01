@@ -4,6 +4,7 @@ import fr.didelo.semaphore.history.GameHistory;
 import java.util.Optional;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -15,6 +16,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class Accounts {
 
   public record Account(UUID id, String displayName) {}
+
+  private static final RowMapper<Account> ROW =
+      (rows, i) -> new Account(rows.getObject("id", UUID.class), rows.getString("display_name"));
 
   private final JdbcClient jdbc;
   private final GameHistory history;
@@ -36,18 +40,14 @@ public class Accounts {
         .param("provider", provider)
         .param("subject", subject)
         .param("name", displayName)
-        .query(
-            (rows, i) ->
-                new Account(rows.getObject("id", UUID.class), rows.getString("display_name")))
+        .query(ROW)
         .single();
   }
 
   public Optional<Account> find(UUID id) {
     return jdbc.sql("SELECT id, display_name FROM account WHERE id = :id")
         .param("id", id)
-        .query(
-            (rows, i) ->
-                new Account(rows.getObject("id", UUID.class), rows.getString("display_name")))
+        .query(ROW)
         .optional();
   }
 

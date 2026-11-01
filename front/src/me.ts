@@ -9,6 +9,7 @@ import { z } from "zod";
 const meSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("anonymous") }),
   z.object({ kind: z.literal("guest"), id: z.string(), name: z.string() }),
+  z.object({ kind: z.literal("account"), id: z.string(), name: z.string() }),
 ]);
 
 /** Who the server says this browser is, outside any room (ADR 0010). */

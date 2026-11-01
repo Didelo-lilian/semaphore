@@ -1,7 +1,9 @@
 package fr.didelo.semaphore.guest;
 
+import fr.didelo.semaphore.auth.Accounts;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.server.ServerHttpRequest;
@@ -25,11 +27,9 @@ import org.springframework.web.socket.server.HandshakeInterceptor;
 @RequiredArgsConstructor
 public class HandshakeIdentity implements HandshakeInterceptor {
 
-  private static final List<String> NAMES =
-      List.of(Identity.ID, Identity.NAME, Identity.ACCOUNT_ID);
-
   private final SessionRepository<?> sessions;
   private final CookieSerializer cookies;
+  private final Optional<Accounts> accounts;
 
   @Override
   public boolean beforeHandshake(
@@ -42,12 +42,21 @@ public class HandshakeIdentity implements HandshakeInterceptor {
       try {
         var session = sessions.findById(ids.getFirst());
         if (session != null) {
-          for (var name : NAMES) {
+          for (var name : List.of(SessionKeys.GUEST_ID, SessionKeys.GUEST_NAME)) {
             var value = session.getAttribute(name);
             if (value != null) {
               attributes.put(name, value);
             }
           }
+          // A login too old for the cookie is no login; the account is not read in the database,
+          // which the game does not need (ADR 0013): the history writes a deleted one as a guest.
+          accounts
+              .flatMap(
+                  accounts ->
+                      accounts.signedIn(
+                          session.getAttribute(SessionKeys.ACCOUNT_ID),
+                          session.getAttribute(SessionKeys.ACCOUNT_AT)))
+              .ifPresent(account -> attributes.put(SessionKeys.ACCOUNT_ID, account));
         }
       } catch (RuntimeException e) {
         log.debug("The session of a handshake cannot be read: {}", e.toString());

@@ -12,7 +12,7 @@ import fr.didelo.semaphore.game.RoomRegistry;
 import fr.didelo.semaphore.game.RoomState;
 import fr.didelo.semaphore.game.RoomView;
 import fr.didelo.semaphore.game.Unavailable;
-import fr.didelo.semaphore.guest.Identity;
+import fr.didelo.semaphore.guest.SessionKeys;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -356,11 +356,9 @@ public class GameSocketHandler extends TextWebSocketHandler implements SmartLife
    */
   private static Who who(WebSocketSession session, String asked) {
     var attributes = session.getAttributes();
-    // toString: a session kept in memory holds what was put in it (a UUID), Valkey gives a string.
-    var account = Objects.toString(attributes.get(Identity.ACCOUNT_ID), null);
     return new Who(
-        Objects.toString(attributes.get(Identity.NAME), asked),
-        account == null ? null : UUID.fromString(account));
+        Objects.toString(attributes.get(SessionKeys.GUEST_NAME), asked),
+        (UUID) attributes.get(SessionKeys.ACCOUNT_ID));
   }
 
   private List<Delivery> create(WebSocketSession session, String id, String name) {

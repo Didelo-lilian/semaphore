@@ -13,6 +13,18 @@ afterEach(() => {
 });
 
 describe("fetchMe", () => {
+  it("reads a player who signed in, with the providers the server lists", async () => {
+    answer(200, {
+      kind: "account",
+      id: "a1",
+      name: "Ana",
+      providers: ["github"],
+    });
+    expect(await fetchMe()).toEqual({ kind: "account", id: "a1", name: "Ana" });
+    answer(200, { kind: "anonymous", providers: ["github", "google"] });
+    expect(await fetchMe()).toEqual({ kind: "anonymous" });
+  });
+
   it("reads an anonymous visitor and a guest", async () => {
     answer(200, { kind: "anonymous" });
     expect(await fetchMe()).toEqual({ kind: "anonymous" });

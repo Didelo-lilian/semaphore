@@ -49,7 +49,8 @@ export const HomePage = () => {
   const enter = useCommand((joined) =>
     navigate({ to: "/salon/$code", params: { code: joined.code } }),
   );
-  const guest = me.data?.kind === "guest" ? me.data : null;
+  const named =
+    me.data == null || me.data.kind === "anonymous" ? null : me.data;
 
   const go = async (name: string, message: ClientMessage) => {
     // Always saved, not only when it differs from what this page read: another tab may have
@@ -68,8 +69,8 @@ export const HomePage = () => {
     <>
       <Home
         invited={room ?? null}
-        initialName={guest?.name ?? ""}
-        remembered={guest !== null}
+        initialName={named?.name ?? ""}
+        remembered={named !== null}
         busy={enter.isPending || saveName.isPending}
         error={enter.error?.message ?? snapshot.error}
         onCreate={(name) => go(name, { type: "createRoom", name })}

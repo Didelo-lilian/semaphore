@@ -6,6 +6,7 @@ import static org.awaitility.Awaitility.await;
 import fr.didelo.semaphore.GameClient;
 import fr.didelo.semaphore.game.RoomRegistry;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -39,10 +40,11 @@ class GuestIdentityIT {
     return client.room().path("code").asString();
   }
 
-  private String sessionCookie(String name, Object account) {
+  private String sessionCookie(String name, UUID account) {
     var session = sessions.createSession();
-    session.setAttribute(Identity.NAME, name);
-    session.setAttribute(Identity.ACCOUNT_ID, account);
+    session.setAttribute(SessionKeys.GUEST_NAME, name);
+    session.setAttribute(SessionKeys.ACCOUNT_ID, account.toString());
+    session.setAttribute(SessionKeys.ACCOUNT_AT, Long.toString(Instant.now().getEpochSecond()));
     sessions.save(session);
     return "__Host-session=" + Base64.getEncoder().encodeToString(session.getId().getBytes());
   }
@@ -95,23 +97,12 @@ class GuestIdentityIT {
   }
 
   @Test
-  void theAccountOfTheSessionReachesThePlayerAsValkeyHoldsIt() {
-    var account = UUID.randomUUID();
-    try (var client = new GameClient(port, sessionCookie("zoe", account.toString()))) {
+  void anAccountInTheSessionMeansNothingWhereNobodyCanSignIn() {
+    try (var client = new GameClient(port, sessionCookie("zoe", UUID.randomUUID()))) {
       client.send("{\"type\":\"createRoom\",\"name\":\"mallory\"}");
 
       assertThat(firstPlayerName(client)).isEqualTo("zoe");
-      assertThat(accountOf(client)).isEqualTo(account);
-    }
-  }
-
-  @Test
-  void theAccountOfTheSessionReachesThePlayerAsTheMemoryHoldsIt() {
-    var account = UUID.randomUUID();
-    try (var client = new GameClient(port, sessionCookie("zoe", account))) {
-      client.send("{\"type\":\"createRoom\",\"name\":\"mallory\"}");
-
-      assertThat(accountOf(client)).isEqualTo(account);
+      assertThat(accountOf(client)).isNull();
     }
   }
 }

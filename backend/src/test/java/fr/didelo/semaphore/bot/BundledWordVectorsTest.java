@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import fr.didelo.semaphore.bot.WordVectors.Neighbour;
 import fr.didelo.semaphore.game.WordList;
 import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.util.Comparator;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 
@@ -17,7 +19,7 @@ class BundledWordVectorsTest {
     try {
       return new BotConfig().wordVectors();
     } catch (IOException e) {
-      throw new java.io.UncheckedIOException(e);
+      throw new UncheckedIOException(e);
     }
   }
 
@@ -59,6 +61,6 @@ class BundledWordVectorsTest {
     assertThat(neighbours).hasSize(10).extracting(Neighbour::word).contains("chats", "chien");
     assertThat(neighbours)
         .extracting(Neighbour::similarity)
-        .isSortedAccordingTo(java.util.Comparator.reverseOrder());
+        .isSortedAccordingTo(Comparator.reverseOrder());
   }
 }

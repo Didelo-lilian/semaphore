@@ -26,7 +26,9 @@ source = here / ".cache" / SOURCE_URL.rsplit("/", 1)[1]
 
 if not source.exists():
     source.parent.mkdir(exist_ok=True)
-    urllib.request.urlretrieve(SOURCE_URL, source)
+    partial = source.with_suffix(".part")
+    urllib.request.urlretrieve(SOURCE_URL, partial)
+    partial.rename(source)
 data = source.read_bytes()
 assert hashlib.md5(data).hexdigest() == SOURCE_MD5, f"{source} is not the pinned file"
 

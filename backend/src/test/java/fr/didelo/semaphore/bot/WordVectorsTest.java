@@ -10,6 +10,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 
 class WordVectorsTest {
@@ -34,7 +35,7 @@ class WordVectorsTest {
       out.writeByte(1);
     }
     var all = bytes.toByteArray();
-    return truncated ? java.util.Arrays.copyOf(all, all.length - 1) : all;
+    return truncated ? Arrays.copyOf(all, all.length - 1) : all;
   }
 
   private static WordVectors read(byte[] file) throws IOException {

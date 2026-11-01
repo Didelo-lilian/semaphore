@@ -17,6 +17,13 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+  - package-ecosystem: npm
+    directory: /tools/brand
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore
+      include: scope
   - package-ecosystem: docker
     directory: /backend
     schedule:

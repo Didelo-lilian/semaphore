@@ -1,6 +1,5 @@
 package fr.didelo.semaphore.game;
 
-import java.text.Normalizer;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -483,20 +482,12 @@ public final class Room {
     if (send.number() < 1 || send.number() > MAX_NUMBER) {
       throw new IllegalMove("the number is from 1 to " + MAX_NUMBER);
     }
-    var word = normalize(send.word());
-    if (!word.matches("[a-z]+(-[a-z]+)*") || word.length() > 30) {
+    var word = SignalRule.normalize(send.word());
+    if (!SignalRule.isWord(word)) {
       throw new IllegalMove("a signal is one word, letters only");
     }
     for (var card : board) {
-      var other = normalize(card.word());
-      var sharesStart =
-          word.length() >= 4
-              && other.length() >= 4
-              && word.substring(0, 4).equals(other.substring(0, 4));
-      var contains =
-          (other.length() >= 3 && word.contains(other))
-              || (word.length() >= 3 && other.contains(word));
-      if (!card.revealed() && (word.equals(other) || contains || sharesStart)) {
+      if (!card.revealed() && SignalRule.tooClose(word, SignalRule.normalize(card.word()))) {
         throw new IllegalMove("the signal is too close to a word on the grid");
       }
     }
@@ -586,14 +577,5 @@ public final class Room {
    */
   private Player signaler(Team team) {
     return members(team).get(0);
-  }
-
-  static String normalize(String text) {
-    // œ and æ do not decompose into letters, so they are spelled out.
-    return Normalizer.normalize(text.strip(), Normalizer.Form.NFD)
-        .replaceAll("\\p{M}", "")
-        .toLowerCase(java.util.Locale.ROOT)
-        .replace("œ", "oe")
-        .replace("æ", "ae");
   }
 }

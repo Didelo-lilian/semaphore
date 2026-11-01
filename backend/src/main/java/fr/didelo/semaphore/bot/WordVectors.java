@@ -117,7 +117,8 @@ public final class WordVectors {
         .toList();
   }
 
-  private int rankOf(String word) {
+  /** The rank of a word the caller knows to be there; an unknown word is refused. */
+  public int rankOf(String word) {
     return rank(word).orElseThrow(() -> new IllegalArgumentException("unknown word: " + word));
   }
 }

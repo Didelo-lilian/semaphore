@@ -71,6 +71,8 @@ uv run --no-project --with numpy==2.5.4 python -I tools/vectors/build.py   # a f
 
 **Credits.** The vectors are adapted from the [French Word Embeddings](http://fauconnier.github.io) of Jean-Philippe Fauconnier (frWac, CC BY 3.0); the `NOTICE` next to the file says what was changed.
 
+The clue-giver (`bot/ClueGiver`) gives a signal and a number from a grid, at one of three levels, reproducibly from a seed ([ADR 0014](docs/adr/0014-a-clue-giver-without-a-language-model.md)); it reuses the server's signal rule (`game/SignalRule`) so that its clues are accepted. It is not wired into rooms yet.
+
 ## Run the front
 
 ```bash

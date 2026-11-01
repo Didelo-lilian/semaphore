@@ -30,7 +30,7 @@ public final class ClueGiver {
   // typos.
   private static final int FIRST_RANK = 400;
   private static final int LAST_RANK = 12_000;
-  // A reef ends the game: it counts as closer to the clue than it is.
+  // A reef costs a flag of two and ends the turn: it counts as closer to the clue than it is.
   private static final double REEF_MARGIN = 0.05;
 
   private final WordVectors vectors;

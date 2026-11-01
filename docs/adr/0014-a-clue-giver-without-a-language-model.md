@@ -6,7 +6,7 @@ Date: 2026-11-01 · Status: accepted
 
 A bot that plays the Signaleur must give a signal (one word and a number, 1 to 4) from the grid as the Signaleur sees it: every card with its team, the revealed ones marked. It has no language model; it has the word vectors of [ADR 0009](0009-french-word-vectors-for-the-bots.md), where "close" is the cosine of two vectors.
 
-A good signal is close to some words of the team and far from the others. A bad one costs: a word of the other team gives them a card, a calm word ends the turn, a reef ends the game. The bot has three levels, and a higher one must lead its guessers to more cards.
+A good signal is close to some words of the team and far from the others. A bad one costs: a word of the other team gives them a card, a calm word ends the turn, a reef ends the turn and costs a flag, and a team has two. The bot has three levels, and a higher one must lead its guessers to more cards.
 
 ## Decision
 
@@ -22,7 +22,7 @@ flowchart LR
 
 **Candidates.** The words of ranks 400 to 11 999 of the vectors, which keeps out the function words and light verbs at the top of the frequency order and the names, typos and rare words at the bottom, and only those that are a signal for the server (letters, hyphens inside, 30 at most, once accents and ligatures are gone). A candidate is never close to any of the 24 cards, revealed or not, in the sense of the server's rule: equal, contained in or containing a word, or the same first four letters. That rule left `Room` for `SignalRule` so that the bot and the server cannot disagree: a clue the bot picks is a clue the server accepts. Revealed cards are excluded too, which the server does not require: a revealed word is still on the table and a clue that repeats it looks careless.
 
-**The number and the score.** For a candidate, the similarity to each unrevealed card of the team gives the own words, best first. The danger is the largest similarity to an unrevealed card of the other team or a calm card, or to a reef plus 0.05 (a reef ends the game, so it counts as closer than it is). The number is how many own words, best first, are above the danger plus the level's margin, at most the level's `maxNumber` and the number of own words left; a candidate with none is not valid. The score is the sum, over those words, of their similarity minus the danger.
+**The number and the score.** For a candidate, the similarity to each unrevealed card of the team gives the own words, best first. The danger is the largest similarity to an unrevealed card of the other team or a calm card, or to a reef plus 0.05 (a reef costs a flag of two and ends the turn, so it counts as closer than it is). The number is how many own words, best first, are above the danger plus the level's margin, at most the level's `maxNumber` and the number of own words left; a candidate with none is not valid. The score is the sum, over those words, of their similarity minus the danger.
 
 **The levels.** A level draws uniformly among its `pool` best valid candidates.
 
@@ -48,7 +48,7 @@ The guesser of [#52](https://github.com/Didelo-lilian/semaphore/issues/52) does 
 | `NORMAL` | 2.13 | 1.94 | 83 | 8, 7, 2 |
 | `HARD` | 2.23 | 2.10 | 87 | 6, 7, 0 |
 
-These are the figures of one noise level, not of a player: they say that the levels are ordered and by how much. A clue takes about 30 ms (one scan of the candidates: 300 clues in 8 s, on a laptop, in a container).
+These are the figures of one noise level, not of a player: they say that the levels are ordered and by how much. A clue takes 20 ms on average and 25 ms at most (600 clues on 600 grids and the three levels, after the first 100, in a container with two CPUs on a laptop); when no candidate is valid it scans a second time, so twice that at worst. `ClueGiver.of` takes 56 ms and holds 0.3 MiB.
 
 The parameters were chosen with a numpy prototype of the same rule and the same noise; the figures above are the ones the Java test reproduces.
 
@@ -56,4 +56,4 @@ The parameters were chosen with a numpy prototype of the same rule and the same 
 
 - The vocabulary is a web crawl's, so some candidates are proper nouns or odd words; the rank window keeps most of them out and the clue-giver filters only by rank and by the rule. A stoplist is possible if the games show a need.
 - The clue-giver reads the same similarity as any guesser built on these vectors; the guesser of #52 gets its levels from the noise it adds and the point where it stops, not from other vectors.
-- The clue-giver is a pure class with no room, socket or network, built once from the loaded vectors and immutable. Putting it in rooms is [#53](https://github.com/Didelo-lilian/semaphore/issues/53).
+- The clue-giver is a pure class with no room, socket or network, built once from the loaded vectors and immutable. Putting it in rooms is [#53](https://github.com/Didelo-lilian/semaphore/issues/53). A clue costs a scan of about 11 000 candidates against the grid, tens of milliseconds of one CPU, so a room must ask for it off the thread that applies the moves, and not once per move of a human.

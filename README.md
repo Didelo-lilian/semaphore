@@ -86,6 +86,8 @@ uv run --no-project --with numpy==2.5.4 python -I tools/vectors/build.py   # a f
 
 The clue-giver (`bot/ClueGiver`) gives a signal and a number from a grid, at one of three levels, reproducibly from a seed ([ADR 0014](docs/adr/0014-a-clue-giver-without-a-language-model.md)); it reuses the server's signal rule (`game/SignalRule`) so that its clues are accepted. It is not wired into rooms yet.
 
+The guesser (`bot/Guesser`) picks cards from a signal, knowing only the hidden words ([ADR 0015](docs/adr/0015-a-guesser-without-a-language-model.md)). `Level` sets both roles of a bot, and the self-play of the tests (`SelfPlayTest`) checks that a higher level wins more often.
+
 ## Run the front
 
 ```bash

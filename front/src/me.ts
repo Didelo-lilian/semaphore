@@ -13,6 +13,9 @@ export const meKey = ["me"] as const;
 
 const TOKEN_COOKIE = "__Host-XSRF-TOKEN";
 
+// The home page waits for the answer: a server that hangs must not keep the player out of a room.
+const TIMEOUT_MS = 5_000;
+
 // GET /api/me hands the cookie out; a browser that refused it (Safari over plain HTTP) has none.
 const csrfToken = () =>
   document.cookie
@@ -29,6 +32,7 @@ export async function fetchMe(): Promise<Me | null> {
   try {
     const response = await fetch("/api/me", {
       headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
     });
     return response.ok ? meSchema.parse(await response.json()) : null;
   } catch {
@@ -47,6 +51,7 @@ export async function saveName(name: string): Promise<Me> {
       ...(token === undefined ? {} : { "X-XSRF-TOKEN": token }),
     },
     body: JSON.stringify({ name }),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   if (!response.ok) {
     throw new Error(`PUT /api/me answered ${response.status}`);

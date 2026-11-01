@@ -5,6 +5,9 @@ import { afterEach } from "vitest";
 // Vitest has no globals here, so Testing Library cannot register its own cleanup.
 afterEach(cleanup);
 
+// No server in the tests: /api/me is then unknown, as with a backend that has no guests, unless a test says otherwise.
+globalThis.fetch = () => Promise.reject(new TypeError("no network in tests"));
+
 // jsdom does not implement it and the router calls it on navigation.
 window.scrollTo = () => {};
 

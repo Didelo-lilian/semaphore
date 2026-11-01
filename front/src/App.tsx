@@ -7,7 +7,8 @@ import {
 } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useCommand, useGame, useRoom } from "./game.tsx";
-import type { Team } from "./protocol.ts";
+import { useMe, useSaveName } from "./me.ts";
+import type { ClientMessage, Team } from "./protocol.ts";
 import { About } from "./ui/About.tsx";
 import { Home } from "./ui/Home.tsx";
 import { Lobby } from "./ui/Lobby.tsx";
@@ -41,17 +42,37 @@ export const HomePage = () => {
   const { snapshot } = useGame();
   const { room } = homeApi.useSearch();
   const navigate = useNavigate();
+  const me = useMe();
+  const saveName = useSaveName();
   const enter = useCommand((joined) =>
     navigate({ to: "/salon/$code", params: { code: joined.code } }),
   );
+  if (me.isPending) {
+    return <p className="sem-hint">Chargement…</p>;
+  }
+  const known = me.data?.kind === "guest" ? me.data.name : "";
+
+  const go = async (name: string, message: ClientMessage) => {
+    // A refused PUT (too many, no route yet) is not a lockout: the server then names the player
+    // after the message, as it did before guests.
+    // shortcut: a guest renamed while the PUT is refused is still named by its session, upgrade
+    // when the front can tell the player.
+    if (me.data !== null && name !== known) {
+      await saveName.mutateAsync(name).catch(() => undefined);
+    }
+    enter.mutate(message);
+  };
+
   return (
     <>
       <Home
         invited={room ?? null}
-        busy={enter.isPending}
+        initialName={known}
+        remembered={me.data !== null}
+        busy={enter.isPending || saveName.isPending}
         error={enter.error?.message ?? snapshot.error}
-        onCreate={(name) => enter.mutate({ type: "createRoom", name })}
-        onJoin={(code, name) => enter.mutate({ type: "joinRoom", code, name })}
+        onCreate={(name) => go(name, { type: "createRoom", name })}
+        onJoin={(code, name) => go(name, { type: "joinRoom", code, name })}
         onWatch={(code) => enter.mutate({ type: "watch", code })}
       />
       <About />

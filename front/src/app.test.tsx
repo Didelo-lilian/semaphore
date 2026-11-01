@@ -718,6 +718,17 @@ describe("signing in", () => {
     expect(requests(calls)).toContain("PUT /api/me");
   });
 
+  it("resumes only a login the server lists", async () => {
+    server(anonymous);
+    await mount("/?login=pseudo&provider=gitlab");
+    expect(
+      await screen.findByText(/Dis-nous comment t'appeler/),
+    ).not.toHaveTextContent("avec");
+    expect(
+      await screen.findByRole("button", { name: "Se connecter avec GitHub" }),
+    ).toBeInTheDocument();
+  });
+
   it("ignores a login that is not one", async () => {
     server(anonymous);
     await mount("/?login=elsewhere");

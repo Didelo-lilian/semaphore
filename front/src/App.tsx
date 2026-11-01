@@ -102,7 +102,12 @@ export const HomePage = () => {
         signIn={{
           providers,
           returned: login ?? null,
-          resume: login === "pseudo" ? (provider ?? null) : null,
+          resume:
+            login === "pseudo" &&
+            provider !== undefined &&
+            providers.includes(provider)
+              ? provider
+              : null,
           failed: signIn.isError,
           onSignIn: (provider, name) => signIn.mutate({ provider, name }),
         }}

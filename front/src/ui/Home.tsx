@@ -64,6 +64,8 @@ export const Home = ({
   onJoin,
   onWatch,
 }: Props) => {
+  const resumeName =
+    signIn.resume === null ? undefined : providerName(signIn.resume);
   const form = useForm({
     defaultValues: { name: initialName, code: "" },
     onSubmitMeta: { intent: "create" } as { intent: Intent },
@@ -107,7 +109,7 @@ export const Home = ({
       {signIn.returned === "pseudo" && (
         <Alert severity="info">
           Dis-nous comment t'appeler, puis reprends la connexion
-          {signIn.resume !== null && ` avec ${providerName(signIn.resume)}`}.
+          {resumeName !== undefined && ` avec ${resumeName}`}.
         </Alert>
       )}
       {signIn.failed && (

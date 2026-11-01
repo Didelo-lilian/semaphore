@@ -265,6 +265,9 @@ describe("Home sign-in", () => {
     expect(
       screen.getByRole("button", { name: "Se connecter avec Google" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Dis-nous comment t'appeler/),
+    ).not.toHaveTextContent("avec");
   });
 
   it("says a login did not start when the name was refused", () => {

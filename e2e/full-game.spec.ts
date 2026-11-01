@@ -162,4 +162,10 @@ test("four players play a whole game", async ({ browser }) => {
       await expect(page).toHaveURL("/");
     }
   });
+
+  await test.step("each of them is a guest the server remembers", async () => {
+    for (const { name, page } of [alice, bob, carol, dave]) {
+      await expect(page.getByLabel("Ton nom")).toHaveValue(name);
+    }
+  });
 });

@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 
 const REPO = "https://github.com/Didelo-lilian/semaphore";
 
+const UPDATED = "1er novembre 2026";
+
 // Shown next to the issues link when it is not null. Set it to the address that answers requests about personal data.
 const CONTACT_EMAIL: string | null = null;
 
@@ -34,10 +36,12 @@ const Contact = () => (
 const Page = ({
   id,
   title,
+  other,
   children,
 }: {
   id: string;
   title: string;
+  other: { to: "/privacy" | "/terms"; label: string };
   children: ReactNode;
 }) => (
   <section
@@ -46,27 +50,27 @@ const Page = ({
     aria-labelledby={id}
   >
     <h1 id={id}>{title}</h1>
+    <p className="sem-hint">Dernière mise à jour : {UPDATED}.</p>
     {children}
     <nav className="sem-legal-links" aria-label="Navigation">
       <Link to="/">Retour à l'accueil</Link>
-      <Link to={id === "privacy-title" ? "/terms" : "/privacy"}>
-        {id === "privacy-title"
-          ? "Conditions d'utilisation"
-          : "Confidentialité"}
-      </Link>
+      <Link to={other.to}>{other.label}</Link>
     </nav>
   </section>
 );
 
 export const PrivacyPage = () => (
-  <Page id="privacy-title" title="Confidentialité">
+  <Page
+    id="privacy-title"
+    title="Confidentialité"
+    other={{ to: "/terms", label: "Conditions d'utilisation" }}
+  >
     <p className="sem-lead">
       Sémaphore est un jeu de mots gratuit, un projet personnel sans but
       commercial. Cette page dit quelles données il traite, pourquoi, combien de
       temps, et comment les faire effacer. Pas de publicité, pas de pistage,
       aucune revente.
     </p>
-    <p className="sem-hint">Dernière mise à jour : 1er novembre 2026.</p>
 
     <h2>Qui est responsable</h2>
     <p>
@@ -189,12 +193,15 @@ export const PrivacyPage = () => (
 );
 
 export const TermsPage = () => (
-  <Page id="terms-title" title="Conditions d'utilisation">
+  <Page
+    id="terms-title"
+    title="Conditions d'utilisation"
+    other={{ to: "/privacy", label: "Confidentialité" }}
+  >
     <p className="sem-lead">
       En jouant à Sémaphore, tu acceptes ces conditions. Elles sont courtes :
       joue loyalement, sois correct avec les autres.
     </p>
-    <p className="sem-hint">Dernière mise à jour : 1er novembre 2026.</p>
 
     <h2>Le service</h2>
     <p>

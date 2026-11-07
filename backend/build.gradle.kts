@@ -2,7 +2,7 @@ plugins {
     java
     id("org.springframework.boot") version "4.1.2"
     id("io.spring.dependency-management") version "1.1.7"
-    id("com.diffplug.spotless") version "8.10.4"
+    id("com.diffplug.spotless") version "8.11.0"
 }
 
 group = "fr.didelo"
@@ -35,7 +35,7 @@ dependencies {
     testImplementation("org.testcontainers:testcontainers")
     testImplementation("org.testcontainers:testcontainers-postgresql")
     testImplementation("org.testcontainers:testcontainers-junit-jupiter")
-    testImplementation("no.nav.security:mock-oauth2-server:6.1.2")
+    testImplementation("no.nav.security:mock-oauth2-server:6.1.4")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

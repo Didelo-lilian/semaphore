@@ -10,11 +10,13 @@ reviews:
     max_merge_risk: low
   path_instructions:
     - path: "backend/**"
-      instructions: "Flag null checks on values that cannot be null, private methods used once that only rename a call, and comments that repeat the code. Check that every input arriving over HTTP or WebSocket is validated before use. If the change alters game states, data flows or the architecture, the Mermaid diagrams in the README must be updated in the same PR."
+      instructions: "Flag null checks on values that cannot be null, private methods used once that only rename a call, and comments that repeat the code. Check that every input arriving over HTTP or WebSocket is validated before use."
     - path: "front/**"
       instructions: "Prefer components from @didelo/design-system over new ad-hoc UI. Server state belongs in TanStack Query, and data coming from outside is validated with Zod."
     - path: ".github/workflows/**"
       instructions: "Workflows triggered by pull requests must run on GitHub-hosted runners; only deployments from main may use self-hosted runners."
+    - path: "**"
+      instructions: "If the PR changes the architecture, game states, data flows or delivery, check that the Mermaid diagrams in the README were updated in the same PR."
 knowledge_base:
   linked_repositories:
     - repository: Didelo-lilian/design-system

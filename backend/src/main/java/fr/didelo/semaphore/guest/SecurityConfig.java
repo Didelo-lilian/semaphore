@@ -45,10 +45,9 @@ class SecurityConfig {
         .securityContext(AbstractHttpConfigurer::disable)
         .anonymous(AbstractHttpConfigurer::disable)
         .logout(AbstractHttpConfigurer::disable)
-        .csrf(
-            csrf ->
-                csrf.csrfTokenRepository(tokens)
-                    .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler()))
+        .csrf(csrf ->
+            csrf.csrfTokenRepository(tokens)
+                .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler()))
         .addFilterAfter(new CsrfCookieFilter(), BasicAuthenticationFilter.class)
         .build();
   }

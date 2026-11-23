@@ -86,14 +86,13 @@ class RoomRegistryTest {
   void aChangeTheRulesRefuseSavesNothing() {
     var code = registry.create("ana", null, REPLICA).room().code();
 
-    assertThatThrownBy(
-            () ->
-                registry.change(
-                    code,
-                    room -> {
-                      room.join("bob", null, REPLICA);
-                      throw new IllegalMove("no");
-                    }))
+    assertThatThrownBy(() ->
+            registry.change(
+                code,
+                room -> {
+                  room.join("bob", null, REPLICA);
+                  throw new IllegalMove("no");
+                }))
         .isInstanceOf(IllegalMove.class);
 
     var room = registry.find(code).orElseThrow();
@@ -134,15 +133,14 @@ class RoomRegistryTest {
     var code = registry.create("ana", null, REPLICA).room().code();
     var attempts = new AtomicInteger();
 
-    assertThatThrownBy(
-            () ->
-                registry.change(
-                    code,
-                    room -> {
-                      room.join("bob", null, REPLICA);
-                      attempts.incrementAndGet();
-                      registry.change(code, other -> other.join("cleo", null, REPLICA));
-                    }))
+    assertThatThrownBy(() ->
+            registry.change(
+                code,
+                room -> {
+                  room.join("bob", null, REPLICA);
+                  attempts.incrementAndGet();
+                  registry.change(code, other -> other.join("cleo", null, REPLICA));
+                }))
         .isInstanceOf(Unavailable.class)
         .hasMessage("the server is busy, try again");
     assertThat(attempts).hasValue(5);
@@ -205,11 +203,10 @@ class RoomRegistryTest {
 
     assertThat(ended)
         .singleElement()
-        .satisfies(
-            result -> {
-              assertThat(result.id()).isEqualTo(gameId);
-              assertThat(result.endReason()).isEqualTo(EndReason.FORFEIT);
-            });
+        .satisfies(result -> {
+          assertThat(result.id()).isEqualTo(gameId);
+          assertThat(result.endReason()).isEqualTo(EndReason.FORFEIT);
+        });
 
     registry.change(code, room -> players.forEach(p -> room.disconnect(p.id(), REPLICA)));
     clock.advance(Duration.ofMinutes(31));

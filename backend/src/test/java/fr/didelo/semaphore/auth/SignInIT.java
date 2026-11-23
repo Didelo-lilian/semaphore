@@ -318,13 +318,11 @@ class SignInIT {
     try (var pool = Executors.newFixedThreadPool(2)) {
       var backs =
           IntStream.range(0, 2)
-              .mapToObj(
-                  i ->
-                      pool.submit(
-                          () -> {
-                            go.await();
-                            return landing(browsers.get(i).request("GET", callbacks.get(i)));
-                          }))
+              .mapToObj(i ->
+                  pool.submit(() -> {
+                    go.await();
+                    return landing(browsers.get(i).request("GET", callbacks.get(i)));
+                  }))
               .toList();
       go.countDown();
       for (var back : backs) {

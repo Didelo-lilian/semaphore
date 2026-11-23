@@ -59,17 +59,15 @@ class StoreCostIT {
     var bytes = JSON.writeValueAsBytes(state).length;
     var load = micros(() -> store.find(code));
     var save =
-        micros(
-            () -> {
-              var current = store.find(code).orElseThrow();
-              store.replace(next(current), current.version());
-            });
+        micros(() -> {
+          var current = store.find(code).orElseThrow();
+          store.replace(next(current), current.version());
+        });
     var command =
-        micros(
-                () -> {
-                  registry.change(code, room -> room.watch("replica"));
-                  registry.change(code, room -> room.unwatch("replica"));
-                })
+        micros(() -> {
+          registry.change(code, room -> room.watch("replica"));
+          registry.change(code, room -> room.unwatch("replica"));
+        })
             / 2;
     System.out.printf(
         "COST %-9s state %d bytes | load %.0f us | save (load+replace) %.0f us | command (load+apply+save) %.0f us%n",

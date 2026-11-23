@@ -49,10 +49,9 @@ public final class Moves {
     room.join("p3", null, REPLICA);
     var players = room.state().players();
     IntStream.range(0, 4)
-        .forEach(
-            i ->
-                room.apply(
-                    players.get(i).id(), new Command.JoinTeam(i < 2 ? Team.BABORD : Team.TRIBORD)));
+        .forEach(i ->
+            room.apply(
+                players.get(i).id(), new Command.JoinTeam(i < 2 ? Team.BABORD : Team.TRIBORD)));
     room.apply(players.get(0).id(), new Command.Start());
   }
 

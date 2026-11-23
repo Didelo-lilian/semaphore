@@ -258,12 +258,11 @@ public class GameSocketHandler extends TextWebSocketHandler implements SmartLife
   private void refresh(String code) {
     // Taken before the room is read: a seat made since is not judged on a room older than itself.
     var held = new HashMap<String, Seat>();
-    seats.forEach(
-        (sessionId, seat) -> {
-          if (seat.code().equals(code)) {
-            held.put(sessionId, seat);
-          }
-        });
+    seats.forEach((sessionId, seat) -> {
+      if (seat.code().equals(code)) {
+        held.put(sessionId, seat);
+      }
+    });
     if (!held.isEmpty()) {
       rooms
           .find(code)
@@ -499,14 +498,13 @@ public class GameSocketHandler extends TextWebSocketHandler implements SmartLife
     var taken = new ArrayList<WebSocketSession>();
     seats
         .entrySet()
-        .removeIf(
-            entry -> {
-              var same = entry.getValue().equals(seat);
-              if (same) {
-                taken.add(sessions.get(entry.getKey()));
-              }
-              return same;
-            });
+        .removeIf(entry -> {
+          var same = entry.getValue().equals(seat);
+          if (same) {
+            taken.add(sessions.get(entry.getKey()));
+          }
+          return same;
+        });
     return taken.stream().filter(Objects::nonNull).toList();
   }
 

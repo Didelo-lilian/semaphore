@@ -42,10 +42,9 @@ class StoreLogTest {
 
     assertThat(logs.list)
         .singleElement()
-        .satisfies(
-            event -> {
-              assertThat(event.getLevel().toString()).isEqualTo("INFO");
-              assertThat(event.getFormattedMessage()).isEqualTo("rooms: redis redis.internal:6380");
-            });
+        .satisfies(event -> {
+          assertThat(event.getLevel().toString()).isEqualTo("INFO");
+          assertThat(event.getFormattedMessage()).isEqualTo("rooms: redis redis.internal:6380");
+        });
   }
 }

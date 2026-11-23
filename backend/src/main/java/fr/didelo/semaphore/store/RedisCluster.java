@@ -67,14 +67,13 @@ class RedisCluster implements Cluster {
   @Override
   public boolean lock(String name, Duration lifetime) {
     String taken =
-        link.run(
-            commands ->
-                commands.eval(
-                    LOCK_SCRIPT,
-                    ScriptOutputType.STATUS,
-                    new String[] {LOCK + name},
-                    id,
-                    String.valueOf(lifetime.toMillis())));
+        link.run(commands ->
+            commands.eval(
+                LOCK_SCRIPT,
+                ScriptOutputType.STATUS,
+                new String[] {LOCK + name},
+                id,
+                String.valueOf(lifetime.toMillis())));
     return taken != null;
   }
 
@@ -91,13 +90,12 @@ class RedisCluster implements Cluster {
 
   void beat() {
     try {
-      link.run(
-          commands ->
-              commands.eval(
-                  BEAT_SCRIPT,
-                  ScriptOutputType.STATUS,
-                  new String[] {BEAT + id},
-                  String.valueOf(heartbeatLife.toMillis())));
+      link.run(commands ->
+          commands.eval(
+              BEAT_SCRIPT,
+              ScriptOutputType.STATUS,
+              new String[] {BEAT + id},
+              String.valueOf(heartbeatLife.toMillis())));
     } catch (Unavailable e) {
       // Redis may start after this replica: the next beat tries again.
     } catch (Throwable e) {

@@ -31,12 +31,11 @@ public final class Valkey {
                 "noeviction")
             .withExposedPorts(6379);
     if (port != null) {
-      container.withCreateContainerCmdModifier(
-          command ->
-              command
-                  .getHostConfig()
-                  .withPortBindings(
-                      new PortBinding(Ports.Binding.bindPort(port), new ExposedPort(6379))));
+      container.withCreateContainerCmdModifier(command ->
+          command
+              .getHostConfig()
+              .withPortBindings(
+                  new PortBinding(Ports.Binding.bindPort(port), new ExposedPort(6379))));
     }
     return container;
   }

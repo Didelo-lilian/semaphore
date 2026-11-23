@@ -18,9 +18,8 @@ public final class PlayerName {
       throw new IllegalMove("a name has 1 to " + MAX_LENGTH + " characters");
     }
     if (name.codePoints()
-        .anyMatch(
-            point ->
-                Character.isISOControl(point) || Character.getType(point) == Character.FORMAT)) {
+        .anyMatch(point ->
+            Character.isISOControl(point) || Character.getType(point) == Character.FORMAT)) {
       throw new IllegalMove("a name has no control or format character");
     }
     return name;

@@ -52,12 +52,11 @@ class RedisLateStartIT {
         await()
             .atMost(Duration.ofSeconds(30))
             .pollInterval(Duration.ofSeconds(1))
-            .until(
-                () -> {
-                  after.send("{\"type\":\"createRoom\",\"name\":\"ana\"}");
-                  Thread.sleep(300);
-                  return after.joined() != null;
-                });
+            .until(() -> {
+              after.send("{\"type\":\"createRoom\",\"name\":\"ana\"}");
+              Thread.sleep(300);
+              return after.joined() != null;
+            });
         after.abort();
       }
       before.abort();

@@ -99,15 +99,13 @@ class RedisReplicasIT {
     var host = players.getFirst();
     await()
         .atMost(Duration.ofSeconds(5))
-        .until(
-            () ->
-                host.room().path("players").valueStream().allMatch(p -> !p.path("team").isNull()));
+        .until(() ->
+            host.room().path("players").valueStream().allMatch(p -> !p.path("team").isNull()));
     send(host, "{\"type\":\"start\"}", () -> !host.room().path("phase").asString().equals("LOBBY"));
-    players.forEach(
-        p ->
-            await()
-                .atMost(Duration.ofSeconds(5))
-                .until(() -> !p.room().path("phase").asString().equals("LOBBY")));
+    players.forEach(p ->
+        await()
+            .atMost(Duration.ofSeconds(5))
+            .until(() -> !p.room().path("phase").asString().equals("LOBBY")));
     return players;
   }
 

@@ -58,15 +58,14 @@ class RedisRoomStore implements RoomStore {
   @Override
   public Optional<RoomState> find(String code) {
     return Optional.ofNullable(link.run(commands -> commands.hget(PREFIX + code, "state")))
-        .map(
-            state -> {
-              try {
-                return json.readValue(state, RoomState.class);
-              } catch (JacksonException e) {
-                // Written by a version that this one cannot read, mid-deploy: as if Redis was busy.
-                throw new Unavailable(RedisLink.BUSY, e);
-              }
-            });
+        .map(state -> {
+          try {
+            return json.readValue(state, RoomState.class);
+          } catch (JacksonException e) {
+            // Written by a version that this one cannot read, mid-deploy: as if Redis was busy.
+            throw new Unavailable(RedisLink.BUSY, e);
+          }
+        });
   }
 
   @Override
@@ -102,9 +101,8 @@ class RedisRoomStore implements RoomStore {
 
   private boolean script(String script, String key, String... arguments) {
     Long done =
-        link.run(
-            commands ->
-                commands.eval(script, ScriptOutputType.INTEGER, new String[] {key}, arguments));
+        link.run(commands ->
+            commands.eval(script, ScriptOutputType.INTEGER, new String[] {key}, arguments));
     return done == 1;
   }
 }

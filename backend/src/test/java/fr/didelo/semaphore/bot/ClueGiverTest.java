@@ -66,11 +66,10 @@ class ClueGiverTest {
 
       assertThat(SignalRule.isWord(signal)).as(clue.word()).isTrue();
       assertThat(board)
-          .allSatisfy(
-              card ->
-                  assertThat(SignalRule.tooClose(signal, SignalRule.normalize(card.word())))
-                      .as("%s and %s", clue.word(), card.word())
-                      .isFalse());
+          .allSatisfy(card ->
+              assertThat(SignalRule.tooClose(signal, SignalRule.normalize(card.word())))
+                  .as("%s and %s", clue.word(), card.word())
+                  .isFalse());
       assertThat(clue.number()).isBetween(1, level.getMaxNumber());
     }
   }
@@ -88,12 +87,11 @@ class ClueGiverTest {
 
     assertThat(clue.number()).isBetween(1, 2);
     assertThat(revealed)
-        .allSatisfy(
-            card ->
-                assertThat(
-                        SignalRule.tooClose(
-                            SignalRule.normalize(clue.word()), SignalRule.normalize(card.word())))
-                    .isFalse());
+        .allSatisfy(card ->
+            assertThat(
+                    SignalRule.tooClose(
+                        SignalRule.normalize(clue.word()), SignalRule.normalize(card.word())))
+                .isFalse());
   }
 
   @Test
@@ -151,13 +149,12 @@ class ClueGiverTest {
       found.put(
           level,
           IntStream.range(0, 100)
-              .mapToDouble(
-                  seed -> {
-                    var board = board(seed);
-                    var clue = giver.clue(board, Team.BABORD, level, new SplittableRandom(seed));
-                    return foundBeforeTheFirstMistake(
-                        board, Team.BABORD, clue, new SplittableRandom(~seed));
-                  })
+              .mapToDouble(seed -> {
+                var board = board(seed);
+                var clue = giver.clue(board, Team.BABORD, level, new SplittableRandom(seed));
+                return foundBeforeTheFirstMistake(
+                    board, Team.BABORD, clue, new SplittableRandom(~seed));
+              })
               .average()
               .getAsDouble());
     }
@@ -180,12 +177,11 @@ class ClueGiverTest {
       List<Card> board, Team team, Clue clue, RandomGenerator random) {
     var rank = vectors.rankOf(clue.word());
     return board.stream()
-        .map(
-            card ->
-                Map.entry(
-                    card,
-                    vectors.similarity(rank, vectors.rankOf(card.word()))
-                        + 0.07 * random.nextGaussian()))
+        .map(card ->
+            Map.entry(
+                card,
+                vectors.similarity(rank, vectors.rankOf(card.word()))
+                    + 0.07 * random.nextGaussian()))
         .sorted(Map.Entry.<Card, Double>comparingByValue().reversed())
         .limit(clue.number())
         .map(Map.Entry::getKey)

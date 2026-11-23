@@ -29,15 +29,14 @@ class SelfPlayTest {
   private static double winRate(Level level) {
     return IntStream.range(0, GAMES)
             .parallel()
-            .filter(
-                seed ->
-                    SelfPlay.play(
-                            giver,
-                            guesser,
-                            Map.of(Team.BABORD, level, Team.TRIBORD, Level.NORMAL),
-                            seed % 2 == 0 ? Team.BABORD : Team.TRIBORD,
-                            seed)
-                        == Team.BABORD)
+            .filter(seed ->
+                SelfPlay.play(
+                        giver,
+                        guesser,
+                        Map.of(Team.BABORD, level, Team.TRIBORD, Level.NORMAL),
+                        seed % 2 == 0 ? Team.BABORD : Team.TRIBORD,
+                        seed)
+                    == Team.BABORD)
             .count()
         / (double) GAMES;
   }

@@ -117,17 +117,16 @@ public final class Room {
         Map.copyOf(flags),
         board,
         players.values().stream()
-            .map(
-                p ->
-                    new RoomState.PlayerState(
-                        p.getId(),
-                        p.getToken(),
-                        p.getName(),
-                        p.getTeam(),
-                        p.getAbsentSince(),
-                        p.isLeft(),
-                        p.getReplica(),
-                        p.getAccountId()))
+            .map(p ->
+                new RoomState.PlayerState(
+                    p.getId(),
+                    p.getToken(),
+                    p.getName(),
+                    p.getTeam(),
+                    p.getAbsentSince(),
+                    p.isLeft(),
+                    p.getReplica(),
+                    p.getAccountId()))
             .toList(),
         Map.copyOf(spectators),
         lastActivity,
@@ -152,16 +151,15 @@ public final class Room {
             winner,
             endReason,
             players.values().stream()
-                .map(
-                    p ->
-                        new GameResult.Participant(
-                            p.getId(),
-                            p.getName(),
-                            p.getTeam(),
-                            signaler(p.getTeam()) == p
-                                ? GameResult.Role.SIGNALER
-                                : GameResult.Role.LOOKOUT,
-                            p.getAccountId()))
+                .map(p ->
+                    new GameResult.Participant(
+                        p.getId(),
+                        p.getName(),
+                        p.getTeam(),
+                        signaler(p.getTeam()) == p
+                            ? GameResult.Role.SIGNALER
+                            : GameResult.Role.LOOKOUT,
+                        p.getAccountId()))
                 .toList()));
   }
 
@@ -315,11 +313,9 @@ public final class Room {
         phase == Phase.LOBBY
             && players
                 .values()
-                .removeIf(
-                    p ->
-                        !p.isConnected()
-                            && Duration.between(p.getAbsentSince(), now).compareTo(LOBBY_GRACE)
-                                > 0);
+                .removeIf(p ->
+                    !p.isConnected()
+                        && Duration.between(p.getAbsentSince(), now).compareTo(LOBBY_GRACE) > 0);
     if (dropped) {
       lastActivity = now;
       version++;
@@ -425,24 +421,22 @@ public final class Room {
         Map.copyOf(flags),
         winner,
         players.values().stream()
-            .map(
-                p ->
-                    new RoomView.PlayerView(
-                        p.getId(),
-                        p.getName(),
-                        p.getTeam(),
-                        p.isConnected(),
-                        p == host,
-                        phase != Phase.LOBBY && p.getTeam() != null && signaler(p.getTeam()) == p))
+            .map(p ->
+                new RoomView.PlayerView(
+                    p.getId(),
+                    p.getName(),
+                    p.getTeam(),
+                    p.isConnected(),
+                    p == host,
+                    phase != Phase.LOBBY && p.getTeam() != null && signaler(p.getTeam()) == p))
             .toList(),
         spectatorCount(),
         board.stream()
-            .map(
-                c ->
-                    new RoomView.CardView(
-                        c.word(),
-                        c.revealed(),
-                        c.revealed() || holdsKey || phase == Phase.ENDED ? c.kind() : null))
+            .map(c ->
+                new RoomView.CardView(
+                    c.word(),
+                    c.revealed(),
+                    c.revealed() || holdsKey || phase == Phase.ENDED ? c.kind() : null))
             .toList(),
         viewer == null ? null : viewer.getId());
   }

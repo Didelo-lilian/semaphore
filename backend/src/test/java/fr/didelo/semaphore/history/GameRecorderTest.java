@@ -61,14 +61,13 @@ class GameRecorderTest {
   void aWriteThatFailsIsLoggedAndTheSameThreadWritesTheNextOne() {
     var threads = new CopyOnWriteArrayList<Thread>();
     when(history.record(any()))
-        .thenAnswer(
-            call -> {
-              threads.add(Thread.currentThread());
-              if (threads.size() == 1) {
-                throw new DataAccessResourceFailureException("Postgres is down");
-              }
-              return true;
-            });
+        .thenAnswer(call -> {
+          threads.add(Thread.currentThread());
+          if (threads.size() == 1) {
+            throw new DataAccessResourceFailureException("Postgres is down");
+          }
+          return true;
+        });
 
     recorder.ended(Moves.ended(UUID.randomUUID()));
     recorder.ended(Moves.ended(UUID.randomUUID()));

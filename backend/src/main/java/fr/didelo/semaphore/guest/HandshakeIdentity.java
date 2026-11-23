@@ -51,11 +51,10 @@ public class HandshakeIdentity implements HandshakeInterceptor {
           // A login too old for the cookie is no login; the account is not read in the database,
           // which the game does not need (ADR 0013): the history writes a deleted one as a guest.
           accounts
-              .flatMap(
-                  accounts ->
-                      accounts.signedIn(
-                          session.getAttribute(SessionKeys.ACCOUNT_ID),
-                          session.getAttribute(SessionKeys.ACCOUNT_AT)))
+              .flatMap(accounts ->
+                  accounts.signedIn(
+                      session.getAttribute(SessionKeys.ACCOUNT_ID),
+                      session.getAttribute(SessionKeys.ACCOUNT_AT)))
               .ifPresent(account -> attributes.put(SessionKeys.ACCOUNT_ID, account));
         }
       } catch (RuntimeException e) {

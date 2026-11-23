@@ -113,14 +113,13 @@ public class RoomRegistry {
       try {
         find(code)
             .filter(room -> room.abandonedFor(ABANDONED_AFTER))
-            .ifPresent(
-                room -> {
-                  // The write that follows the end of a game may have failed: this is its last try.
-                  if (room.phase() == Phase.ENDED) {
-                    announce(room);
-                  }
-                  store.drop(code, room.version());
-                });
+            .ifPresent(room -> {
+              // The write that follows the end of a game may have failed: this is its last try.
+              if (room.phase() == Phase.ENDED) {
+                announce(room);
+              }
+              store.drop(code, room.version());
+            });
       } catch (Unavailable e) {
         // This room cannot be read now: the next sweep tries again, and the others go on.
       } catch (RuntimeException e) {
@@ -131,17 +130,16 @@ public class RoomRegistry {
 
   private void announce(Room room) {
     room.result()
-        .ifPresent(
-            result -> {
-              for (var listener : listeners) {
-                try {
-                  listener.ended(result);
-                } catch (RuntimeException e) {
-                  // The room is saved and the game is over: what the listeners do must never undo
-                  // that.
-                  RoomFailures.log(room.code(), "announced as ended", e);
-                }
-              }
-            });
+        .ifPresent(result -> {
+          for (var listener : listeners) {
+            try {
+              listener.ended(result);
+            } catch (RuntimeException e) {
+              // The room is saved and the game is over: what the listeners do must never undo
+              // that.
+              RoomFailures.log(room.code(), "announced as ended", e);
+            }
+          }
+        });
   }
 }

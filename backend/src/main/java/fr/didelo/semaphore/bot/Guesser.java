@@ -43,12 +43,11 @@ public final class Guesser {
     }
     var read =
         hidden.stream()
-            .map(
-                word ->
-                    Map.entry(
-                        word,
-                        vectors.similarity(rank, vectors.rankOf(word))
-                            + level.getNoise() * random.nextGaussian()))
+            .map(word ->
+                Map.entry(
+                    word,
+                    vectors.similarity(rank, vectors.rankOf(word))
+                        + level.getNoise() * random.nextGaussian()))
             .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
             .toList();
     var count = Math.min(clue.number(), read.size());

@@ -26,41 +26,40 @@ public class GameHistory {
    * refuse the whole game.
    */
   boolean record(GameResult result) {
-    return transaction.execute(
-        status -> {
-          var written =
-              jdbc.sql(
-                      """
-                      INSERT INTO game (id, ended_at, winner, end_reason)
-                      VALUES (?, ?, ?, ?)
-                      ON CONFLICT (id) DO NOTHING
-                      """)
-                  .params(
-                      result.id(),
-                      OffsetDateTime.ofInstant(result.endedAt(), ZoneOffset.UTC),
-                      result.winner().name(),
-                      result.endReason().name())
-                  .update();
-          if (written == 0) {
-            return false;
-          }
-          for (var player : result.participants()) {
-            jdbc.sql(
-                    """
-                    INSERT INTO game_player (game_id, player_id, name, team, role, account_id)
-                    VALUES (?, ?, ?, ?, ?, (SELECT id FROM account WHERE id = ?))
-                    """)
-                .params(
-                    result.id(),
-                    player.playerId(),
-                    player.name(),
-                    player.team().name(),
-                    player.role().name(),
-                    player.accountId())
-                .update();
-          }
-          return true;
-        });
+    return transaction.execute(status -> {
+      var written =
+          jdbc.sql(
+                  """
+                  INSERT INTO game (id, ended_at, winner, end_reason)
+                  VALUES (?, ?, ?, ?)
+                  ON CONFLICT (id) DO NOTHING
+                  """)
+              .params(
+                  result.id(),
+                  OffsetDateTime.ofInstant(result.endedAt(), ZoneOffset.UTC),
+                  result.winner().name(),
+                  result.endReason().name())
+              .update();
+      if (written == 0) {
+        return false;
+      }
+      for (var player : result.participants()) {
+        jdbc.sql(
+                """
+                INSERT INTO game_player (game_id, player_id, name, team, role, account_id)
+                VALUES (?, ?, ?, ?, ?, (SELECT id FROM account WHERE id = ?))
+                """)
+            .params(
+                result.id(),
+                player.playerId(),
+                player.name(),
+                player.team().name(),
+                player.role().name(),
+                player.accountId())
+            .update();
+      }
+      return true;
+    });
   }
 
   /**
@@ -70,38 +69,37 @@ public class GameHistory {
    * game forgotten at once each see the other's seat as it was, and neither would drop the game.
    */
   public void forget(UUID accountId) {
-    transaction.executeWithoutResult(
-        status -> {
-          var games =
-              jdbc.sql(
-                      """
-                      SELECT id FROM game
-                      WHERE id IN (SELECT game_id FROM game_player WHERE account_id = ?)
-                      ORDER BY id
-                      FOR UPDATE
-                      """)
-                  .param(accountId)
-                  .query(UUID.class)
-                  .list();
-          if (games.isEmpty()) {
-            return;
-          }
+    transaction.executeWithoutResult(status -> {
+      var games =
           jdbc.sql(
                   """
-                  UPDATE game_player SET account_id = NULL, name = 'a former player'
-                  WHERE account_id = ?
+                  SELECT id FROM game
+                  WHERE id IN (SELECT game_id FROM game_player WHERE account_id = ?)
+                  ORDER BY id
+                  FOR UPDATE
                   """)
               .param(accountId)
-              .update();
-          jdbc.sql(
-                  """
-                  DELETE FROM game
-                  WHERE id = ANY (?)
-                    AND NOT EXISTS (
-                      SELECT 1 FROM game_player WHERE game_id = game.id AND account_id IS NOT NULL)
-                  """)
-              .param(games.toArray(UUID[]::new))
-              .update();
-        });
+              .query(UUID.class)
+              .list();
+      if (games.isEmpty()) {
+        return;
+      }
+      jdbc.sql(
+              """
+              UPDATE game_player SET account_id = NULL, name = 'a former player'
+              WHERE account_id = ?
+              """)
+          .param(accountId)
+          .update();
+      jdbc.sql(
+              """
+              DELETE FROM game
+              WHERE id = ANY (?)
+                AND NOT EXISTS (
+                  SELECT 1 FROM game_player WHERE game_id = game.id AND account_id IS NOT NULL)
+              """)
+          .param(games.toArray(UUID[]::new))
+          .update();
+    });
   }
 }

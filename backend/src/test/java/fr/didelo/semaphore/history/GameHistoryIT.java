@@ -69,12 +69,11 @@ class GameHistoryIT {
     var game =
         jdbc.sql("SELECT ended_at, winner, end_reason FROM game WHERE id = ?")
             .param(id)
-            .query(
-                (rs, row) ->
-                    List.of(
-                        rs.getObject("ended_at", OffsetDateTime.class).toInstant(),
-                        rs.getString("winner"),
-                        rs.getString("end_reason")))
+            .query((rs, row) ->
+                List.of(
+                    rs.getObject("ended_at", OffsetDateTime.class).toInstant(),
+                    rs.getString("winner"),
+                    rs.getString("end_reason")))
             .single();
     assertThat(game)
         .containsExactly(Instant.parse("2026-10-25T12:00:00.123456Z"), "BABORD", "REEF");
@@ -82,15 +81,14 @@ class GameHistoryIT {
         jdbc.sql(
                 "SELECT name, team, role, account_id FROM game_player WHERE game_id = ? ORDER BY name")
             .param(id)
-            .query(
-                (rs, row) ->
-                    rs.getString("name")
-                        + " "
-                        + rs.getString("team")
-                        + " "
-                        + rs.getString("role")
-                        + " "
-                        + rs.getObject("account_id", UUID.class))
+            .query((rs, row) ->
+                rs.getString("name")
+                    + " "
+                    + rs.getString("team")
+                    + " "
+                    + rs.getString("role")
+                    + " "
+                    + rs.getObject("account_id", UUID.class))
             .list();
     assertThat(players)
         .containsExactly(
@@ -121,13 +119,11 @@ class GameHistoryIT {
     try (var replicas = Executors.newFixedThreadPool(4)) {
       var writes =
           IntStream.range(0, 4)
-              .mapToObj(
-                  i ->
-                      replicas.submit(
-                          () -> {
-                            go.await();
-                            return history.record(result(id, Postgres.account(jdbc)));
-                          }))
+              .mapToObj(i ->
+                  replicas.submit(() -> {
+                    go.await();
+                    return history.record(result(id, Postgres.account(jdbc)));
+                  }))
               .toList();
       go.countDown();
       for (var write : writes) {
@@ -206,14 +202,12 @@ class GameHistoryIT {
         var go = new CountDownLatch(1);
         var forgets =
             List.of(first, second).stream()
-                .map(
-                    account ->
-                        forgetters.submit(
-                            () -> {
-                              go.await();
-                              history.forget(account);
-                              return null;
-                            }))
+                .map(account ->
+                    forgetters.submit(() -> {
+                      go.await();
+                      history.forget(account);
+                      return null;
+                    }))
                 .toList();
         go.countDown();
         for (var forget : forgets) {

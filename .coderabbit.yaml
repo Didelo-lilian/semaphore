@@ -1,0 +1,7 @@
+reviews:
+  poem: false
+  auto_review:
+    ignore_usernames:
+      - dependabot[bot]
+    ignore_title_keywords:
+      - "chore(main): release"

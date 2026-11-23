@@ -8,6 +8,7 @@ reviews:
   auto_approvals:
     enabled: true
     max_merge_risk: low
+    min_blocking_severity: major
   path_instructions:
     - path: "backend/**"
       instructions: "Flag null checks on values that cannot be null, private methods used once that only rename a call, and comments that repeat the code. Check that every input arriving over HTTP or WebSocket is validated before use."

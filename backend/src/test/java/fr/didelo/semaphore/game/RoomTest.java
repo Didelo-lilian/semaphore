@@ -43,12 +43,10 @@ class RoomTest {
           IntStream.range(0, 2 * teamSize)
               .mapToObj(i -> room.join("p" + i, null, REPLICA))
               .toList();
-      players.forEach(
-          p ->
-              room.apply(
-                  p.getId(),
-                  new Command.JoinTeam(
-                      players.indexOf(p) < teamSize ? Team.BABORD : Team.TRIBORD)));
+      players.forEach(p ->
+          room.apply(
+              p.getId(),
+              new Command.JoinTeam(players.indexOf(p) < teamSize ? Team.BABORD : Team.TRIBORD)));
       room.apply(players.get(0).getId(), new Command.Start());
     }
 
@@ -221,11 +219,9 @@ class RoomTest {
 
     game.players.stream()
         .filter(p -> p != game.signaler())
-        .forEach(
-            p ->
-                refuses(
-                    () -> game.room.apply(p.getId(), new Command.Signal("voyage", 1)),
-                    "Signaleur"));
+        .forEach(p ->
+            refuses(
+                () -> game.room.apply(p.getId(), new Command.Signal("voyage", 1)), "Signaleur"));
   }
 
   @Test
@@ -485,12 +481,11 @@ class RoomTest {
 
     var ended = views.remove(views.size() - 1);
     assertThat(views)
-        .allSatisfy(
-            view -> {
-              assertThat(view.phase()).isNotEqualTo(Phase.ENDED);
-              assertThat(view.board())
-                  .allSatisfy(card -> assertThat(card.kind() != null).isEqualTo(card.revealed()));
-            });
+        .allSatisfy(view -> {
+          assertThat(view.phase()).isNotEqualTo(Phase.ENDED);
+          assertThat(view.board())
+              .allSatisfy(card -> assertThat(card.kind() != null).isEqualTo(card.revealed()));
+        });
     assertThat(ended.phase()).isEqualTo(Phase.ENDED);
     assertThat(ended.board()).allMatch(card -> card.kind() != null);
   }
@@ -612,11 +607,9 @@ class RoomTest {
             room.join("a2", null, REPLICA),
             room.join("b1", null, REPLICA),
             room.join("b2", null, REPLICA));
-    players.forEach(
-        p ->
-            room.apply(
-                p.getId(),
-                new Command.JoinTeam(players.indexOf(p) < 2 ? Team.BABORD : Team.TRIBORD)));
+    players.forEach(p ->
+        room.apply(
+            p.getId(), new Command.JoinTeam(players.indexOf(p) < 2 ? Team.BABORD : Team.TRIBORD)));
     var ghost = room.join("ghost", null, REPLICA);
     refuses(() -> room.apply(players.get(0).getId(), new Command.Start()), "pick a team");
 
@@ -635,11 +628,9 @@ class RoomTest {
             room.join("a2", null, REPLICA),
             room.join("b1", null, REPLICA),
             room.join("b2", null, REPLICA));
-    players.forEach(
-        p ->
-            room.apply(
-                p.getId(),
-                new Command.JoinTeam(players.indexOf(p) < 2 ? Team.BABORD : Team.TRIBORD)));
+    players.forEach(p ->
+        room.apply(
+            p.getId(), new Command.JoinTeam(players.indexOf(p) < 2 ? Team.BABORD : Team.TRIBORD)));
 
     room.disconnect(players.get(3).getId(), REPLICA);
     refuses(() -> room.apply(players.get(0).getId(), new Command.Start()), "online");

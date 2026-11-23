@@ -52,42 +52,40 @@ class RedisRoomEvents implements RoomEvents {
    */
   @Override
   public void subscribe(Consumer<RoomEvent> listener, Runnable subscribed) {
-    executor.execute(
-        () -> {
-          while (subscription == null && !Thread.currentThread().isInterrupted()) {
-            StatefulRedisPubSubConnection<String, String> connection = null;
-            try {
-              connection = link.client().connectPubSub();
-              connection.addListener(
-                  new RedisPubSubAdapter<>() {
-                    @Override
-                    public void message(String channel, String message) {
-                      executor.execute(
-                          () -> {
-                            try {
-                              listener.accept(json.readValue(message, RoomEvent.class));
-                            } catch (JacksonException e) {
-                              // An event of a newer version that this one does not know.
-                            }
-                          });
-                    }
-
-                    @Override
-                    public void subscribed(String channel, long count) {
-                      executor.execute(subscribed);
+    executor.execute(() -> {
+      while (subscription == null && !Thread.currentThread().isInterrupted()) {
+        StatefulRedisPubSubConnection<String, String> connection = null;
+        try {
+          connection = link.client().connectPubSub();
+          connection.addListener(
+              new RedisPubSubAdapter<>() {
+                @Override
+                public void message(String channel, String message) {
+                  executor.execute(() -> {
+                    try {
+                      listener.accept(json.readValue(message, RoomEvent.class));
+                    } catch (JacksonException e) {
+                      // An event of a newer version that this one does not know.
                     }
                   });
-              connection.sync().subscribe(CHANNEL);
-              subscription = connection;
-            } catch (RedisException e) {
-              log.debug("Cannot subscribe to the rooms channel yet: {}", e.toString());
-              if (connection != null) {
-                connection.close();
-              }
-              LockSupport.parkNanos(RETRY.toNanos());
-            }
+                }
+
+                @Override
+                public void subscribed(String channel, long count) {
+                  executor.execute(subscribed);
+                }
+              });
+          connection.sync().subscribe(CHANNEL);
+          subscription = connection;
+        } catch (RedisException e) {
+          log.debug("Cannot subscribe to the rooms channel yet: {}", e.toString());
+          if (connection != null) {
+            connection.close();
           }
-        });
+          LockSupport.parkNanos(RETRY.toNanos());
+        }
+      }
+    });
   }
 
   @PreDestroy

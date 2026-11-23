@@ -103,11 +103,10 @@ class SignInConfig {
     token.setRestClient(
         RestClient.builder()
             .requestFactory(PROVIDER_CALLS)
-            .configureMessageConverters(
-                converters ->
-                    converters
-                        .addCustomConverter(new FormHttpMessageConverter())
-                        .addCustomConverter(new OAuth2AccessTokenResponseHttpMessageConverter()))
+            .configureMessageConverters(converters ->
+                converters
+                    .addCustomConverter(new FormHttpMessageConverter())
+                    .addCustomConverter(new OAuth2AccessTokenResponseHttpMessageConverter()))
             .defaultStatusHandler(new OAuth2ErrorResponseErrorHandler())
             .build());
     var userInfo = new RestTemplate(PROVIDER_CALLS);
@@ -128,28 +127,24 @@ class SignInConfig {
         .securityContext(AbstractHttpConfigurer::disable)
         .requestCache(AbstractHttpConfigurer::disable)
         .anonymous(AbstractHttpConfigurer::disable)
-        .csrf(
-            csrf ->
-                csrf.csrfTokenRepository(tokens)
-                    .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler()))
-        .oauth2Login(
-            login -> {
-              login.withObjectPostProcessor(new RedirectFailures(outcome));
-              login
-                  .clientRegistrationRepository(repository)
-                  .authorizedClientRepository(new NoAuthorizedClients())
-                  .authorizationEndpoint(
-                      endpoint ->
-                          endpoint
-                              .authorizationRequestResolver(authorize)
-                              .authorizationRequestRepository(requests))
-                  .redirectionEndpoint(endpoint -> endpoint.baseUri(Providers.CALLBACK + "/*"))
-                  .tokenEndpoint(endpoint -> endpoint.accessTokenResponseClient(token))
-                  .userInfoEndpoint(
-                      endpoint -> endpoint.userService(github).oidcUserService(google))
-                  .successHandler(outcome)
-                  .failureHandler(outcome);
-            })
+        .csrf(csrf ->
+            csrf.csrfTokenRepository(tokens)
+                .csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler()))
+        .oauth2Login(login -> {
+          login.withObjectPostProcessor(new RedirectFailures(outcome));
+          login
+              .clientRegistrationRepository(repository)
+              .authorizedClientRepository(new NoAuthorizedClients())
+              .authorizationEndpoint(endpoint ->
+                  endpoint
+                      .authorizationRequestResolver(authorize)
+                      .authorizationRequestRepository(requests))
+              .redirectionEndpoint(endpoint -> endpoint.baseUri(Providers.CALLBACK + "/*"))
+              .tokenEndpoint(endpoint -> endpoint.accessTokenResponseClient(token))
+              .userInfoEndpoint(endpoint -> endpoint.userService(github).oidcUserService(google))
+              .successHandler(outcome)
+              .failureHandler(outcome);
+        })
         .addFilterBefore(
             new PseudoFirst(accounts, providers), OAuth2AuthorizationRequestRedirectFilter.class)
         .addFilterBefore(new HomeOnFailure(), PseudoFirst.class)

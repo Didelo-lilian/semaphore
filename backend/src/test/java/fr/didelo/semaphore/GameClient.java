@@ -97,10 +97,9 @@ public final class GameClient implements AutoCloseable {
 
   boolean gotError(String reason) {
     return history.stream()
-        .anyMatch(
-            m ->
-                m.path("type").asString().equals("error")
-                    && m.path("reason").asString().equals(reason));
+        .anyMatch(m ->
+            m.path("type").asString().equals("error")
+                && m.path("reason").asString().equals(reason));
   }
 
   public Integer closeCode() {

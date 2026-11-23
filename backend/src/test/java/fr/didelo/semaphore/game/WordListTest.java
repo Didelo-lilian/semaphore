@@ -25,14 +25,12 @@ class WordListTest {
     var normalized = words.stream().map(SignalRule::normalize).toList();
 
     IntStream.range(0, normalized.size())
-        .forEach(
-            i ->
-                IntStream.range(i + 1, normalized.size())
-                    .forEach(
-                        j -> {
-                          var a = normalized.get(i);
-                          var b = normalized.get(j);
-                          assertThat(SignalRule.tooClose(a, b)).as("%s and %s", a, b).isFalse();
-                        }));
+        .forEach(i ->
+            IntStream.range(i + 1, normalized.size())
+                .forEach(j -> {
+                  var a = normalized.get(i);
+                  var b = normalized.get(j);
+                  assertThat(SignalRule.tooClose(a, b)).as("%s and %s", a, b).isFalse();
+                }));
   }
 }

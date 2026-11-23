@@ -112,9 +112,8 @@ final class FakeProvider {
     UriComponentsBuilder.fromUriString(url)
         .build()
         .getQueryParams()
-        .forEach(
-            (name, values) ->
-                parameters.put(name, UriUtils.decode(values.getFirst(), StandardCharsets.UTF_8)));
+        .forEach((name, values) ->
+            parameters.put(name, UriUtils.decode(values.getFirst(), StandardCharsets.UTF_8)));
     return parameters;
   }
 }

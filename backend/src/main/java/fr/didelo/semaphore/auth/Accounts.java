@@ -90,10 +90,9 @@ public class Accounts {
 
   /** The games are forgotten first, in the same transaction: the account is referenced by them. */
   public void delete(UUID id) {
-    transaction.executeWithoutResult(
-        status -> {
-          history.forget(id);
-          jdbc.sql("DELETE FROM account WHERE id = :id").param("id", id).update();
-        });
+    transaction.executeWithoutResult(status -> {
+      history.forget(id);
+      jdbc.sql("DELETE FROM account WHERE id = :id").param("id", id).update();
+    });
   }
 }

@@ -44,18 +44,17 @@ class GameRecorder implements GameEndListener {
     if (!result.hasAccount()) {
       return;
     }
-    executor.execute(
-        () -> {
-          // Caught here, not left to the pool: a thread that dies is replaced, but with a stack
-          // trace on stderr instead of a line in the log.
-          try {
-            if (history.record(result)) {
-              log.info("game {} recorded", result.id());
-            }
-          } catch (RuntimeException e) {
-            log.warn("game {} could not be recorded: {}", result.id(), e.toString());
-          }
-        });
+    executor.execute(() -> {
+      // Caught here, not left to the pool: a thread that dies is replaced, but with a stack
+      // trace on stderr instead of a line in the log.
+      try {
+        if (history.record(result)) {
+          log.info("game {} recorded", result.id());
+        }
+      } catch (RuntimeException e) {
+        log.warn("game {} could not be recorded: {}", result.id(), e.toString());
+      }
+    });
   }
 
   @PreDestroy

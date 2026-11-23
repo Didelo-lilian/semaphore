@@ -90,18 +90,17 @@ class RedisLink {
 
   /** The names of the keys that start with {@code prefix}, without it. */
   Set<String> keys(String prefix) {
-    return run(
-        commands -> {
-          var names = new HashSet<String>();
-          var args = ScanArgs.Builder.matches(prefix + "*").limit(1_000);
-          var cursor = ScanCursor.INITIAL;
-          do {
-            var page = commands.scan(cursor, args);
-            page.getKeys().forEach(key -> names.add(key.substring(prefix.length())));
-            cursor = page;
-          } while (!cursor.isFinished());
-          return names;
-        });
+    return run(commands -> {
+      var names = new HashSet<String>();
+      var args = ScanArgs.Builder.matches(prefix + "*").limit(1_000);
+      var cursor = ScanCursor.INITIAL;
+      do {
+        var page = commands.scan(cursor, args);
+        page.getKeys().forEach(key -> names.add(key.substring(prefix.length())));
+        cursor = page;
+      } while (!cursor.isFinished());
+      return names;
+    });
   }
 
   private StatefulRedisConnection<String, String> connection() {

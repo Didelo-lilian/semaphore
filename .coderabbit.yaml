@@ -24,4 +24,4 @@ knowledge_base:
     - repository: Didelo-lilian/infra
       instructions: "Deploys this game: stacks, environment variables, ports, health checks and probes. Flag changes that need a matching infra change, such as a new variable, port or route."
     - repository: Didelo-lilian/.github
-      instructions: "Shared workflows (pr.yml, release.yml) called by this repo. Flag changes to the inputs or names this repo relies on."
+      instructions: "Shared workflows (pr-conventions.yml, release.yml) called by this repo. Flag changes to the inputs or names this repo relies on."

@@ -50,7 +50,7 @@ services:
 
   # What production has in front of the backend (Traefik), whatever the number of replicas.
   lb:
-    image: nginx:1.31.7-alpine3.24
+    image: nginx:1.31.8-alpine3.24
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
@@ -63,7 +63,7 @@ services:
       retries: 15
 
   k6:
-    image: grafana/k6:2.3.0
+    image: grafana/k6:2.4.0
     command: run /load/game.js
     # Docker creates the results folder as root when it is missing: the image's own user could not write in it.
     user: root

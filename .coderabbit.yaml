@@ -1,0 +1,27 @@
+reviews:
+  poem: false
+  high_level_summary_in_walkthrough: true
+  auto_review:
+    auto_pause_after_reviewed_commits: 0
+    ignore_title_keywords:
+      - "chore(main): release"
+  auto_approvals:
+    enabled: true
+    max_merge_risk: low
+  path_instructions:
+    - path: "backend/**"
+      instructions: "Flag null checks on values that cannot be null, private methods used once that only rename a call, and comments that repeat the code. Check that every input arriving over HTTP or WebSocket is validated before use."
+    - path: "front/**"
+      instructions: "Prefer components from @didelo/design-system over new ad-hoc UI. Server state belongs in TanStack Query, and data coming from outside is validated with Zod."
+    - path: ".github/workflows/**"
+      instructions: "Workflows triggered by pull requests must run on GitHub-hosted runners; only deployments from main may use self-hosted runners."
+    - path: "**"
+      instructions: "If the PR changes the architecture, game states, data flows or delivery, check that the Mermaid diagrams in the README were updated in the same PR."
+knowledge_base:
+  linked_repositories:
+    - repository: Didelo-lilian/design-system
+      instructions: "Component library the front depends on through @didelo/design-system. Flag front changes that need something the pinned version does not provide."
+    - repository: Didelo-lilian/infra
+      instructions: "Deploys this game: stacks, environment variables, ports, health checks and probes. Flag changes that need a matching infra change, such as a new variable, port or route."
+    - repository: Didelo-lilian/.github
+      instructions: "Shared workflows (pr-conventions.yml, release.yml) called by this repo. Flag changes to the inputs or names this repo relies on."
